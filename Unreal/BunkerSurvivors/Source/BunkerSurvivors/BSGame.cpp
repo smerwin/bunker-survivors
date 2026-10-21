@@ -774,6 +774,8 @@ void ABSGame::StartWave()
 		}
 	}
 	if (Wv % 5 == 0) { List.Add(Wv >= 10 ? TEXT("ultralisk") : TEXT("roach")); List.Add(TEXT("roach")); }
+	// On top of the budget: a zergling swarm that snowballs fast (4 at wave 1, ~50 by wave 8, ~150 by wave 15, ~260 by wave 20).
+	const int32 Swarm = FMath::RoundToInt(2 + 1.2f * Wv + 0.6f * Wv * Wv);
 	if (bHard && Wv % 10 == 0) { List.Add(TEXT("ultralisk")); List.Add(TEXT("ultralisk")); }
 	for (int32 i = List.Num() - 1; i > 0; i--) List.Swap(i, FMath::RandRange(0, i));
 
@@ -789,11 +791,21 @@ void ABSGame::StartWave()
 	const float Spread = WaveLen - 8;
 	int32 Added = 0;
 	for (FBSSpawn& Left : SpawnQueue) Left.T = 0.f;      // anything held back by the alive cap comes first
+	// Lane packs pick an approach: mostly true north, the rest sweeping in from the north-east and north-west.
+	auto PackAng = [this](float FlankChance) { return Mode == EBSMode::Lane ? (FMath::FRand() < FlankChance ? (FMath::RandBool() ? 1.f : 2.f) : 0.f) : FMath::FRand() * 2 * PI; };
 	for (int32 g = 0; g < Packs.Num(); g++)
 	{
 		const float T = 0.5f + Spread * (g + Rnd(0.f, 0.8f)) / Packs.Num();
-		const float Ang = FMath::FRand() * 2 * PI;
+		const float Ang = PackAng(0.2f);
 		for (const FString& Type : Packs[g]) { SpawnQueue.Add({ T, Type, Ang }); Added++; }
+	}
+	for (int32 Left = Swarm; Left > 0; )
+	{
+		const int32 N = FMath::Min(Left, 6 + FMath::RandRange(0, 10));
+		const float T = 0.5f + Rnd(0.f, Spread);
+		const float Ang = PackAng(0.55f);
+		for (int32 k = 0; k < N; k++) { SpawnQueue.Add({ T + k * 0.04f, TEXT("zergling"), Ang }); Added++; }
+		Left -= N;
 	}
 	SpawnQueue.Sort([](const FBSSpawn& A, const FBSSpawn& B) { return A.T < B.T; });
 	Tele.Spawned = Added;
@@ -811,7 +823,12 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 	if (!D) return nullptr;
 	float X, Y;
 	if (At) { X = At->X + Rnd(-0.6f, 0.6f); Y = At->Y + Rnd(-0.6f, 0.6f); }
-	else if (Mode == EBSMode::Lane) { X = Rnd(-4.6f, 4.6f); Y = Rnd(27, 31); }
+	else if (Mode == EBSMode::Lane)
+	{
+		const int32 Side = FMath::RoundToInt(Ang);         // 0 north, 1 north-east, 2 north-west
+		if (Side == 1 || Side == 2) { X = (Side == 1 ? 1 : -1) * Rnd(10.f, 13.f); Y = Rnd(17, 23); }
+		else { X = Rnd(-4.6f, 4.6f); Y = Rnd(27, 31); }
+	}
 	else { const float R = Rnd(25, 28); X = FMath::Cos(Ang + Rnd(-0.35f, 0.35f)) * R; Y = FMath::Sin(Ang + Rnd(-0.35f, 0.35f)) * R; }
 	TSharedPtr<FBSEnemy> E = MakeShared<FBSEnemy>();
 	E->Id = NextId++; E->Def = D; E->X = X; E->Y = Y; E->Z = D->bFlying ? D->Fly : 0; E->Yaw = FMath::Atan2(-Y, -X);
@@ -985,6 +1002,7 @@ void ABSGame::Corpse(const FString& Key, float X, float Y, float Z, float Yaw, f
 	// Corpses are darkened and kept low so living units always read on top of the carnage.
 	A->SetTeamColor((bTerran ? TerranColor : ZergColor) * 0.35f);
 	A->SetScalarParam(TEXT("EmissiveStrength"), 0.25f);
+	A->SetScalarParam(TEXT("DepthPush"), 180.f);       // 1.8 m behind: live zerg always draw on top
 	A->SetScale(Scale);
 	A->SetSim(X, Y, FMath::Min(Z, 0.f), Yaw);
 	A->Mesh->CastShadow = false;
@@ -994,6 +1012,8 @@ void ABSGame::Corpse(const FString& Key, float X, float Y, float Z, float Yaw, f
 	Cp.Actor = A; Cp.X = X; Cp.Y = Y; Cp.Z = FMath::Min(Z, 0.f); Cp.Yaw = Yaw;
 	Cp.bSink = !Key.StartsWith(TEXT("bunker"));
 	Cp.Hold = Cp.bSink ? FMath::Clamp(FMath::Min(Len, 4.f), 2.5f, 4.f) : FMath::Max(Hold, FMath::Min(Len, 8.f));
+	// Baneling chunks fade out in SC2 through visibility tracks we do not import; drop them right after the burst.
+	if (Key.StartsWith(TEXT("baneling"))) { Cp.Hold = 0.45f; Cp.bVanish = true; Cp.bSink = false; }
 	if (Z > 0.5f) Cp.Hold = FMath::Max(Cp.Hold, 2.f);      // flyers fall from the sky
 	Corpses.Add(Cp);
 }
@@ -1034,7 +1054,7 @@ void ABSGame::Step(float Dt)
 	{
 		FBSSpawn S = SpawnQueue[0];
 		SpawnQueue.RemoveAt(0);
-		if (Enemies.Num() < (bHard ? 90 : 60)) SpawnEnemy(S.Type, S.Ang);
+		if (Enemies.Num() < (bHard ? 200 : 160)) SpawnEnemy(S.Type, S.Ang);
 		else SpawnQueue.Add({ SpawnTimer + 2, S.Type, S.Ang });
 	}
 	BuildTargets();
@@ -1173,7 +1193,7 @@ void ABSGame::UpdateEnemies(float Dt)
 			const float Nx = Dx / FMath::Max(Dd, 0.001f), Ny = Dy / FMath::Max(Dd, 0.001f);
 			const float Mx = Nx * Sp * Dt + E.Sx * 0.8f, My = Ny * Sp * Dt + E.Sy * 0.8f;
 			E.X += Mx; E.Y += My;
-			if (Mode == EBSMode::Lane) E.X = FMath::Clamp(E.X, -5.2f, 5.2f);
+			if (Mode == EBSMode::Lane) { const float Half = 5.2f + FMath::Max(0.f, E.Y - 4.f) * 0.75f; E.X = FMath::Clamp(E.X, -Half, Half); }   // the lane fans out to the north
 			// Face the way it is heading, not the way the crowd shoves it (big units were turning round and backing up),
 			// and turn at a creature's pace instead of snapping.
 			const float WantYaw = FMath::Atan2(Ny, Nx);
@@ -1188,7 +1208,30 @@ void ABSGame::UpdateBunker(float Dt)
 	if (Bunker.bDead) return;
 	const bool bStim = Ab.StimUntil > Time;
 	const float Bonus = BSDefs::BunkerRangeBonus + BSDefs::BunkerHalfSize + (Up.bHiSec ? BSDefs::HiSecRange : 0.f) + (Mode == EBSMode::Arena ? 1.f : 0.f);
-	if (Up.bMedivac) for (FBSInfantryUnit& U : Bunker.Units) U.Hp = FMath::Min(U.MaxHp, U.Hp + 9 * Dt);
+	if (Up.bMedivac)
+	{
+		for (FBSInfantryUnit& U : Bunker.Units) U.Hp = FMath::Min(U.MaxHp, U.Hp + 9 * Dt);
+		// The medivac hovers over the bunker and also mends the most hurt SCV nearby (12.6 HP/s, as in SC2).
+		if (!StationMedivac && Assets->Model(TEXT("medivac")))
+		{
+			StationMedivac = AcquireModel(TEXT("medivac"));
+			if (StationMedivac) StationMedivac->SetTeamColor(TerranColor);
+		}
+		FBSScv* Patient = nullptr;
+		for (const TSharedPtr<FBSScv>& S : Scvs)
+			if (!S->bDead && S->Hp < S->MaxHp - 0.5f && FMath::Sqrt(Dist2(0, 0.5f, S->X, S->Y)) < 6.f && (!Patient || S->Hp / S->MaxHp < Patient->Hp / Patient->MaxHp)) Patient = S.Get();
+		if (Patient) Patient->Hp = FMath::Min(Patient->MaxHp, Patient->Hp + 12.6f * Dt);
+		if (StationMedivac)
+		{
+			// Drift toward its patient a little, otherwise idle over the bunker with a gentle bob.
+			const FVector2D Goal = Patient ? FVector2D(Patient->X * 0.4f, -1.2f + Patient->Y * 0.3f) : FVector2D(1.9f, -0.9f);
+			const float Yaw = Patient ? FMath::Atan2(Patient->Y - Goal.Y, Patient->X - Goal.X) : PI / 2;
+			StationMedivac->SetSim(Goal.X, Goal.Y, 2.7f + 0.12f * FMath::Sin(Time * 1.7f), Yaw);
+			StationMedivac->SetScale(0.75f);
+			const FString Want = Patient ? TEXT("work") : TEXT("idle");
+			if (StationAnim != Want) { StationAnim = Want; StationMedivac->Play(Patient ? TArray<FString>{ TEXT("stand work"), TEXT("attack") } : WalkNames, true); }
+		}
+	}
 	for (FBSInfantryUnit& U : Bunker.Units)
 	{
 		U.Cd -= Dt * (bStim ? 1.5f : 1.f);
@@ -1549,7 +1592,11 @@ void ABSGame::UpdateVisuals(float Dt)
 	for (const TSharedPtr<FBSEnemy>& E : Enemies)
 	{
 		E->Flash = FMath::Max(0.f, E->Flash - Dt * 9);
-		if (E->Actor) { E->Actor->SetSim(E->X, E->Y, E->Z, E->Yaw); E->Actor->SetHitFlash(E->Flash * 0.22f); }
+		if (E->Actor)
+		{
+			E->Actor->SetSim(E->X, E->Y, E->Z, E->Yaw); E->Actor->SetHitFlash(E->Flash * 0.22f);
+			if (E->Def->Cleave > 0) E->Actor->SetSwipe(E->bAttacking && FMath::Abs(Time - E->HitAt) < 0.22f);
+		}
 	}
 	Bunker.Flash = FMath::Max(0.f, Bunker.Flash - Dt * 4);
 	if (Bunker.Actor) Bunker.Actor->SetHitFlash(Bunker.Flash * 0.22f);   // a hint of white: constant zergling hits used to white it out

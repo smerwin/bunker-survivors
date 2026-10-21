@@ -122,6 +122,18 @@ def build_unit_material(path, name, two_sided):
     mel.connect_material_property(add, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
     mel.connect_material_property(scalar(m, "Roughness", -350, 400, 0.55), "", unreal.MaterialProperty.MP_ROUGHNESS)
     mel.connect_material_property(scalar(m, "Specular", -350, 500, 0.45), "", unreal.MaterialProperty.MP_SPECULAR)
+    # Corpses set DepthPush so living units always draw in front of them where they overlap.
+    # (pixel depth offset is not exposed to Python, so slide the vertices back along the view ray instead).
+    push = scalar(m, "DepthPush", -600, 1250, 0.0)
+    campos = expr(m, unreal.MaterialExpressionCameraPositionWS, -900, 1350)
+    wpos = expr(m, unreal.MaterialExpressionWorldPosition, -900, 1450)
+    tocam = binop(m, unreal.MaterialExpressionSubtract, campos, "", wpos, "", -750, 1400)
+    camv = expr(m, unreal.MaterialExpressionNormalize, -600, 1400)
+    mel.connect_material_expressions(tocam, "", camv, "")
+    away = binop(m, unreal.MaterialExpressionMultiply, camv, "", push, "", -400, 1300)
+    neg = expr(m, unreal.MaterialExpressionMultiply, -250, 1300, const_b=-1.0)
+    mel.connect_material_expressions(away, "", neg, "A")
+    mel.connect_material_property(neg, "", unreal.MaterialProperty.MP_WORLD_POSITION_OFFSET)
     mel.recompile_material(m)
     return m
 

@@ -95,6 +95,15 @@ void ABSModelActor::SetScalarParam(FName Name, float Value)
 	for (UMaterialInstanceDynamic* M : Mids) if (M) M->SetScalarParameterValue(Name, Value);
 }
 
+void ABSModelActor::SetSwipe(bool bShow)
+{
+	// Weapon swipe trails are additive layers SC2 only shows mid-swing (via visibility tracks we do not import).
+	if (bShow == bSwipeShown) return;
+	bSwipeShown = bShow;
+	for (UMaterialInstanceDynamic* M : Mids)
+		if (M && M->GetBaseMaterial() && M->GetBaseMaterial()->GetName() == TEXT("M_SC2Additive")) M->SetScalarParameterValue(TEXT("Intensity"), bShow ? 2.f : 0.f);
+}
+
 void ABSModelActor::EnableTurret(FName Bone, float OffsetDeg)
 {
 	TurretBone = Bone; TurretOffsetDeg = OffsetDeg;
@@ -135,6 +144,8 @@ void ABSModelActor::Activate()
 	SetActorScale3D(FVector(1));
 	SetHitFlash(0.f);
 	SetScalarParam(TEXT("EmissiveStrength"), 2.f);
+	SetScalarParam(TEXT("DepthPush"), 0.f);
+	SetSwipe(true);
 	bTurretAiming = false; TurretYawShown = 0;
 }
 

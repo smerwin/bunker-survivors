@@ -141,7 +141,7 @@ struct FBSParticle
 
 struct FBSFlash { ABSModelActor* A = nullptr; FVector P = FVector::ZeroVector; float Yaw = 0, Delay = 0, Life = 0.1f; bool bShown = false; };
 struct FBSFloater { FVector Pos; FString Text; FLinearColor Color; float T = 0; };
-struct FBSCorpse { ABSModelActor* Actor = nullptr; float T = 0, Hold = 3.5f, X = 0, Y = 0, Z = 0, Yaw = 0; bool bSink = true; };
+struct FBSCorpse { ABSModelActor* Actor = nullptr; float T = 0, Hold = 3.5f, X = 0, Y = 0, Z = 0, Yaw = 0; bool bSink = true, bVanish = false; };
 struct FBSSpawn { float T = 0; FString Type; float Ang = 0; };
 
 UCLASS()
@@ -238,6 +238,8 @@ private:
 	void AddProjectileModel(FBSProjectile& P, const TCHAR* Model, const TCHAR* Trail, float TrailScale = 1.f);
 	void MuzzleMesh(const FVector& At, float Yaw, float Delay);
 	TArray<FBSFlash> Flashes;
+	ABSModelActor* StationMedivac = nullptr;   // Medivac on Station: hovers over the bunker
+	FString StationAnim;
 	void YamatoImpact(const FVector& At, float Dmg);
 	void UpdateVisuals(float Dt);
 	void AutoPlay();

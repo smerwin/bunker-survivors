@@ -25,7 +25,7 @@ namespace
 			D.Variants = { TEXT("zerglingWinged"), TEXT("zerglingRaptor"), TEXT("zerglingSwarmling"), TEXT("zerglingPrimal"), TEXT("zerglingPrimalWinged") };
 			D.ImpactFx = TEXT("zerglingImpact");
 			D.Hp = 30; D.Dmg = 5; D.Cd = 0.497f; D.Range = 0.1f; D.Speed = 4.13f; D.Radius = 0.375f; D.bLight = true;
-			D.Bounty = 5; D.Budget = 2; D.Unlock = 1; D.Weight = 16; D.HitFrac = 0.45f; D.AttackAnims = { TEXT("attack"), TEXT("attack 01") };
+			D.Bounty = 4; D.Budget = 2; D.Unlock = 1; D.Weight = 12; D.HitFrac = 0.45f; D.AttackAnims = { TEXT("attack"), TEXT("attack 01") };
 			D.SoundAttack = TEXT("zerglingAttack"); D.SoundDeath = TEXT("zerglingDeath"); D.Height = 0.8f;
 		}
 		{

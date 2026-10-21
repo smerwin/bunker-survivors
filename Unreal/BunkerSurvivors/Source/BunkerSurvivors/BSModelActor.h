@@ -33,6 +33,7 @@ public:
 	void SetTeamColor(const FLinearColor& C);
 	void SetHitFlash(float Amount);
 	void SetScalarParam(FName Name, float Value);
+	void SetSwipe(bool bShow);           // weapon swipe trails (additive layers), shown only mid-attack
 
 	// Turret support: the animated pose is copied to a poseable mesh each frame and one bone is turned to aim.
 	void EnableTurret(FName Bone, float OffsetDeg);
@@ -51,6 +52,7 @@ public:
 private:
 	const FBSModel* Model = nullptr;
 	UPROPERTY() TArray<TObjectPtr<UMaterialInstanceDynamic>> Mids;
+	bool bSwipeShown = true;
 	FString CurrentName;
 	FName TurretBone;
 	float TurretOffsetDeg = 0, TurretAimSim = 0, TurretYawShown = 0;
