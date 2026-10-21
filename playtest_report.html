@@ -12,149 +12,149 @@ th{color:var(--mut);font-weight:600} .grid2{display:grid;grid-template-columns:r
 .legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--mut);margin:6px 0 0} .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px}
 </style></head><body><main>
 <h1>Bunker Survivors: automated playtest</h1>
-<p>40 headless games, 449 waves. Five bot commanders per mode: balanced, marine-only, mech (tanks first), random, and passive (never buys anything).</p>
-<h2>Before and after the fixes</h2><table><thead><tr><th>Mode</th><th>Bot</th><th>Avg wave</th><th>Peak zerg</th><th>Minutes (or minerals)</th></tr></thead><tbody><tr><td>lane</td><td>balanced</td><td>19.8 → 19.5</td><td>26 → 37</td><td>9.8 → 9.3</td></tr><tr><td>lane</td><td>marines</td><td>13.2 → 13.0</td><td>19 → 25</td><td>6.4 → 6.1</td></tr><tr><td>lane</td><td>mech</td><td>15.5 → 17.5</td><td>22 → 32</td><td>7.7 → 8.4</td></tr><tr><td>lane</td><td>random</td><td>18.0 → 19.8</td><td>26 → 42</td><td>9.0 → 9.3</td></tr><tr><td>lane</td><td>passive</td><td>5.0 → 4.0</td><td>12 → 11</td><td>2.4 → 2.0</td></tr><tr><td>arena</td><td>balanced</td><td>7.2 → 10.5</td><td>16 → 23</td><td>3.2 → 4.9</td></tr><tr><td>arena</td><td>marines</td><td>9.2 → 10.0</td><td>16 → 24</td><td>3.9 → 4.5</td></tr><tr><td>arena</td><td>mech</td><td>5.5 → 6.8</td><td>13 → 20</td><td>2.3 → 3.2</td></tr><tr><td>arena</td><td>random</td><td>8.0 → 8.5</td><td>17 → 19</td><td>3.4 → 3.9</td></tr><tr><td>arena</td><td>passive</td><td>2.5 → 2.8</td><td>12 → 11</td><td>0.9 → 1.2</td></tr><tr><td>lane</td><td>skilled, unspent minerals</td><td></td><td></td><td>1551 → 696</td></tr><tr><td>arena</td><td>skilled, unspent minerals</td><td></td><td></td><td>303 → 164</td></tr></tbody></table><h2>Outcomes</h2><table><thead><tr><th>Mode</th><th>Bot</th><th>Games</th><th>Avg wave</th><th>Range</th><th>Minutes</th><th>Kills</th><th>Peak zerg</th><th>First damage (min)</th><th>Buys / min</th></tr></thead><tbody><tr><td>lane</td><td>balanced</td><td>4</td><td>19.5</td><td>19–20</td><td>9.3</td><td>797</td><td>37</td><td>0.5</td><td>4.1</td></tr><tr><td>lane</td><td>marines</td><td>4</td><td>13.0</td><td>12–14</td><td>6.1</td><td>337</td><td>25</td><td>0.4</td><td>3.7</td></tr><tr><td>lane</td><td>mech</td><td>4</td><td>17.5</td><td>16–19</td><td>8.4</td><td>578</td><td>32</td><td>0.3</td><td>4.7</td></tr><tr><td>lane</td><td>random</td><td>4</td><td>19.8</td><td>19–21</td><td>9.3</td><td>792</td><td>42</td><td>0.5</td><td>4.6</td></tr><tr><td>lane</td><td>passive</td><td>4</td><td>4.0</td><td>4–4</td><td>2.0</td><td>71</td><td>11</td><td>0.3</td><td>0.0</td></tr><tr><td>arena</td><td>balanced</td><td>4</td><td>10.5</td><td>10–12</td><td>4.9</td><td>290</td><td>23</td><td>0.7</td><td>6.0</td></tr><tr><td>arena</td><td>marines</td><td>4</td><td>10.0</td><td>10–10</td><td>4.5</td><td>255</td><td>24</td><td>0.7</td><td>4.0</td></tr><tr><td>arena</td><td>mech</td><td>4</td><td>6.8</td><td>6–8</td><td>3.2</td><td>144</td><td>20</td><td>0.3</td><td>2.0</td></tr><tr><td>arena</td><td>random</td><td>4</td><td>8.5</td><td>7–10</td><td>3.9</td><td>207</td><td>19</td><td>0.5</td><td>6.7</td></tr><tr><td>arena</td><td>passive</td><td>4</td><td>2.8</td><td>2–3</td><td>1.2</td><td>40</td><td>11</td><td>0.3</td><td>0.0</td></tr></tbody></table>
-<h2>Fun signals (skilled bots: balanced, marines, mech)</h2><table><thead><tr><th>Mode</th><th>Waves with bunker damage</th><th>Downtime (no zerg)</th><th>Avg unspent minerals</th><th>Damage-free early waves</th><th>Sudden-death cliffs</th></tr></thead><tbody><tr><td>lane</td><td>39%</td><td>4%</td><td>696</td><td>0.2 of 6</td><td>1</td></tr><tr><td>arena</td><td>33%</td><td>6%</td><td>164</td><td>0.7 of 6</td><td>0</td></tr></tbody></table>
-<h2>Curves</h2><h3>Lane</h3><div class='grid2'><div><svg viewBox="0 0 560 220" class="chart" role="img" aria-label="Horde size per wave"><text x="40" y="15" class="ct">Horde size per wave</text><line x1="40" x2="550" y1="194.0" y2="194.0" class="grid"/><text x="34" y="198.0" class="ax" text-anchor="end">0</text><line x1="40" x2="550" y1="151.5" y2="151.5" class="grid"/><text x="34" y="155.5" class="ax" text-anchor="end">18</text><line x1="40" x2="550" y1="109.0" y2="109.0" class="grid"/><text x="34" y="113.0" class="ax" text-anchor="end">36</text><line x1="40" x2="550" y1="66.5" y2="66.5" class="grid"/><text x="34" y="70.5" class="ax" text-anchor="end">54</text><line x1="40" x2="550" y1="24.0" y2="24.0" class="grid"/><text x="34" y="28.0" class="ax" text-anchor="end">72</text><text x="40.0" y="212" class="ax" text-anchor="middle">1</text><text x="147.4" y="212" class="ax" text-anchor="middle">5</text><text x="281.6" y="212" class="ax" text-anchor="middle">10</text><text x="415.8" y="212" class="ax" text-anchor="middle">15</text><text x="550.0" y="212" class="ax" text-anchor="middle">20</text><polyline points="40.0,172.8 66.8,168.0 93.7,165.7 120.5,163.3 147.4,160.9 174.2,160.9 201.1,158.6 227.9,153.9 254.7,151.5 281.6,142.1 308.4,139.7 335.3,127.9 362.1,142.1 388.9,123.2 415.8,120.8 442.6,130.2 469.5,104.3 496.3,116.1 523.2,75.9 550.0,94.8" fill="none" stroke="#3b82f6" stroke-width="2"/><polyline points="40.0,160.9 66.8,149.1 93.7,146.8 120.5,142.1 147.4,137.3 174.2,140.3 201.1,132.6 227.9,122.6 254.7,118.4 281.6,104.9 308.4,97.8 335.3,94.2 362.1,94.2 388.9,74.2 415.8,77.1 442.6,73.0 469.5,69.5 496.3,61.2 523.2,47.0 550.0,24.0" fill="none" stroke="#f59e0b" stroke-width="2"/></svg><div class="legend"><span><i style="background:#3b82f6"></i>peak zerg alive (max of all games)</span><span><i style="background:#f59e0b"></i>spawned per wave (balanced bot)</span></div></div><div><svg viewBox="0 0 560 220" class="chart" role="img" aria-label="Lowest bunker HP in the wave (average)"><text x="40" y="15" class="ct">Lowest bunker HP in the wave (average)</text><line x1="40" x2="550" y1="194.0" y2="194.0" class="grid"/><text x="34" y="198.0" class="ax" text-anchor="end">0%</text><line x1="40" x2="550" y1="151.5" y2="151.5" class="grid"/><text x="34" y="155.5" class="ax" text-anchor="end">25%</text><line x1="40" x2="550" y1="109.0" y2="109.0" class="grid"/><text x="34" y="113.0" class="ax" text-anchor="end">50%</text><line x1="40" x2="550" y1="66.5" y2="66.5" class="grid"/><text x="34" y="70.5" class="ax" text-anchor="end">75%</text><line x1="40" x2="550" y1="24.0" y2="24.0" class="grid"/><text x="34" y="28.0" class="ax" text-anchor="end">100%</text><text x="40.0" y="212" class="ax" text-anchor="middle">1</text><text x="147.4" y="212" class="ax" text-anchor="middle">5</text><text x="281.6" y="212" class="ax" text-anchor="middle">10</text><text x="415.8" y="212" class="ax" text-anchor="middle">15</text><text x="550.0" y="212" class="ax" text-anchor="middle">20</text><polyline points="40.0,26.6 66.8,25.5 93.7,29.1 120.5,24.3 147.4,33.9 174.2,30.8 201.1,28.5 227.9,28.7 254.7,29.4 281.6,34.2 308.4,28.3 335.3,27.4 362.1,29.1 388.9,26.6 415.8,39.5 442.6,50.3 469.5,46.0 496.3,54.1 523.2,163.1 550.0,193.3" fill="none" stroke="#3b82f6" stroke-width="2"/><polyline points="40.0,28.1 66.8,24.9 93.7,24.3 120.5,24.3 147.4,40.7 174.2,33.4 201.1,32.9 227.9,32.7 254.7,31.7 281.6,97.2 308.4,112.5 335.3,134.9 362.1,174.5" fill="none" stroke="#f59e0b" stroke-width="2"/><polyline points="40.0,32.2 66.8,30.1 93.7,70.5 120.5,108.4 147.4,104.5 174.2,80.5 201.1,51.0 227.9,39.4 254.7,49.8 281.6,41.3 308.4,34.9 335.3,34.2 362.1,32.9 388.9,39.0 415.8,102.8 442.6,139.7 469.5,140.6 496.3,167.0" fill="none" stroke="#10b981" stroke-width="2"/><polyline points="40.0,27.1 66.8,26.9 93.7,50.0 120.5,40.1 147.4,45.4 174.2,37.9 201.1,33.0 227.9,31.8 254.7,31.0 281.6,48.3 308.4,28.3 335.3,29.9 362.1,31.9 388.9,31.9 415.8,48.6 442.6,48.2 469.5,34.8 496.3,45.4 523.2,150.3 550.0,171.9" fill="none" stroke="#a855f7" stroke-width="2"/><polyline points="40.0,33.1 66.8,42.1 93.7,130.1 120.5,188.6" fill="none" stroke="#94a3b8" stroke-width="2"/></svg><div class="legend"><span><i style="background:#3b82f6"></i>balanced</span><span><i style="background:#f59e0b"></i>marines</span><span><i style="background:#10b981"></i>mech</span><span><i style="background:#a855f7"></i>random</span><span><i style="background:#94a3b8"></i>passive</span></div></div></div><h3>Arena</h3><div class='grid2'><div><svg viewBox="0 0 560 220" class="chart" role="img" aria-label="Horde size per wave"><text x="40" y="15" class="ct">Horde size per wave</text><line x1="40" x2="550" y1="194.0" y2="194.0" class="grid"/><text x="34" y="198.0" class="ax" text-anchor="end">0</text><line x1="40" x2="550" y1="151.5" y2="151.5" class="grid"/><text x="34" y="155.5" class="ax" text-anchor="end">11</text><line x1="40" x2="550" y1="109.0" y2="109.0" class="grid"/><text x="34" y="113.0" class="ax" text-anchor="end">22</text><line x1="40" x2="550" y1="66.5" y2="66.5" class="grid"/><text x="34" y="70.5" class="ax" text-anchor="end">32</text><line x1="40" x2="550" y1="24.0" y2="24.0" class="grid"/><text x="34" y="28.0" class="ax" text-anchor="end">43</text><text x="40.0" y="212" class="ax" text-anchor="middle">1</text><text x="266.7" y="212" class="ax" text-anchor="middle">5</text><text x="550.0" y="212" class="ax" text-anchor="middle">10</text><polyline points="40.0,158.4 96.7,142.6 153.3,146.6 210.0,138.7 266.7,134.7 323.3,107.0 380.0,118.9 436.7,103.1 493.3,118.9 550.0,95.2" fill="none" stroke="#3b82f6" stroke-width="2"/><polyline points="40.0,130.7 96.7,107.0 153.3,111.0 210.0,83.3 266.7,94.2 323.3,96.2 380.0,72.4 436.7,63.5 493.3,53.7 550.0,24.0" fill="none" stroke="#f59e0b" stroke-width="2"/></svg><div class="legend"><span><i style="background:#3b82f6"></i>peak zerg alive (max of all games)</span><span><i style="background:#f59e0b"></i>spawned per wave (balanced bot)</span></div></div><div><svg viewBox="0 0 560 220" class="chart" role="img" aria-label="Lowest bunker HP in the wave (average)"><text x="40" y="15" class="ct">Lowest bunker HP in the wave (average)</text><line x1="40" x2="550" y1="194.0" y2="194.0" class="grid"/><text x="34" y="198.0" class="ax" text-anchor="end">0%</text><line x1="40" x2="550" y1="151.5" y2="151.5" class="grid"/><text x="34" y="155.5" class="ax" text-anchor="end">25%</text><line x1="40" x2="550" y1="109.0" y2="109.0" class="grid"/><text x="34" y="113.0" class="ax" text-anchor="end">50%</text><line x1="40" x2="550" y1="66.5" y2="66.5" class="grid"/><text x="34" y="70.5" class="ax" text-anchor="end">75%</text><line x1="40" x2="550" y1="24.0" y2="24.0" class="grid"/><text x="34" y="28.0" class="ax" text-anchor="end">100%</text><text x="40.0" y="212" class="ax" text-anchor="middle">1</text><text x="266.7" y="212" class="ax" text-anchor="middle">5</text><text x="550.0" y="212" class="ax" text-anchor="middle">10</text><polyline points="40.0,25.4 96.7,24.7 153.3,24.3 210.0,24.3 266.7,29.1 323.3,32.5 380.0,29.0 436.7,34.4 493.3,30.2 550.0,173.6" fill="none" stroke="#3b82f6" stroke-width="2"/><polyline points="40.0,25.4 96.7,27.1 153.3,24.3 210.0,24.3 266.7,37.9 323.3,28.6 380.0,32.9 436.7,49.5 493.3,90.3 550.0,192.2" fill="none" stroke="#f59e0b" stroke-width="2"/><polyline points="40.0,31.7 96.7,28.1 153.3,80.7 210.0,68.6 266.7,66.6 323.3,122.8 380.0,123.9" fill="none" stroke="#10b981" stroke-width="2"/><polyline points="40.0,26.2 96.7,27.4 153.3,24.3 210.0,28.5 266.7,59.2 323.3,78.1 380.0,92.5 436.7,115.8 493.3,158.7" fill="none" stroke="#a855f7" stroke-width="2"/><polyline points="40.0,31.6 96.7,148.1 153.3,180.9" fill="none" stroke="#94a3b8" stroke-width="2"/></svg><div class="legend"><span><i style="background:#3b82f6"></i>balanced</span><span><i style="background:#f59e0b"></i>marines</span><span><i style="background:#10b981"></i>mech</span><span><i style="background:#a855f7"></i>random</span><span><i style="background:#94a3b8"></i>passive</span></div></div></div>
+<p>40 headless games, 533 waves. Five bot commanders per mode: balanced, marine-only, mech (tanks first), random, and passive (never buys anything).</p>
+<h2>Before and after the fixes</h2><table><thead><tr><th>Mode</th><th>Bot</th><th>Avg wave</th><th>Peak zerg</th><th>Minutes (or minerals)</th></tr></thead><tbody><tr><td>lane</td><td>balanced</td><td>19.5 → 27.0</td><td>37 → 54</td><td>9.3 → 12.9</td></tr><tr><td>lane</td><td>marines</td><td>13.0 → 13.8</td><td>25 → 26</td><td>6.1 → 6.4</td></tr><tr><td>lane</td><td>mech</td><td>17.5 → 19.8</td><td>32 → 44</td><td>8.4 → 9.5</td></tr><tr><td>lane</td><td>random</td><td>19.8 → 26.5</td><td>42 → 52</td><td>9.3 → 12.6</td></tr><tr><td>lane</td><td>passive</td><td>4.0 → 4.0</td><td>11 → 13</td><td>2.0 → 1.9</td></tr><tr><td>arena</td><td>balanced</td><td>10.5 → 14.0</td><td>23 → 24</td><td>4.9 → 6.4</td></tr><tr><td>arena</td><td>marines</td><td>10.0 → 10.5</td><td>24 → 19</td><td>4.5 → 4.6</td></tr><tr><td>arena</td><td>mech</td><td>6.8 → 6.0</td><td>20 → 15</td><td>3.2 → 2.7</td></tr><tr><td>arena</td><td>random</td><td>8.5 → 9.5</td><td>19 → 21</td><td>3.9 → 4.4</td></tr><tr><td>arena</td><td>passive</td><td>2.8 → 2.2</td><td>11 → 13</td><td>1.2 → 1.0</td></tr><tr><td>lane</td><td>skilled, unspent minerals</td><td></td><td></td><td>696 → 308</td></tr><tr><td>arena</td><td>skilled, unspent minerals</td><td></td><td></td><td>164 → 160</td></tr></tbody></table><h2>Outcomes</h2><table><thead><tr><th>Mode</th><th>Bot</th><th>Games</th><th>Avg wave</th><th>Range</th><th>Minutes</th><th>Kills</th><th>Peak zerg</th><th>First damage (min)</th><th>Buys / min</th></tr></thead><tbody><tr><td>lane</td><td>balanced</td><td>4</td><td>27.0</td><td>27–27</td><td>12.9</td><td>1438</td><td>54</td><td>0.3</td><td>4.9</td></tr><tr><td>lane</td><td>marines</td><td>4</td><td>13.8</td><td>13–15</td><td>6.4</td><td>398</td><td>26</td><td>0.3</td><td>3.9</td></tr><tr><td>lane</td><td>mech</td><td>4</td><td>19.8</td><td>19–21</td><td>9.5</td><td>722</td><td>44</td><td>0.3</td><td>4.4</td></tr><tr><td>lane</td><td>random</td><td>4</td><td>26.5</td><td>24–28</td><td>12.6</td><td>1397</td><td>52</td><td>0.4</td><td>5.2</td></tr><tr><td>lane</td><td>passive</td><td>4</td><td>4.0</td><td>4–4</td><td>1.9</td><td>69</td><td>13</td><td>0.3</td><td>0.0</td></tr><tr><td>arena</td><td>balanced</td><td>4</td><td>14.0</td><td>10–16</td><td>6.4</td><td>430</td><td>24</td><td>0.8</td><td>7.1</td></tr><tr><td>arena</td><td>marines</td><td>4</td><td>10.5</td><td>10–11</td><td>4.6</td><td>271</td><td>19</td><td>1.2</td><td>4.1</td></tr><tr><td>arena</td><td>mech</td><td>4</td><td>6.0</td><td>5–7</td><td>2.7</td><td>130</td><td>15</td><td>0.3</td><td>2.3</td></tr><tr><td>arena</td><td>random</td><td>4</td><td>9.5</td><td>8–10</td><td>4.4</td><td>238</td><td>21</td><td>0.9</td><td>6.3</td></tr><tr><td>arena</td><td>passive</td><td>4</td><td>2.2</td><td>2–3</td><td>1.0</td><td>32</td><td>13</td><td>0.3</td><td>0.0</td></tr></tbody></table>
+<h2>Fun signals (skilled bots: balanced, marines, mech)</h2><table><thead><tr><th>Mode</th><th>Waves with bunker damage</th><th>Downtime (no zerg)</th><th>Avg unspent minerals</th><th>Damage-free early waves</th><th>Sudden-death cliffs</th></tr></thead><tbody><tr><td>lane</td><td>37%</td><td>4%</td><td>308</td><td>0.0 of 6</td><td>0</td></tr><tr><td>arena</td><td>40%</td><td>5%</td><td>160</td><td>1.0 of 6</td><td>0</td></tr></tbody></table>
+<h2>Curves</h2><h3>Lane</h3><div class='grid2'><div><svg viewBox="0 0 560 220" class="chart" role="img" aria-label="Horde size per wave"><text x="40" y="15" class="ct">Horde size per wave</text><line x1="40" x2="550" y1="194.0" y2="194.0" class="grid"/><text x="34" y="198.0" class="ax" text-anchor="end">0</text><line x1="40" x2="550" y1="151.5" y2="151.5" class="grid"/><text x="34" y="155.5" class="ax" text-anchor="end">22</text><line x1="40" x2="550" y1="109.0" y2="109.0" class="grid"/><text x="34" y="113.0" class="ax" text-anchor="end">43</text><line x1="40" x2="550" y1="66.5" y2="66.5" class="grid"/><text x="34" y="70.5" class="ax" text-anchor="end">64</text><line x1="40" x2="550" y1="24.0" y2="24.0" class="grid"/><text x="34" y="28.0" class="ax" text-anchor="end">86</text><text x="40.0" y="212" class="ax" text-anchor="middle">1</text><text x="115.6" y="212" class="ax" text-anchor="middle">5</text><text x="210.0" y="212" class="ax" text-anchor="middle">10</text><text x="304.4" y="212" class="ax" text-anchor="middle">15</text><text x="398.9" y="212" class="ax" text-anchor="middle">20</text><text x="493.3" y="212" class="ax" text-anchor="middle">25</text><polyline points="40.0,174.2 58.9,168.3 77.8,170.3 96.7,168.3 115.6,162.4 134.4,168.3 153.3,166.3 172.2,158.4 191.1,162.4 210.0,148.5 228.9,154.5 247.8,152.5 266.7,142.6 285.6,140.6 304.4,142.6 323.3,140.6 342.2,140.6 361.1,136.7 380.0,109.0 398.9,101.1 417.8,101.1 436.7,132.7 455.6,101.1 474.4,105.0 493.3,105.0 512.2,93.2 531.1,73.4 550.0,71.4" fill="none" stroke="#3b82f6" stroke-width="2"/><polyline points="40.0,164.3 58.9,154.5 77.8,155.5 96.7,145.1 115.6,149.0 134.4,148.0 153.3,143.1 172.2,138.7 191.1,133.2 210.0,121.4 228.9,120.4 247.8,121.4 266.7,111.5 285.6,108.0 304.4,111.5 323.3,108.0 342.2,88.7 361.1,92.2 380.0,89.2 398.9,72.9 417.8,76.4 436.7,59.1 455.6,55.6 474.4,57.6 493.3,46.2 512.2,30.4 531.1,24.0" fill="none" stroke="#f59e0b" stroke-width="2"/></svg><div class="legend"><span><i style="background:#3b82f6"></i>peak zerg alive (max of all games)</span><span><i style="background:#f59e0b"></i>spawned per wave (balanced bot)</span></div></div><div><svg viewBox="0 0 560 220" class="chart" role="img" aria-label="Lowest bunker HP in the wave (average)"><text x="40" y="15" class="ct">Lowest bunker HP in the wave (average)</text><line x1="40" x2="550" y1="194.0" y2="194.0" class="grid"/><text x="34" y="198.0" class="ax" text-anchor="end">0%</text><line x1="40" x2="550" y1="151.5" y2="151.5" class="grid"/><text x="34" y="155.5" class="ax" text-anchor="end">25%</text><line x1="40" x2="550" y1="109.0" y2="109.0" class="grid"/><text x="34" y="113.0" class="ax" text-anchor="end">50%</text><line x1="40" x2="550" y1="66.5" y2="66.5" class="grid"/><text x="34" y="70.5" class="ax" text-anchor="end">75%</text><line x1="40" x2="550" y1="24.0" y2="24.0" class="grid"/><text x="34" y="28.0" class="ax" text-anchor="end">100%</text><text x="40.0" y="212" class="ax" text-anchor="middle">1</text><text x="115.6" y="212" class="ax" text-anchor="middle">5</text><text x="210.0" y="212" class="ax" text-anchor="middle">10</text><text x="304.4" y="212" class="ax" text-anchor="middle">15</text><text x="398.9" y="212" class="ax" text-anchor="middle">20</text><text x="493.3" y="212" class="ax" text-anchor="middle">25</text><polyline points="40.0,27.4 58.9,24.8 77.8,33.2 96.7,29.1 115.6,34.7 134.4,31.5 153.3,32.4 172.2,30.2 191.1,28.8 210.0,36.0 228.9,27.7 247.8,30.1 266.7,27.1 285.6,28.4 304.4,29.3 323.3,34.5 342.2,29.4 361.1,28.1 380.0,28.6 398.9,34.6 417.8,31.9 436.7,32.0 455.6,38.6 474.4,39.0 493.3,43.0 512.2,91.6 531.1,193.4" fill="none" stroke="#3b82f6" stroke-width="2"/><polyline points="40.0,27.6 58.9,25.4 77.8,28.5 96.7,24.3 115.6,37.6 134.4,37.5 153.3,32.2 172.2,30.6 191.1,28.5 210.0,59.2 228.9,48.9 247.8,55.1 266.7,156.0 285.6,178.3" fill="none" stroke="#f59e0b" stroke-width="2"/><polyline points="40.0,38.9 58.9,35.3 77.8,118.7 96.7,111.5 115.6,80.7 134.4,59.7 153.3,45.4 172.2,41.6 191.1,34.2 210.0,46.1 228.9,35.3 247.8,44.6 266.7,41.7 285.6,34.3 304.4,61.2 323.3,60.3 342.2,50.1 361.1,69.5 380.0,157.1 398.9,135.8" fill="none" stroke="#10b981" stroke-width="2"/><polyline points="40.0,28.9 58.9,26.0 77.8,57.9 96.7,57.5 115.6,37.8 134.4,37.5 153.3,35.3 172.2,35.1 191.1,32.5 210.0,58.7 228.9,40.9 247.8,33.3 266.7,32.6 285.6,29.8 304.4,67.3 323.3,54.1 342.2,44.6 361.1,31.6 380.0,37.2 398.9,37.0 417.8,37.3 436.7,34.2 455.6,72.2 474.4,92.3 493.3,97.2 512.2,126.7 531.1,98.2 550.0,193.5" fill="none" stroke="#a855f7" stroke-width="2"/><polyline points="40.0,35.4 58.9,54.3 77.8,164.5 96.7,183.8" fill="none" stroke="#94a3b8" stroke-width="2"/></svg><div class="legend"><span><i style="background:#3b82f6"></i>balanced</span><span><i style="background:#f59e0b"></i>marines</span><span><i style="background:#10b981"></i>mech</span><span><i style="background:#a855f7"></i>random</span><span><i style="background:#94a3b8"></i>passive</span></div></div></div><h3>Arena</h3><div class='grid2'><div><svg viewBox="0 0 560 220" class="chart" role="img" aria-label="Horde size per wave"><text x="40" y="15" class="ct">Horde size per wave</text><line x1="40" x2="550" y1="194.0" y2="194.0" class="grid"/><text x="34" y="198.0" class="ax" text-anchor="end">0</text><line x1="40" x2="550" y1="151.5" y2="151.5" class="grid"/><text x="34" y="155.5" class="ax" text-anchor="end">15</text><line x1="40" x2="550" y1="109.0" y2="109.0" class="grid"/><text x="34" y="113.0" class="ax" text-anchor="end">29</text><line x1="40" x2="550" y1="66.5" y2="66.5" class="grid"/><text x="34" y="70.5" class="ax" text-anchor="end">44</text><line x1="40" x2="550" y1="24.0" y2="24.0" class="grid"/><text x="34" y="28.0" class="ax" text-anchor="end">58</text><text x="40.0" y="212" class="ax" text-anchor="middle">1</text><text x="185.7" y="212" class="ax" text-anchor="middle">5</text><text x="367.9" y="212" class="ax" text-anchor="middle">10</text><text x="550.0" y="212" class="ax" text-anchor="middle">15</text><polyline points="40.0,161.9 76.4,153.2 112.9,153.2 149.3,153.2 185.7,150.3 222.1,147.4 258.6,153.2 295.0,150.3 331.4,141.5 367.9,118.2 404.3,147.4 440.7,141.5 477.1,129.9 513.6,138.6 550.0,106.6" fill="none" stroke="#3b82f6" stroke-width="2"/><polyline points="40.0,144.5 76.4,124.1 112.9,124.8 149.3,114.6 185.7,118.2 222.1,118.2 258.6,110.2 295.0,100.7 331.4,92.0 367.9,65.0 404.3,80.3 440.7,67.7 477.1,75.5 513.6,77.4 550.0,24.0" fill="none" stroke="#f59e0b" stroke-width="2"/></svg><div class="legend"><span><i style="background:#3b82f6"></i>peak zerg alive (max of all games)</span><span><i style="background:#f59e0b"></i>spawned per wave (balanced bot)</span></div></div><div><svg viewBox="0 0 560 220" class="chart" role="img" aria-label="Lowest bunker HP in the wave (average)"><text x="40" y="15" class="ct">Lowest bunker HP in the wave (average)</text><line x1="40" x2="550" y1="194.0" y2="194.0" class="grid"/><text x="34" y="198.0" class="ax" text-anchor="end">0%</text><line x1="40" x2="550" y1="151.5" y2="151.5" class="grid"/><text x="34" y="155.5" class="ax" text-anchor="end">25%</text><line x1="40" x2="550" y1="109.0" y2="109.0" class="grid"/><text x="34" y="113.0" class="ax" text-anchor="end">50%</text><line x1="40" x2="550" y1="66.5" y2="66.5" class="grid"/><text x="34" y="70.5" class="ax" text-anchor="end">75%</text><line x1="40" x2="550" y1="24.0" y2="24.0" class="grid"/><text x="34" y="28.0" class="ax" text-anchor="end">100%</text><text x="40.0" y="212" class="ax" text-anchor="middle">1</text><text x="185.7" y="212" class="ax" text-anchor="middle">5</text><text x="367.9" y="212" class="ax" text-anchor="middle">10</text><text x="550.0" y="212" class="ax" text-anchor="middle">15</text><polyline points="40.0,25.8 76.4,24.3 112.9,24.3 149.3,24.3 185.7,33.1 222.1,30.0 258.6,28.0 295.0,28.4 331.4,26.2 367.9,133.8 404.3,121.7 440.7,60.4 477.1,59.6 513.6,106.4 550.0,185.2" fill="none" stroke="#3b82f6" stroke-width="2"/><polyline points="40.0,25.1 76.4,24.2 112.9,24.2 149.3,24.2 185.7,39.9 222.1,56.7 258.6,59.1 295.0,58.5 331.4,64.7 367.9,182.8 404.3,193.7" fill="none" stroke="#f59e0b" stroke-width="2"/><polyline points="40.0,47.9 76.4,45.3 112.9,86.9 149.3,116.7 185.7,116.1 222.1,177.6" fill="none" stroke="#10b981" stroke-width="2"/><polyline points="40.0,26.7 76.4,26.4 112.9,24.3 149.3,35.4 185.7,39.5 222.1,31.2 258.6,71.2 295.0,100.6 331.4,67.7 367.9,190.9" fill="none" stroke="#a855f7" stroke-width="2"/><polyline points="40.0,64.3 76.4,191.0" fill="none" stroke="#94a3b8" stroke-width="2"/></svg><div class="legend"><span><i style="background:#3b82f6"></i>balanced</span><span><i style="background:#f59e0b"></i>marines</span><span><i style="background:#10b981"></i>mech</span><span><i style="background:#a855f7"></i>random</span><span><i style="background:#94a3b8"></i>passive</span></div></div></div>
 <details><summary>Raw summary</summary><pre>{
  "outcome": {
   "lane/balanced": {
    "games": 4,
-   "wave": 19.5,
-   "wmin": 19,
-   "wmax": 20,
-   "minutes": 9.262916666666666,
-   "kills": 797,
-   "peak": 37,
-   "first": 0.5316666666666666,
+   "wave": 27,
+   "wmin": 27,
+   "wmax": 27,
+   "minutes": 12.91875,
+   "kills": 1438.25,
+   "peak": 54.5,
+   "first": 0.30124999999999996,
    "capped": 0,
-   "ppm": 4.073851563981366
+   "ppm": 4.896663292445626
   },
   "lane/marines": {
    "games": 4,
-   "wave": 13,
-   "wmin": 12,
-   "wmax": 14,
-   "minutes": 6.079166666666667,
-   "kills": 337,
-   "peak": 25.25,
-   "first": 0.39458333333333334,
+   "wave": 13.75,
+   "wmin": 13,
+   "wmax": 15,
+   "minutes": 6.403333333333333,
+   "kills": 398.5,
+   "peak": 26,
+   "first": 0.3333333333333333,
    "capped": 0,
-   "ppm": 3.7097045254686676
+   "ppm": 3.898077637025926
   },
   "lane/mech": {
-   "games": 4,
-   "wave": 17.5,
-   "wmin": 16,
-   "wmax": 19,
-   "minutes": 8.35375,
-   "kills": 578.25,
-   "peak": 31.5,
-   "first": 0.26125000000000004,
-   "capped": 0,
-   "ppm": 4.683162547042266
-  },
-  "lane/random": {
    "games": 4,
    "wave": 19.75,
    "wmin": 19,
    "wmax": 21,
-   "minutes": 9.271666666666667,
-   "kills": 791.75,
-   "peak": 41.75,
-   "first": 0.49249999999999994,
+   "minutes": 9.520833333333334,
+   "kills": 722.25,
+   "peak": 44,
+   "first": 0.3016666666666667,
    "capped": 0,
-   "ppm": 4.556375809038039
+   "ppm": 4.446714187090097
+  },
+  "lane/random": {
+   "games": 4,
+   "wave": 26.5,
+   "wmin": 24,
+   "wmax": 28,
+   "minutes": 12.556666666666667,
+   "kills": 1397.25,
+   "peak": 52.5,
+   "first": 0.38666666666666666,
+   "capped": 0,
+   "ppm": 5.188518670709885
   },
   "lane/passive": {
    "games": 4,
    "wave": 4,
    "wmin": 4,
    "wmax": 4,
-   "minutes": 1.99125,
-   "kills": 71,
-   "peak": 11.25,
-   "first": 0.3141666666666667,
+   "minutes": 1.8845833333333333,
+   "kills": 69,
+   "peak": 12.75,
+   "first": 0.27875,
    "capped": 0,
    "ppm": 0.0
   },
   "arena/balanced": {
    "games": 4,
-   "wave": 10.5,
+   "wave": 14,
    "wmin": 10,
-   "wmax": 12,
-   "minutes": 4.869166666666667,
-   "kills": 289.75,
-   "peak": 23,
-   "first": 0.7475,
+   "wmax": 16,
+   "minutes": 6.370416666666667,
+   "kills": 430.25,
+   "peak": 24.5,
+   "first": 0.84375,
    "capped": 0,
-   "ppm": 5.994995588759815
+   "ppm": 7.13727181983362
   },
   "arena/marines": {
    "games": 4,
-   "wave": 10,
+   "wave": 10.5,
    "wmin": 10,
-   "wmax": 10,
-   "minutes": 4.462083333333334,
-   "kills": 255.25,
-   "peak": 24.25,
-   "first": 0.73,
+   "wmax": 11,
+   "minutes": 4.61125,
+   "kills": 270.75,
+   "peak": 19.25,
+   "first": 1.2170833333333335,
    "capped": 0,
-   "ppm": 3.9785652726088054
+   "ppm": 4.122657927705513
   },
   "arena/mech": {
    "games": 4,
-   "wave": 6.75,
-   "wmin": 6,
-   "wmax": 8,
-   "minutes": 3.225,
-   "kills": 143.75,
-   "peak": 19.5,
-   "first": 0.28208333333333335,
+   "wave": 6,
+   "wmin": 5,
+   "wmax": 7,
+   "minutes": 2.70375,
+   "kills": 130.25,
+   "peak": 15.25,
+   "first": 0.29583333333333334,
    "capped": 0,
-   "ppm": 2.0171383591908048
+   "ppm": 2.33092884866156
   },
   "arena/random": {
    "games": 4,
-   "wave": 8.5,
-   "wmin": 7,
+   "wave": 9.5,
+   "wmin": 8,
    "wmax": 10,
-   "minutes": 3.925,
-   "kills": 207.25,
-   "peak": 19,
-   "first": 0.5020833333333333,
+   "minutes": 4.3670833333333325,
+   "kills": 238.5,
+   "peak": 20.75,
+   "first": 0.86375,
    "capped": 0,
-   "ppm": 6.680980241823457
+   "ppm": 6.344054670436847
   },
   "arena/passive": {
    "games": 4,
-   "wave": 2.75,
+   "wave": 2.25,
    "wmin": 2,
    "wmax": 3,
-   "minutes": 1.2333333333333334,
-   "kills": 40.5,
-   "peak": 11.25,
-   "first": 0.29041666666666666,
+   "minutes": 0.9991666666666668,
+   "kills": 32.25,
+   "peak": 13.25,
+   "first": 0.30291666666666667,
    "capped": 0,
    "ppm": 0.0
   }
  },
  "fun": {
   "lane": {
-   "threatened": 0.39,
-   "idle": 0.043915927820892195,
-   "floating": 695.8715,
-   "cliffs": 1,
-   "games": 12,
-   "early_bored": 0.16666666666666666
-  },
-  "arena": {
-   "threatened": 0.3302752293577982,
-   "idle": 0.059221555916127384,
-   "floating": 164.36330275229358,
+   "threatened": 0.3677685950413223,
+   "idle": 0.041257504044787764,
+   "floating": 308.1045454545455,
    "cliffs": 0,
    "games": 12,
-   "early_bored": 0.6666666666666666
+   "early_bored": 0
+  },
+  "arena": {
+   "threatened": 0.4016393442622951,
+   "idle": 0.05396944875348991,
+   "floating": 159.9049180327869,
+   "cliffs": 0,
+   "games": 12,
+   "early_bored": 1
   }
  }
 }</pre></details>

@@ -607,7 +607,7 @@ void ABSGame::StartWave()
 	Tele.KillsAtStart = Kills; Tele.WaveStart = Time;
 	Wave++;
 	const int32 Wv = Wave;
-	float Budget = (20 + 8 * Wv + 0.7f * Wv * Wv) * (bHard ? 1.15f : 1.f);
+	float Budget = (20 + 10 * Wv + 0.45f * Wv * Wv) * (bHard ? 1.15f : 1.f);
 	TArray<const FBSZergDef*> Types;
 	for (const FBSZergDef& D : BSDefs::Zerg())
 		if (D.Budget > 0 && Wv >= FMath::CeilToInt(D.Unlock * (bHard ? 0.85f : 1.f))) Types.Add(&D);
@@ -667,7 +667,7 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 	else { const float R = Rnd(25, 28); X = FMath::Cos(Ang + Rnd(-0.35f, 0.35f)) * R; Y = FMath::Sin(Ang + Rnd(-0.35f, 0.35f)) * R; }
 	TSharedPtr<FBSEnemy> E = MakeShared<FBSEnemy>();
 	E->Id = NextId++; E->Def = D; E->X = X; E->Y = Y; E->Z = D->bFlying ? D->Fly : 0; E->Yaw = FMath::Atan2(-Y, -X);
-	E->Hp = E->MaxHp = D->Hp * (1 + (bHard ? 0.03f : 0.025f) * FMath::Max(0, Wave - 8));   // late waves get tougher
+	E->Hp = E->MaxHp = D->Hp * (1 + (bHard ? 0.025f : 0.02f) * FMath::Max(0, Wave - 10));   // late waves get tougher
 	E->Cd = Rnd(0, D->Cd); E->Radius = D->Radius; E->Life = D->Life;
 	E->Actor = AcquireModel(D->Model);
 	if (E->Actor)

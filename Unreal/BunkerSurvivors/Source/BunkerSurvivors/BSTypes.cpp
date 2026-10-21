@@ -68,7 +68,7 @@ namespace
 		}
 		{
 			FBSZergDef& D = Add(TEXT("broodlord"), TEXT("Brood Lord"), TEXT("broodlord"), TEXT("broodlordDeath"), TEXT("btn-unit-zerg-broodlord"));
-			D.Hp = 225; D.Armor = 1; D.Dmg = 20; D.Cd = 1.79f; D.Range = 10; D.Speed = 1.97f; D.Radius = 1.0f; D.bArmored = true; D.bFlying = true; D.Fly = 3.4f; D.bBroodlings = true;
+			D.Hp = 225; D.Armor = 1; D.Dmg = 20; D.Cd = 1.79f; D.Range = 6; D.Speed = 1.97f; D.Radius = 1.0f; D.bArmored = true; D.bFlying = true; D.Fly = 3.4f; D.bBroodlings = true;
 			D.Bounty = 120; D.Budget = 34; D.Unlock = 18; D.Weight = 1.2f; D.HitFrac = 0.3f; D.Projectile = EBSProjectile::Brood; D.Height = 1.6f;
 		}
 		{
@@ -112,11 +112,11 @@ namespace
 		};
 		Add(TEXT("stim"), TEXT("Stimpack"), TEXT("Research, then hit STIM: +50% fire rate for 11s, costs HP."), { TEXT("btn-ability-terran-stimpack") }, { 100 });
 		Add(TEXT("weapons"), TEXT("Infantry Weapons"), TEXT("+1 damage for every bunker unit."),
-			{ TEXT("btn-upgrade-terran-infantryweaponslevel1"), TEXT("btn-upgrade-terran-infantryweaponslevel2"), TEXT("btn-upgrade-terran-infantryweaponslevel3") }, { 100, 175, 250 });
+			{ TEXT("btn-upgrade-terran-infantryweaponslevel1"), TEXT("btn-upgrade-terran-infantryweaponslevel2"), TEXT("btn-upgrade-terran-infantryweaponslevel3") }, { 100, 175, 250, 350, 475, 600, 750, 900, 1100, 1300 });
 		Add(TEXT("neosteel"), TEXT("Neosteel Frame"), TEXT("Bunker holds 6 units."), { TEXT("btn-upgrade-terran-neosteelframe") }, { 150 });
-		Add(TEXT("plating"), TEXT("Building Armor"), TEXT("+150 bunker HP per level, +1 armour for the first three."), { TEXT("btn-upgrade-terran-buildingarmor") }, { 250, 350, 450, 600, 800 });
+		Add(TEXT("plating"), TEXT("Building Armor"), TEXT("+150 bunker HP per level, +1 armour for the first three."), { TEXT("btn-upgrade-terran-buildingarmor") }, { 250, 350, 450, 600, 800, 1000, 1200, 1400 });
 		Add(TEXT("hisec"), TEXT("Hi-Sec Auto Tracking"), TEXT("+1 range for the bunker and siege tanks."), { TEXT("btn-upgrade-terran-hisecautotracking") }, { 200 });
-		Add(TEXT("vehicle"), TEXT("Vehicle Weapons"), TEXT("+5 (+3 armoured) siege tank damage."), { TEXT("btn-upgrade-terran-vehicleweaponslevel1") }, { 150, 225, 300 });
+		Add(TEXT("vehicle"), TEXT("Vehicle Weapons"), TEXT("+5 (+3 armoured) siege tank damage."), { TEXT("btn-upgrade-terran-vehicleweaponslevel1") }, { 150, 225, 300, 400, 525, 650, 800, 950, 1150, 1350 });
 		Add(TEXT("medivac"), TEXT("Medivac on Station"), TEXT("Heals bunker infantry 9 HP/s so they can stim again."), { TEXT("btn-ability-terran-heal") }, { 200 });
 		return Out;
 	}
