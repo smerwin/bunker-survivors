@@ -68,12 +68,20 @@ void ABSGameMode::StartGame(EBSMode Mode)
 	FParse::Value(Cmd, TEXT("BSBot="), Game->Bot);
 	FParse::Value(Cmd, TEXT("BSTelemetry="), Game->TelemetryPath);
 	Game->bStarted = true;
+	Game->BeginOpening();
 	// Weapon-effects test: a pack of zerg right outside the bunker, fireteam with a firebat.
 	if (FParse::Param(Cmd, TEXT("BSFxTest")))
 	{
 		Game->AddInfantry(TEXT("firebat"), true);
 		for (int32 i = 0; i < 8; i++) Game->DebugSpawn(TEXT("zergling"), -2.5f + (i % 4) * 1.7f, 6.5f + (i / 4) * 1.4f);
 		Game->DebugSpawn(TEXT("roach"), 0.5f, 9.f);
+	}
+	// Debug spawns: -BSSpawn=ultralisk,roach places zerg in a row up the lane.
+	FString SpawnList;
+	if (FParse::Value(Cmd, TEXT("BSSpawn="), SpawnList, false))
+	{
+		TArray<FString> Items; SpawnList.ParseIntoArray(Items, TEXT(","));
+		for (int32 i = 0; i < Items.Num(); i++) Game->DebugSpawn(Items[i], (i - (Items.Num() - 1) * 0.5f) * 2.5f, 13.f);
 	}
 	// Debug lineup: -BSShowcase=zergling,bunker:stand,scv:walk spawns models in a row in front of the bunker.
 	FString Showcase;
@@ -89,7 +97,8 @@ void ABSGameMode::StartGame(EBSMode Mode)
 			if (!M) { UE_LOG(LogTemp, Warning, TEXT("Showcase: no model %s"), *Key); continue; }
 			ABSModelActor* A = GetWorld()->SpawnActor<ABSModelActor>();
 			A->SetModel(M);
-			A->SetSim((i - (Items.Num() - 1) * 0.5f) * 3.f, 4.f, 0, -PI / 2);
+			float ShowYaw = -90; FParse::Value(Cmd, TEXT("BSShowcaseYaw="), ShowYaw);
+			A->SetSim((i - (Items.Num() - 1) * 0.5f) * 4.f, 4.f, 0, FMath::DegreesToRadians(ShowYaw));
 			const float Len = Anim.IsEmpty() ? 0.f : A->Play(Anim, true);
 			UE_LOG(LogTemp, Display, TEXT("Showcase %s anim=%s len=%.2f bounds=%s r=%.0f"), *Key, *Anim, Len, *A->Mesh->Bounds.Origin.ToCompactString(), A->Mesh->Bounds.SphereRadius);
 		}
@@ -149,6 +158,15 @@ void ABSGameMode::Tick(float Dt)
 				PC->PlayerCameraManager ? PC->PlayerCameraManager->GetFOVAngle() : -1.f, Cam ? Cam->GetZoom() : -1.f);
 		}
 		if (Game) UE_LOG(LogTemp, Display, TEXT("BSShot %s %s | %s"), *File, *Game->DebugState(), *CamInfo);
+	}
+	// -BSTestAbilities: fire the air strike and the Yamato cannon a few seconds in (effects testing).
+	static bool bAbilitiesFired = false;
+	if (Game && Game->bStarted && !bAbilitiesFired && Game->Time > 5.f && FParse::Param(FCommandLine::Get(), TEXT("BSTestAbilities")))
+	{
+		bAbilitiesFired = true;
+		Game->Minerals += 1000;
+		Game->CallAirStrike();
+		Game->UseYamato();
 	}
 	// Automated test games: stop on game over, or when the bot outlasts the time cap (sim seconds).
 	if (Game && Game->bStarted && !bTestDone)

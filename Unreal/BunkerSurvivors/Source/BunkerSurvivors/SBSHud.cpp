@@ -266,6 +266,9 @@ static TSharedRef<SWidget> PaintedButton(TAttribute<FVector2D> Size, TFunction<v
 		.ButtonStyle(&ClearButton())
 		.ContentPadding(0)
 		.IsFocusable(false)
+		// Inside scroll strips a touch that moves is a swipe, not a purchase.
+		.TouchMethod(EButtonTouchMethod::PreciseTap)
+		.ClickMethod(EButtonClickMethod::PreciseClick)
 		.OnClicked_Lambda([OnClick]() { OnClick(); return FReply::Handled(); })
 		[
 			SNew(SBSPaint).Size(Size)

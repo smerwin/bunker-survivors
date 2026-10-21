@@ -17,6 +17,8 @@ struct FBSZergDef
 	int32 Bounty = 5, Budget = 2, Unlock = 1;
 	float Weight = 1, HitFrac = 0.4f, Height = 1, DeathHold = 3.5f;
 	TArray<FString> AttackAnims;      // candidate sequence names, best first ("" = no attack anim)
+	TArray<FString> Variants;         // alternative models (strains and skins) mixed in for variety
+	FString ImpactFx;                 // SC2 effect played where a melee hit lands
 	EBSProjectile Projectile = EBSProjectile::None;
 	FString SoundAttack, SoundDeath;
 };

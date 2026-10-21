@@ -27,7 +27,7 @@ namespace
 	const TArray<FString> WalkNames = { TEXT("walk"), TEXT("walk 01"), TEXT("fly") };
 	const TArray<FString> StandNames = { TEXT("stand"), TEXT("stand 01") };
 	// The sieged tank's turret rests facing backwards relative to the hull in SC2's model.
-	constexpr float TankTurretOffsetDeg = 180.f;
+	constexpr float TankTurretOffsetDeg = 0.f;
 }
 
 ABSGame::ABSGame()
@@ -137,7 +137,6 @@ void ABSGame::Init(UBSAssets* InAssets, EBSMode InMode)
 	BuildWorld(Mode);
 	Bunker.Actor = AcquireModel(TEXT("bunker"));
 	if (Bunker.Actor) { Bunker.Actor->SetSim(0, 0, 0, PI / 2); Bunker.Actor->SetTeamColor(TerranColor); }
-	for (int32 i = 0; i < 3; i++) AddInfantry(TEXT("marine"), true);
 	AddScv(true);
 	GConfig->GetInt(TEXT("BunkerSurvivors"), *(FString(TEXT("Best.")) + (Mode == EBSMode::Lane ? TEXT("Lane") : TEXT("Arena"))), Best, GGameUserSettingsIni);
 }
@@ -428,16 +427,120 @@ void ABSGame::Toast(const FString& Msg) { LastToast = Msg; ToastSerial++; }
 void ABSGame::Floater(float X, float Y, float Z, const FString& Text, const FLinearColor& C) { Floaters.Add({ FVector(X, Y, Z), Text, C, 0 }); }
 
 // ---- Player actions -------------------------------------------------------------------------------------
-bool ABSGame::AddInfantry(const FString& Type, bool bFree)
+bool ABSGame::AddInfantry(const FString& Type, bool bFree, bool bInstant)
 {
 	const FBSInfantryDef* D = BSDefs::FindInfantry(Type);
 	if (!D) return false;
-	if (Bunker.Units.Num() >= Bunker.Slots) { Toast(TEXT("Bunker is full")); return false; }
+	if (Bunker.Units.Num() + PendingInfantry() >= Bunker.Slots) { Toast(TEXT("Bunker is full")); return false; }
 	if (!bFree) { if (Minerals < D->Cost) { Toast(TEXT("Not enough minerals")); return false; } Minerals -= D->Cost; }
-	Bunker.Units.Add({ D, D->Hp, D->Hp, Rnd(0, 0.3f) });
-	if (Bunker.Actor) Bunker.Actor->Play(TEXT("stand work"), true);
-	if (!bFree) Floater(0, 0, 3, TEXT("+") + D->Name, FLinearColor(0.5f, 0.85f, 1));
+	if (bInstant || !Assets->Model(TEXT("medivac")))
+	{
+		Bunker.Units.Add({ D, D->Hp, D->Hp, Rnd(0, 0.3f) });
+		if (Bunker.Actor) Bunker.Actor->Play(TEXT("stand work"), true);
+		return true;
+	}
+	// Ride along with a medivac that is still on its way in, or call a new one.
+	for (FBSDrop& Dr : Drops) if (Dr.State == FBSDrop::Incoming && Dr.Cargo.Num() < 4) { Dr.Cargo.Add(D); return true; }
+	FBSDrop Dr;
+	Dr.LandX = (FMath::RandBool() ? 1 : -1) * Rnd(2.2f, 2.7f); Dr.LandY = Rnd(2.6f, 3.2f);
+	Dr.Med = FVector(Dr.LandX, Mode == EBSMode::Lane ? -18.f : -30.f, 6.f);
+	Dr.Cargo.Add(D);
+	Dr.Medivac = AcquireModel(TEXT("medivac"));
+	if (Dr.Medivac) { Dr.Medivac->SetTeamColor(TerranColor); Dr.Medivac->SetSim(Dr.Med.X, Dr.Med.Y, Dr.Med.Z, PI / 2); Dr.Medivac->Play(WalkNames, true); }
+	Drops.Add(Dr);
+	Toast(TEXT("Reinforcements inbound"));
 	return true;
+}
+
+int32 ABSGame::PendingInfantry() const
+{
+	int32 N = Walkers.Num();
+	for (const FBSDrop& Dr : Drops) N += Dr.Cargo.Num();
+	return N;
+}
+
+void ABSGame::BeginOpening()
+{
+	// Three marines double-time it into the bunker while the first wave gathers.
+	const FBSInfantryDef* M = BSDefs::FindInfantry(TEXT("marine"));
+	for (int32 i = 0; i < 3; i++)
+	{
+		FBSWalker W; W.Def = M; W.X = -3.3f + i * 0.25f; W.Y = 3.0f + i * 0.9f; W.Yaw = -PI / 4; W.Delay = 0.5f + i * 0.45f;
+		W.Actor = AcquireModel(TEXT("marine"));
+		if (W.Actor) { W.Actor->SetTeamColor(TerranColor); W.Actor->SetSim(W.X, W.Y, 0, W.Yaw); W.Actor->Play(StandNames, true); }
+		if (!W.Actor) { Bunker.Units.Add({ M, M->Hp, M->Hp, Rnd(0, 0.3f) }); continue; }
+		Walkers.Add(W);
+	}
+}
+
+void ABSGame::UpdateReinforcements(float Dt)
+{
+	for (int32 i = Drops.Num() - 1; i >= 0; i--)
+	{
+		FBSDrop& Dr = Drops[i];
+		Dr.T += Dt;
+		if (Dr.State == FBSDrop::Incoming)
+		{
+			const FVector Goal(Dr.LandX, Dr.LandY, 1.6f);
+			const FVector D = Goal - Dr.Med;
+			if (D.Size() > 0.25f && Dr.T < 8) Dr.Med += D.GetSafeNormal() * FMath::Min(D.Size(), 11.f * Dt);
+			else { Dr.State = FBSDrop::Unloading; Dr.T = 0; if (Dr.Medivac) Dr.Medivac->Play(TEXT("stand work start"), false); PlaySound(BSSounds::MedivacUnload, 0.5f); }
+			if (Dr.Medivac) Dr.Medivac->SetSim(Dr.Med.X, Dr.Med.Y, Dr.Med.Z, PI / 2);
+		}
+		else if (Dr.State == FBSDrop::Unloading)
+		{
+			if (Dr.T > 0.45f && Dr.Cargo.Num())
+			{
+				Dr.T = 0.15f;
+				const FBSInfantryDef* D = Dr.Cargo[0];
+				Dr.Cargo.RemoveAt(0);
+				FBSWalker W; W.Def = D; W.X = Dr.LandX + Rnd(-0.3f, 0.3f); W.Y = Dr.LandY + Rnd(-0.2f, 0.2f); W.Yaw = PI / 2;
+				W.Actor = AcquireModel(D->Key);
+				if (W.Actor) { W.Actor->SetTeamColor(TerranColor); W.Actor->SetSim(W.X, W.Y, 0, W.Yaw); }
+				if (W.Actor) Walkers.Add(W);
+				else { Bunker.Units.Add({ D, D->Hp, D->Hp, Rnd(0, 0.3f) }); }
+			}
+			else if (!Dr.Cargo.Num() && Dr.T > 0.5f)
+			{
+				Dr.State = FBSDrop::Leaving; Dr.T = 0;
+				if (Dr.Medivac) { Dr.Medivac->Play(TEXT("stand work end"), false); }
+			}
+		}
+		else
+		{
+			Dr.Med += FVector(0, -11 * Dt, 2.5f * Dt);
+			if (Dr.Medivac) { if (Dr.T > 0.4f) Dr.Medivac->Play(WalkNames, true); Dr.Medivac->SetSim(Dr.Med.X, Dr.Med.Y, Dr.Med.Z, -PI / 2); }
+			if (Dr.T > 2.8f) { ReleaseModel(Dr.Medivac); Drops.RemoveAt(i); }
+		}
+	}
+	// Troops on foot head for the nearest side hatch of the bunker and climb in.
+	for (int32 i = Walkers.Num() - 1; i >= 0; i--)
+	{
+		FBSWalker& W = Walkers[i];
+		if (W.Delay > 0) { W.Delay -= Dt; continue; }
+		const FVector2D Door(W.X < 0 ? -BSDefs::BunkerHalfSize - 0.1f : BSDefs::BunkerHalfSize + 0.1f, 0.4f);
+		const float Dx = Door.X - W.X, Dy = Door.Y - W.Y, Dd = FMath::Sqrt(Dx * Dx + Dy * Dy);
+		if (Dd < 0.3f || Bunker.bDead)
+		{
+			if (!Bunker.bDead && Bunker.Units.Num() < Bunker.Slots)
+			{
+				Bunker.Units.Add({ W.Def, W.Def->Hp, W.Def->Hp, Rnd(0, 0.3f) });
+				if (Bunker.Actor) Bunker.Actor->Play(TEXT("stand work"), true);
+				Floater(0, 0, 3, TEXT("+") + W.Def->Name, FLinearColor(0.5f, 0.85f, 1));
+				PlaySound(BSSounds::MedivacUnload, 0.25f, 0.3f);
+			}
+			ReleaseModel(W.Actor);
+			Walkers.RemoveAt(i);
+			continue;
+		}
+		const float Sp = FMath::Min(Dd, 3.15f * Dt);
+		W.X += Dx / Dd * Sp; W.Y += Dy / Dd * Sp; W.Yaw = FMath::Atan2(Dy, Dx);
+		if (W.Actor)
+		{
+			if (!W.bWalking) { W.bWalking = true; W.Actor->Play(WalkNames, true, 1.2f); }
+			W.Actor->SetSim(W.X, W.Y, 0, W.Yaw);
+		}
+	}
 }
 
 bool ABSGame::AddScv(bool bFree)
@@ -505,17 +608,62 @@ bool ABSGame::UseYamato()
 	}
 	if (!Pick) { Toast(TEXT("No targets")); return false; }
 	Minerals -= BSDefs::YamatoCost; Ab.YamatoCd = BSDefs::YamatoCooldown;
-	const float Cx = Pick->X, Cy = Pick->Y;
-	TArray<TSharedPtr<FBSEnemy>> Hit = EnemiesInRange(Cx, Cy, BSDefs::YamatoRadius, Any);
-	HurtEnemy(Pick, BSDefs::YamatoDmg - BSDefs::YamatoSplash);
-	for (const TSharedPtr<FBSEnemy>& V : Hit) if (V->Alive()) HurtEnemy(V, BSDefs::YamatoSplash);
-	EmitSparks(FVector(Cx, Cy, 7.f), FVector(0, 0, -1), 40, 28.f, 0.06f, FLinearColor(1, 0.9f, 0.7f));
-	EmitExplosion(FVector(Cx, Cy, 0.4f), BSDefs::YamatoRadius, FLinearColor(1, 0.72f, 0.35f), FLinearColor(0.85f, 0.2f, 0.04f), 34);
-	AddFx(EBSFxKind::Blast, FVector(Cx, Cy, 0.05f), FVector::ZeroVector, 0.9f, BSDefs::YamatoRadius * 1.3f, FLinearColor(1, 0.6f, 0.25f), 8);
-	PlaySound(BSSounds::TankHit, 0.9f, 0.1f); PlaySound(BSSounds::Explosion, 0.7f);
-	Shake = 1;
+	FBSProjectile P; P.Kind = EBSProjKind::Yamato; P.bFriendly = true;
+	P.From = FVector(Pick->X * 0.5f, Pick->Y - 16.f, 14.f); P.To = FVector(Pick->X, Pick->Y, 0.6f); P.Dur = 0.55f;
+	P.TargetEnemy = Pick; P.Dmg = BSDefs::YamatoDmg;
+	AddProjectileModel(P, TEXT("projYamato"), TEXT("yamatoMissile"));
+	Projectiles.Add(P);
+	PlaySound(BSSounds::TankFire, 0.8f, 0.1f);
 	Toast(TEXT("Yamato cannon fired"));
 	return true;
+}
+
+void ABSGame::YamatoImpact(const FVector& At, float Dmg)
+{
+	auto Any = [](const FBSEnemy& X) { return X.Alive(); };
+	TArray<TSharedPtr<FBSEnemy>> Hit = EnemiesInRange(At.X, At.Y, BSDefs::YamatoRadius, Any);
+	if (Hit.Num()) HurtEnemy(Hit[0], Dmg - BSDefs::YamatoSplash);
+	for (const TSharedPtr<FBSEnemy>& V : Hit) if (V->Alive()) HurtEnemy(V, BSDefs::YamatoSplash);
+	if (!PlayFx(TEXT("yamatoImpact"), FVector(At.X, At.Y, 0.3f), 0, 1.2f))
+	{
+		EmitExplosion(FVector(At.X, At.Y, 0.4f), BSDefs::YamatoRadius, FLinearColor(1, 0.72f, 0.35f), FLinearColor(0.85f, 0.2f, 0.04f), 34);
+		AddFx(EBSFxKind::Blast, FVector(At.X, At.Y, 0.05f), FVector::ZeroVector, 0.9f, BSDefs::YamatoRadius * 1.3f, FLinearColor(1, 0.6f, 0.25f), 8);
+	}
+	PlaySound(BSSounds::TankHit, 0.9f, 0.1f); PlaySound(BSSounds::Explosion, 0.7f);
+	Shake = 1;
+}
+
+void ABSGame::AddProjectileModel(FBSProjectile& P, const TCHAR* Model, const TCHAR* Trail, float TrailScale)
+{
+	const float Yaw = FMath::Atan2(P.To.Y - P.From.Y, P.To.X - P.From.X);
+	if (Model && Assets->Model(Model))
+	{
+		P.Model = AcquireModel(Model);
+		if (P.Model) { P.Model->SetSim(P.From.X, P.From.Y, P.From.Z, Yaw); P.Model->Play(StandNames, true); }
+	}
+	if (Trail) P.Trail = PlayFx(Trail, P.From, Yaw, TrailScale);
+}
+
+// SC2's marine muzzle flash is a small animated mesh (the particles only add sparks).
+void ABSGame::MuzzleMesh(const FVector& At, float Yaw, float Delay)
+{
+	if (!Assets->Model(TEXT("fxMuzzle"))) return;
+	FBSFlash F; F.A = AcquireModel(TEXT("fxMuzzle")); F.P = At; F.Yaw = Yaw; F.Delay = Delay; F.Life = 0.09f;
+	if (!F.A) return;
+	F.A->SetSim(0, 0, -1000, 0);
+	Flashes.Add(F);
+}
+
+void ABSGame::LaunchGlaive(const FVector& From, const FBSTarget& To, float Dmg, int32 Bounces, const TArray<FBSTarget>& Hit, const FBSZergDef* D)
+{
+	FBSProjectile P;
+	P.Kind = EBSProjKind::Glaive; P.bFriendly = false; P.ZDef = D; P.TargetDef = To;
+	P.From = From; P.To = FVector(To.X, To.Y, 1.0f);
+	P.Dur = FMath::Max(0.12f, FVector::Dist(P.From, P.To) / 14.f);
+	P.Dmg = Dmg; P.Bounces = Bounces; P.AlreadyHit = Hit; P.ImpactFx = TEXT("mutaliskImpact");
+	AddProjectileModel(P, TEXT("projMutalisk"), TEXT("mutaliskMissile"));
+	if (!P.Model) AddProjectileVisual(P, FLinearColor(0.6f, 1, 0.3f), 0.25f);
+	Projectiles.Add(P);
 }
 
 bool ABSGame::UseStim()
@@ -669,7 +817,19 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 	E->Id = NextId++; E->Def = D; E->X = X; E->Y = Y; E->Z = D->bFlying ? D->Fly : 0; E->Yaw = FMath::Atan2(-Y, -X);
 	E->Hp = E->MaxHp = D->Hp * (1 + (bHard ? 0.025f : 0.02f) * FMath::Max(0, Wave - 10));   // late waves get tougher
 	E->Cd = Rnd(0, D->Cd); E->Radius = D->Radius; E->Life = D->Life;
-	E->Actor = AcquireModel(D->Model);
+	// A strain or skin variant now and then, for variety (only models with the animations the game needs).
+	E->ModelKey = D->Model; E->DeathKey = D->Death;
+	if (D->Variants.Num() && FMath::FRand() < 0.45f)
+	{
+		const FString& V = D->Variants[FMath::RandRange(0, D->Variants.Num() - 1)];
+		const FBSModel* VM = Assets->Model(V);
+		if (VM && VM->Find(WalkNames) && (D->AttackAnims.Num() == 0 || VM->Find(D->AttackAnims)))
+		{
+			E->ModelKey = V;
+			if (Assets->Model(V + TEXT("Death"))) E->DeathKey = V + TEXT("Death");
+		}
+	}
+	E->Actor = AcquireModel(E->ModelKey);
 	if (E->Actor)
 	{
 		E->Actor->SetScale(D->Scale);
@@ -783,14 +943,14 @@ void ABSGame::KillEnemy(const TSharedPtr<FBSEnemy>& E, bool bSuicide)
 	if (D->bSuicide && !bSuicide) BanelingBlast(*E, true);
 	Enemies.Remove(E);
 	ReleaseModel(E->Actor); E->Actor = nullptr;
-	Corpse(D->Death, E->X, E->Y, E->Z, E->Yaw, D->DeathHold, D->Scale);
+	Corpse(E->DeathKey.IsEmpty() ? D->Death : E->DeathKey, E->X, E->Y, E->Z, E->Yaw, D->DeathHold, D->Scale);
 }
 
 void ABSGame::BanelingBlast(const FBSEnemy& E, bool bFromDeath)
 {
 	const FBSZergDef* D = E.Def;
-	AddFx(EBSFxKind::Blast, FVector(E.X, E.Y, 0.05f), FVector::ZeroVector, 0.55f, D->Splash, FLinearColor(0.45f, 1.0f, 0.15f), 5);
-	EmitExplosion(FVector(E.X, E.Y, 0.3f), D->Splash * 0.8f, FLinearColor(0.75f, 1.f, 0.4f), FLinearColor(0.2f, 0.55f, 0.05f), 18);
+	AddFx(EBSFxKind::Blast, FVector(E.X, E.Y, 0.05f), FVector::ZeroVector, 0.45f, D->Splash, FLinearColor(0.45f, 1.0f, 0.15f), 3);
+	if (!Assets->Fx(TEXT("banelingDeath"))) EmitExplosion(FVector(E.X, E.Y, 0.3f), D->Splash * 0.8f, FLinearColor(0.75f, 1.f, 0.4f), FLinearColor(0.2f, 0.55f, 0.05f), 18);
 	BuildTargets();
 	for (const FBSTarget& T : Targets)
 	{
@@ -819,6 +979,7 @@ TArray<TSharedPtr<FBSEnemy>> ABSGame::EnemiesInRange(float X, float Y, float Ran
 
 void ABSGame::Corpse(const FString& Key, float X, float Y, float Z, float Yaw, float Hold, float Scale, bool bTerran)
 {
+	PlayFx(Key, FVector(X, Y, FMath::Max(Z, 0.f)), Yaw, Scale);
 	ABSModelActor* A = AcquireModel(Key);
 	if (!A) return;
 	// Corpses are darkened and kept low so living units always read on top of the carnage.
@@ -883,6 +1044,7 @@ void ABSGame::Step(float Dt)
 	UpdateScvs(Dt);
 	UpdateBanshees(Dt);
 	UpdateProjectiles(Dt);
+	UpdateReinforcements(Dt);
 	if (bAutoPlay) { AutoT -= Dt; if (AutoT <= 0) { AutoT = 0.8f; AutoPlay(); } }
 	Tele.PeakAlive = FMath::Max(Tele.PeakAlive, Enemies.Num());
 	GamePeakAlive = FMath::Max(GamePeakAlive, Enemies.Num());
@@ -970,10 +1132,10 @@ void ABSGame::UpdateEnemies(float Dt)
 					P.Dmg = D->Dmg;
 					switch (D->Projectile)
 					{
-					case EBSProjectile::Acid: P.Kind = EBSProjKind::Acid; AddProjectileVisual(P, FLinearColor(0.5f, 1, 0.15f), 0.35f); P.Arc = 1.5f; break;
-					case EBSProjectile::Spine: P.Kind = EBSProjKind::Spine; AddProjectileVisual(P, FLinearColor(0.8f, 1, 0.5f), 0.15f); break;
-					case EBSProjectile::Bullet: P.Kind = EBSProjKind::Bullet; AddProjectileVisual(P, FLinearColor(1, 0.85f, 0.5f), 0.08f); break;
-					case EBSProjectile::Glaive: P.Kind = EBSProjKind::Glaive; AddProjectileVisual(P, FLinearColor(0.6f, 1, 0.3f), 0.25f); break;
+					case EBSProjectile::Acid: P.Kind = EBSProjKind::Acid; P.Arc = 1.5f; P.ImpactFx = TEXT("roachImpact"); AddProjectileModel(P, nullptr, TEXT("roachMissile"), 0.7f); if (!P.Trail) AddProjectileVisual(P, FLinearColor(0.5f, 1, 0.15f), 0.35f); break;
+					case EBSProjectile::Spine: P.Kind = EBSProjKind::Spine; AddProjectileModel(P, TEXT("projHydralisk"), nullptr); if (!P.Model) AddProjectileVisual(P, FLinearColor(0.8f, 1, 0.5f), 0.15f); break;
+					case EBSProjectile::Bullet: P.Kind = EBSProjKind::Bullet; P.ImpactFx = TEXT("marineImpact"); if (!PlayFx(TEXT("marineLaunch"), P.From, FMath::Atan2(T.Y - E.Y, T.X - E.X))) AddProjectileVisual(P, FLinearColor(1, 0.85f, 0.5f), 0.08f); break;
+					case EBSProjectile::Glaive: P.Kind = EBSProjKind::Glaive; P.Bounces = 3; P.ImpactFx = TEXT("mutaliskImpact"); AddProjectileModel(P, TEXT("projMutalisk"), TEXT("mutaliskMissile")); if (!P.Model) AddProjectileVisual(P, FLinearColor(0.6f, 1, 0.3f), 0.25f); break;
 					case EBSProjectile::Brood: P.Kind = EBSProjKind::Brood; AddProjectileVisual(P, FLinearColor(0.9f, 0.6f, 0.3f), 0.4f); P.Arc = 3; break;
 					case EBSProjectile::Spines: P.Kind = EBSProjKind::Spines; break;
 					default: break;
@@ -992,6 +1154,11 @@ void ABSGame::UpdateEnemies(float Dt)
 					if (Tg.bLight) Dmg += D->DmgLight;
 					if (Tg.bArmored) Dmg += D->DmgArmored;
 					DamageDefender(Tg, Dmg);
+					if (!D->ImpactFx.IsEmpty())
+					{
+						const float A = FMath::Atan2(E.Y - Tg.Y, E.X - Tg.X);
+						PlayFx(D->ImpactFx, FVector(Tg.X + FMath::Cos(A) * Tg.Radius, Tg.Y + FMath::Sin(A) * Tg.Radius, 0.5f), A);
+					}
 					if (D->Cleave > 0)
 						for (const FBSTarget& O : Targets)
 							if (!O.Same(Tg) && FMath::Sqrt(Dist2(Tg.X, Tg.Y, O.X, O.Y)) - O.Radius < D->Cleave) DamageDefender(O, Dmg * 0.5f);
@@ -1007,7 +1174,11 @@ void ABSGame::UpdateEnemies(float Dt)
 			const float Mx = Nx * Sp * Dt + E.Sx * 0.8f, My = Ny * Sp * Dt + E.Sy * 0.8f;
 			E.X += Mx; E.Y += My;
 			if (Mode == EBSMode::Lane) E.X = FMath::Clamp(E.X, -5.2f, 5.2f);
-			E.Yaw = FMath::Atan2(My, Mx);
+			// Face the way it is heading, not the way the crowd shoves it (big units were turning round and backing up),
+			// and turn at a creature's pace instead of snapping.
+			const float WantYaw = FMath::Atan2(Ny, Nx);
+			const float TurnRate = (D->Radius >= 0.9f ? 3.f : 8.f) * Dt;
+			E.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(E.Yaw, WantYaw), -TurnRate, TurnRate);
 		}
 	}
 }
@@ -1046,7 +1217,15 @@ void ABSGame::UpdateBunker(float Dt)
 			HurtEnemy(Target, DmgBase);
 			// Slight spread so a fireteam's volley fans out from the bunker's firing slits.
 			const FVector Slit = Muzzle + FVector(-FMath::Sin(Ang), FMath::Cos(Ang), 0) * Rnd(-0.7f, 0.7f);
-			EmitGunfire(Slit, Hit);
+			const float Aim = FMath::Atan2(Hit.Y - Slit.Y, Hit.X - Slit.X);
+			bool bFx = true;
+			for (int32 r = 0; r < 3 && bFx; r++)
+			{
+				bFx = PlayFx(TEXT("marineLaunch"), Slit, Aim, 1.4f, r * 0.08f) != 0;
+				MuzzleMesh(Slit, Aim, r * 0.08f);
+				PlayFx(TEXT("marineImpact"), Hit + FVector(Rnd(-0.2f, 0.2f), Rnd(-0.2f, 0.2f), Rnd(-0.15f, 0.25f)), Aim + PI, 1.f, r * 0.08f + 0.03f);
+			}
+			if (!bFx) EmitGunfire(Slit, Hit);
 			MuzzleFlash = 1;
 			PlaySound(BSSounds::MarineFire, 0.3f, 0.09f);
 		}
@@ -1059,9 +1238,11 @@ void ABSGame::UpdateBunker(float Dt)
 		}
 		else
 		{
-			FBSProjectile P; P.Kind = EBSProjKind::Grenade; P.bFriendly = true; P.From = Muzzle; P.To = Hit; P.Dur = 0.25f;
-			P.TargetEnemy = Target; P.Dmg = DmgBase; P.IDef = D;
-			AddProjectileVisual(P, FLinearColor(0.5f, 0.8f, 1), 0.18f);
+			FBSProjectile P; P.Kind = EBSProjKind::Grenade; P.bFriendly = true; P.From = Muzzle; P.To = Hit; P.Dur = 0.3f; P.Arc = 0.6f;
+			P.TargetEnemy = Target; P.Dmg = DmgBase; P.IDef = D; P.ImpactFx = TEXT("marauderImpact");
+			PlayFx(TEXT("marauderLaunch"), Muzzle, Ang);
+			AddProjectileModel(P, TEXT("projMarauder"), TEXT("marauderMissile"));
+			if (!P.Model) AddProjectileVisual(P, FLinearColor(0.5f, 0.8f, 1), 0.18f);
 			Projectiles.Add(P);
 			PlaySound(BSSounds::MarauderFire, 0.4f, 0.2f);
 		}
@@ -1149,9 +1330,10 @@ void ABSGame::UpdateTanks(float Dt)
 			P.From = FVector(K.X + FMath::Cos(Ang) * 1.4f, K.Y + FMath::Sin(Ang) * 1.4f, 1.3f);
 			P.To = FVector(Target->X, Target->Y, 0.1f); P.Dur = 0.55f; P.Arc = 4;
 			P.Dmg = BSDefs::TankDmg + 5 * Up.Vehicle; P.DmgArmored = BSDefs::TankDmgArmored + 3 * Up.Vehicle;
-			AddProjectileVisual(P, FLinearColor(1, 0.75f, 0.35f), 0.3f);
+			P.ImpactFx = TEXT("tankImpact");
+			if (!PlayFx(TEXT("tankLaunch"), P.From, Ang)) { AddProjectileVisual(P, FLinearColor(1, 0.75f, 0.35f), 0.3f); AddFx(EBSFxKind::Flash, P.From, P.From, 0.14f, 0.7f, FLinearColor(1, 0.8f, 0.45f), 14); }
+			else P.Dur = 0.35f;
 			Projectiles.Add(P);
-			AddFx(EBSFxKind::Flash, P.From, P.From, 0.14f, 0.7f, FLinearColor(1, 0.8f, 0.45f), 14);
 			PlaySound(BSSounds::TankFire, 0.7f, 0.2f);
 			Shake = FMath::Min(1.f, Shake + 0.15f);
 		}
@@ -1160,14 +1342,26 @@ void ABSGame::UpdateTanks(float Dt)
 
 void ABSGame::UpdateScvs(float Dt)
 {
+	// Repair jobs, most urgent first: the bunker gets a head start, and when it is in real danger everyone works on it.
+	struct FJob { float X, Y, R, Cost; float* Hp; float Max, Need; };
+	TArray<FJob> Jobs;
+	const float BunkerFrac = Bunker.MaxHp > 0 ? Bunker.Hp / Bunker.MaxHp : 1;
+	if (!Bunker.bDead && Bunker.Hp < Bunker.MaxHp - 1) Jobs.Add({ 0, 0, BSDefs::BunkerHalfSize, 0.25f, &Bunker.Hp, Bunker.MaxHp, BunkerFrac - 0.2f });
+	if (BunkerFrac > 0.4f)
+		for (const TSharedPtr<FBSTank>& K : Tanks)
+			if (K->State == FBSTank::Ready && !K->bDead && K->Hp < K->MaxHp - 1) Jobs.Add({ K->X, K->Y, BSDefs::TankRadius, 0.4f, &K->Hp, K->MaxHp, K->Hp / K->MaxHp });
+	Jobs.Sort([](const FJob& A, const FJob& B) { return A.Need < B.Need; });
+	int32 ScvIndex = 0;
 	for (const TSharedPtr<FBSScv>& SP : Scvs)
 	{
 		FBSScv& S = *SP;
 		float JobX = 0, JobY = 0, JobR = 0, Cost = 0;
 		float* JobHp = nullptr; float JobMax = 0;
-		if (!Bunker.bDead && Bunker.Hp < Bunker.MaxHp - 1) { JobR = BSDefs::BunkerHalfSize; JobHp = &Bunker.Hp; JobMax = Bunker.MaxHp; Cost = 0.25f; }
-		else for (const TSharedPtr<FBSTank>& K : Tanks)
-			if (K->State == FBSTank::Ready && K->Hp < K->MaxHp - 1) { JobX = K->X; JobY = K->Y; JobR = BSDefs::TankRadius; JobHp = &K->Hp; JobMax = K->MaxHp; Cost = 0.4f; break; }
+		if (Jobs.Num())
+		{
+			const FJob& J = Jobs[ScvIndex++ % Jobs.Num()];
+			JobX = J.X; JobY = J.Y; JobR = J.R; Cost = J.Cost; JobHp = J.Hp; JobMax = J.Max;
+		}
 		float Gx, Gy, Stop;
 		if (JobHp)
 		{
@@ -1214,8 +1408,9 @@ void ABSGame::UpdateBanshees(float Dt)
 		{
 			FBSProjectile P; P.Kind = EBSProjKind::Rocket; P.bFriendly = true;
 			P.From = FVector(B.X + (k ? 0.4f : -0.4f), B.Y, B.Z - 0.3f);
-			P.To = FVector(L[0]->X, L[0]->Y, 0.3f); P.Dur = 0.3f; P.Dmg = BSDefs::BansheeDmg; P.TargetEnemy = L[0];
-			AddProjectileVisual(P, FLinearColor(1, 0.7f, 0.3f), 0.15f);
+			P.To = FVector(L[0]->X, L[0]->Y, 0.3f); P.Dur = 0.35f; P.Dmg = BSDefs::BansheeDmg; P.TargetEnemy = L[0]; P.ImpactFx = TEXT("bansheeImpact");
+			AddProjectileModel(P, TEXT("projBanshee"), TEXT("bansheeMissile"));
+			if (!P.Model) AddProjectileVisual(P, FLinearColor(1, 0.7f, 0.3f), 0.15f);
 			Projectiles.Add(P);
 		}
 		if (B.Actor) B.Actor->Play(TEXT("attack"), false);
@@ -1237,10 +1432,23 @@ void ABSGame::UpdateProjectiles(float Dt)
 			Pos.Z += FMath::Sin(K * PI) * P.Arc;
 			P.Visual->SetWorldLocation(W(Pos));
 		}
+		if (P.Model || P.Trail)
+		{
+			const float K = FMath::Clamp(P.T / P.Dur, 0.f, 1.f);
+			FVector Pos = FMath::Lerp(P.From, P.To, K);
+			Pos.Z += FMath::Sin(K * PI) * P.Arc;
+			const float Yaw = FMath::Atan2(P.To.Y - P.From.Y, P.To.X - P.From.X);
+			if (P.Model) P.Model->SetSim(Pos.X, Pos.Y, Pos.Z, Yaw);
+			if (P.Trail) MoveFx(P.Trail, Pos, Yaw);
+		}
 		if (P.T < P.Dur) continue;
 		FBSProjectile Done = P;
 		Projectiles.RemoveAt(i);
 		ReleaseMesh(Done.Visual);
+		if (Done.Model) ReleaseModel(Done.Model);
+		if (Done.Trail) StopFx(Done.Trail);
+		const float ImpactYaw = FMath::Atan2(Done.From.Y - Done.To.Y, Done.From.X - Done.To.X);
+		const bool bImpactFx = !Done.ImpactFx.IsEmpty() && PlayFx(Done.ImpactFx, Done.To, ImpactYaw) != 0;
 		if (Done.bFriendly)
 		{
 			if (Done.Kind == EBSProjKind::Shell)
@@ -1251,8 +1459,11 @@ void ABSGame::UpdateProjectiles(float Dt)
 					const float Mult = Dd <= BSDefs::TankSplash1 ? 1 : Dd <= BSDefs::TankSplash2 ? 0.5f : Dd <= BSDefs::TankSplash3 ? 0.25f : 0;
 					if (Mult > 0) HurtEnemy(E, (Done.Dmg + (E->Def->bArmored ? Done.DmgArmored : 0)) * Mult);
 				}
-				AddFx(EBSFxKind::Blast, FVector(Done.To.X, Done.To.Y, 0.05f), FVector::ZeroVector, 0.6f, 1.8f, FLinearColor(1, 0.55f, 0.2f), 6);
-				EmitExplosion(FVector(Done.To.X, Done.To.Y, 0.3f), 1.4f, FLinearColor(1, 0.62f, 0.25f), FLinearColor(0.75f, 0.18f, 0.03f), 14);
+				if (!bImpactFx)
+				{
+					AddFx(EBSFxKind::Blast, FVector(Done.To.X, Done.To.Y, 0.05f), FVector::ZeroVector, 0.6f, 1.8f, FLinearColor(1, 0.55f, 0.2f), 6);
+					EmitExplosion(FVector(Done.To.X, Done.To.Y, 0.3f), 1.4f, FLinearColor(1, 0.62f, 0.25f), FLinearColor(0.75f, 0.18f, 0.03f), 14);
+				}
 				PlaySound(BSSounds::TankHit, 0.6f, 0.1f);
 				Shake = FMath::Min(1.f, Shake + 0.1f);
 			}
@@ -1263,15 +1474,19 @@ void ABSGame::UpdateProjectiles(float Dt)
 					TE->SlowUntil = Time + Done.IDef->Slow; TE->Anim.Reset();
 					HurtEnemy(TE, Done.Dmg + (TE->Def->bArmored ? Done.IDef->DmgArmored : 0));
 				}
-				AddFx(EBSFxKind::Blast, FVector(Done.To.X, Done.To.Y, 0.05f), FVector::ZeroVector, 0.3f, 0.6f, FLinearColor(0.45f, 0.75f, 1), 6);
+				if (!bImpactFx) AddFx(EBSFxKind::Blast, FVector(Done.To.X, Done.To.Y, 0.05f), FVector::ZeroVector, 0.3f, 0.6f, FLinearColor(0.45f, 0.75f, 1), 6);
 			}
 			else if (Done.Kind == EBSProjKind::Rocket)
 			{
 				if (TSharedPtr<FBSEnemy> TE = Done.TargetEnemy.Pin()) HurtEnemy(TE, Done.Dmg);
-				AddFx(EBSFxKind::Blast, FVector(Done.To.X, Done.To.Y, 0.05f), FVector::ZeroVector, 0.35f, 0.8f, FLinearColor(1, 0.7f, 0.35f), 6);
-				AddFx(EBSFxKind::Flash, Done.To, Done.To, 0.15f, 0.5f, FLinearColor(1, 0.8f, 0.5f), 10);
+				if (!bImpactFx)
+				{
+					AddFx(EBSFxKind::Blast, FVector(Done.To.X, Done.To.Y, 0.05f), FVector::ZeroVector, 0.35f, 0.8f, FLinearColor(1, 0.7f, 0.35f), 6);
+					AddFx(EBSFxKind::Flash, Done.To, Done.To, 0.15f, 0.5f, FLinearColor(1, 0.8f, 0.5f), 10);
+				}
 				PlaySound(BSSounds::BansheeHit, 0.35f, 0.1f);
 			}
+			else if (Done.Kind == EBSProjKind::Yamato) YamatoImpact(Done.To, Done.Dmg);
 		}
 		else
 		{
@@ -1296,13 +1511,24 @@ void ABSGame::UpdateProjectiles(float Dt)
 			}
 			else
 			{
+				if (Done.Kind == EBSProjKind::Glaive) Dmg = Done.Dmg;
 				DamageDefender(Tg, Dmg);
-				if (D->Bounce > 0)
+				if (Done.Kind == EBSProjKind::Glaive && Done.Bounces > 0)
+				{
+					// The glaive ricochets to the nearest defender it has not hit yet, losing a third of its punch each time.
+					TArray<FBSTarget> Hit = Done.AlreadyHit; Hit.Add(Tg);
+					const FBSTarget* Next = nullptr; float Nearest = 4.5f;
 					for (const FBSTarget& O : Targets)
-						if (!O.Same(Tg) && FMath::Sqrt(Dist2(Tg.X, Tg.Y, O.X, O.Y)) < 3.5f) { DamageDefender(O, D->Bounce); break; }
+					{
+						if (!O.IsValid(Bunker) || Hit.ContainsByPredicate([&O](const FBSTarget& H) { return H.Same(O); })) continue;
+						const float Dd = FMath::Sqrt(Dist2(Tg.X, Tg.Y, O.X, O.Y)) - O.Radius;
+						if (Dd < Nearest) { Nearest = Dd; Next = &O; }
+					}
+					if (Next) LaunchGlaive(FVector(Tg.X, Tg.Y, 1.0f), *Next, Dmg * 0.67f, Done.Bounces - 1, Hit, D);
+				}
 				if (D->bBroodlings && Enemies.Num() < 80)
 					for (int32 k = 0; k < 2; k++) { const FVector2D At(Tg.X + Rnd(-1, 1), Tg.Y + Rnd(-1, 1) + 1.5f); SpawnEnemy(TEXT("broodling"), 0, &At); }
-				AddFx(EBSFxKind::Blast, FVector(Tg.X, Tg.Y, 0.05f), FVector::ZeroVector, 0.25f, 0.5f,
+				if (!bImpactFx) AddFx(EBSFxKind::Blast, FVector(Tg.X, Tg.Y, 0.05f), FVector::ZeroVector, 0.25f, 0.5f,
 					Done.Kind == EBSProjKind::Acid ? FLinearColor(0.55f, 1, 0.2f) : FLinearColor(1, 0.7f, 0.5f), 5);
 			}
 		}
@@ -1311,6 +1537,14 @@ void ABSGame::UpdateProjectiles(float Dt)
 
 void ABSGame::UpdateVisuals(float Dt)
 {
+	for (int32 i = Flashes.Num() - 1; i >= 0; i--)
+	{
+		FBSFlash& F = Flashes[i];
+		if (F.Delay > 0) { F.Delay -= Dt; continue; }
+		if (!F.bShown) { F.bShown = true; F.A->SetSim(F.P.X, F.P.Y, F.P.Z, F.Yaw); F.A->PlayRandomWithPrefix(TEXT("stand"), false); }
+		F.Life -= Dt;
+		if (F.Life <= 0) { ReleaseModel(F.A); Flashes.RemoveAtSwap(i); }
+	}
 	// Enemies: position, facing, hit flash.
 	for (const TSharedPtr<FBSEnemy>& E : Enemies)
 	{
@@ -1318,11 +1552,12 @@ void ABSGame::UpdateVisuals(float Dt)
 		if (E->Actor) { E->Actor->SetSim(E->X, E->Y, E->Z, E->Yaw); E->Actor->SetHitFlash(E->Flash * 0.22f); }
 	}
 	Bunker.Flash = FMath::Max(0.f, Bunker.Flash - Dt * 4);
-	if (Bunker.Actor) Bunker.Actor->SetHitFlash(Bunker.Flash);
-	for (auto& K : Tanks) { K->Flash = FMath::Max(0.f, K->Flash - Dt * 4); if (K->Actor) K->Actor->SetHitFlash(K->Flash); }
-	for (auto& S : Scvs) { S->Flash = FMath::Max(0.f, S->Flash - Dt * 4); if (S->Actor) S->Actor->SetHitFlash(S->Flash); }
+	if (Bunker.Actor) Bunker.Actor->SetHitFlash(Bunker.Flash * 0.22f);   // a hint of white: constant zergling hits used to white it out
+	for (auto& K : Tanks) { K->Flash = FMath::Max(0.f, K->Flash - Dt * 4); if (K->Actor) K->Actor->SetHitFlash(K->Flash * 0.3f); }
+	for (auto& S : Scvs) { S->Flash = FMath::Max(0.f, S->Flash - Dt * 4); if (S->Actor) S->Actor->SetHitFlash(S->Flash * 0.3f); }
 
 	UpdateParticles(Dt);
+	UpdateFx(Dt);
 	MuzzleFlash = FMath::Max(0.f, MuzzleFlash - Dt * 14);
 	if (MuzzleLight)
 	{
@@ -1426,7 +1661,7 @@ void ABSGame::AutoPlayImpl()
 	if (Up.bStim && Ab.StimCd <= 0 && Enemies.Num() > 6) UseStim();
 	if (Enemies.Num() > 14 && Ab.StrikeCd <= 0 && Minerals > 260) CallAirStrike();
 	if (Enemies.Num() > 18 && Ab.YamatoCd <= 0 && Minerals > BSDefs::YamatoCost + 100) UseYamato();
-	const int32 N = Bunker.Units.Num();
+	const int32 N = Bunker.Units.Num() + PendingInfantry();   // troops on their way count too
 	if (Bot == TEXT("marines"))
 	{
 		// Bio only: marines, stim, weapons, a bigger bunker, medivac and plating. No tanks, no SCVs.

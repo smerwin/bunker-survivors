@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "BSTypes.h"
+#include "BSFx.h"
 #include "BSGame.generated.h"
 
 class ABSModelActor;
@@ -76,14 +77,14 @@ struct FBSEnemy
 	float Retarget = 0, Cd = 0, HitAt = -1, SlowUntil = 0, Radius = 0, Life = 0, BurrowT = 0, Sx = 0, Sy = 0, Flash = 0;
 	bool bPendingHit = false, bBurrowed = false, bBurrowing = false, bAttacking = false;
 	FBSTarget Target, HitTarget;
-	FString Anim;
+	FString Anim, ModelKey, DeathKey;
 	ABSModelActor* Actor = nullptr;
 	bool Alive() const { return Hp > 0; }
 };
 
 struct FBSBanshee { float X = 0, Y = 0, Z = 0, Yaw = 0, Cd = 0; bool bReturning = false; ABSModelActor* Actor = nullptr; };
 
-enum class EBSProjKind : uint8 { Shell, Grenade, Rocket, Acid, Spine, Bullet, Glaive, Spines, Brood };
+enum class EBSProjKind : uint8 { Shell, Grenade, Rocket, Acid, Spine, Bullet, Glaive, Spines, Brood, Yamato };
 
 struct FBSProjectile
 {
@@ -98,6 +99,22 @@ struct FBSProjectile
 	const FBSInfantryDef* IDef = nullptr;
 	UStaticMeshComponent* Visual = nullptr;
 	UMaterialInstanceDynamic* Mid = nullptr;
+	ABSModelActor* Model = nullptr;           // SC2 projectile mesh
+	int32 Trail = 0;                          // SC2 trail effect handle
+	FString ImpactFx;
+	int32 Bounces = 0;                        // mutalisk glaive: remaining bounces
+	TArray<FBSTarget> AlreadyHit;
+};
+
+// Reinforcements: a medivac flies in, lands behind the bunker, and the troops walk inside.
+struct FBSWalker { const FBSInfantryDef* Def = nullptr; float X = 0, Y = 0, Yaw = 0, Delay = 0; ABSModelActor* Actor = nullptr; bool bWalking = false; };
+struct FBSDrop
+{
+	enum EState : uint8 { Incoming, Unloading, Leaving } State = Incoming;
+	FVector Med = FVector::ZeroVector;
+	float T = 0, LandX = 0, LandY = 0;
+	TArray<const FBSInfantryDef*> Cargo;
+	ABSModelActor* Medivac = nullptr;
 };
 
 enum class EBSFxKind : uint8 { Tracer, Flash, Blast, Flame, Spines };
@@ -122,6 +139,7 @@ struct FBSParticle
 	bool bFlame = false;
 };
 
+struct FBSFlash { ABSModelActor* A = nullptr; FVector P = FVector::ZeroVector; float Yaw = 0, Delay = 0, Life = 0.1f; bool bShown = false; };
 struct FBSFloater { FVector Pos; FString Text; FLinearColor Color; float T = 0; };
 struct FBSCorpse { ABSModelActor* Actor = nullptr; float T = 0, Hold = 3.5f, X = 0, Y = 0, Z = 0, Yaw = 0; bool bSink = true; };
 struct FBSSpawn { float T = 0; FString Type; float Ang = 0; };
@@ -140,7 +158,9 @@ public:
 	void BuildWorld(EBSMode InMode);
 
 	// Player actions. Each returns true on success; failures post a toast.
-	bool AddInfantry(const FString& Type, bool bFree = false);
+	bool AddInfantry(const FString& Type, bool bFree = false, bool bInstant = false);
+	void BeginOpening();                 // the starting fireteam walks into the bunker
+	int32 PendingInfantry() const;
 	bool AddScv(bool bFree = false);
 	bool DropTank();
 	bool CallAirStrike();
@@ -187,6 +207,11 @@ public:
 	FString DebugState() const;
 	void DebugSpawn(const FString& Type, float X, float Y) { const FVector2D At(X, Y); SpawnEnemy(Type, 0, &At); }
 
+	// StarCraft II particle effects (BSFx.cpp). Pos in sim metres, Yaw is the sim facing. Returns a handle (0 if missing).
+	int32 PlayFx(const FString& Key, const FVector& Pos, float Yaw = 0, float Scale = 1, float Delay = 0);
+	void MoveFx(int32 Handle, const FVector& Pos, float Yaw);
+	void StopFx(int32 Handle);
+
 private:
 	void Step(float Dt);
 	void StartWave();
@@ -208,6 +233,12 @@ private:
 	void UpdateScvs(float Dt);
 	void UpdateBanshees(float Dt);
 	void UpdateProjectiles(float Dt);
+	void UpdateReinforcements(float Dt);
+	void LaunchGlaive(const FVector& From, const FBSTarget& To, float Dmg, int32 Bounces, const TArray<FBSTarget>& Hit, const FBSZergDef* D);
+	void AddProjectileModel(FBSProjectile& P, const TCHAR* Model, const TCHAR* Trail, float TrailScale = 1.f);
+	void MuzzleMesh(const FVector& At, float Yaw, float Delay);
+	TArray<FBSFlash> Flashes;
+	void YamatoImpact(const FVector& At, float Dmg);
 	void UpdateVisuals(float Dt);
 	void AutoPlay();
 	void AutoPlayImpl();
@@ -229,6 +260,14 @@ private:
 	void EmitSparks(const FVector& At, const FVector& Dir, int32 Count, float Speed, float Spread, const FLinearColor& C, float Delay = 0);
 	void UpdateParticles(float Dt);
 	TArray<FBSParticle> Particles;
+	void UpdateFx(float Dt);
+	int32 FxBatch(const FString& Texture, int32 Blend);
+	void SpawnSprite(int32 Handle, FBSFxInstance& I, int32 Emitter, const FBSFxEmitter& E, float T);
+	TMap<int32, FBSFxInstance> FxInstances;
+	TArray<FBSSprite> FxSprites;
+	int32 NextFx = 1;
+	UPROPERTY() TArray<TObjectPtr<class UInstancedStaticMeshComponent>> FxBatches;
+	TMap<FString, int32> FxBatchIndex;
 	UPROPERTY() TObjectPtr<class UInstancedStaticMeshComponent> Sprites;
 
 	UPROPERTY() TObjectPtr<UBSAssets> Assets;
@@ -242,6 +281,8 @@ private:
 
 	TArray<FBSTarget> Targets;
 	TArray<FBSProjectile> Projectiles;
+	TArray<FBSWalker> Walkers;
+	TArray<FBSDrop> Drops;
 	TArray<FBSFx> Fx;
 	TArray<FBSCorpse> Corpses;
 	TArray<FBSSpawn> SpawnQueue;

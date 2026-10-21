@@ -11,6 +11,7 @@ const path = require('path');
 const vm = require('vm');
 const { SC2Assets, findInstall } = require('../server/sc2');
 const { convertM3 } = require('../server/m3gltf');
+const { extractFxVariants } = require('../server/m3fx');
 const { ddsToPng } = require('../server/dds');
 const adpcm = require('../server/adpcm');
 
@@ -40,8 +41,52 @@ function write(rel, buf) {
 const sc2 = new SC2Assets(findInstall(process.env.SC2_DIR));
 console.log('StarCraft II ' + sc2.version + ' -> ' + outDir);
 const manifest = { sc2Version: sc2.version, exportedAt: new Date().toISOString(), models: {}, icons: {}, sounds: {}, textures: {}, failures: [] };
+// BS_FX_ONLY=1 re-exports just the particle effects into the existing manifest.
+const FX_ONLY = process.env.BS_FX_ONLY === '1';
+if (FX_ONLY) Object.assign(manifest, JSON.parse(fs.readFileSync(path.join(outDir, 'manifest.json'), 'utf8')), { failures: [] });
 
-for (const [key, m3] of Object.entries(BS.MODELS)) {
+// Extra models only the Unreal build uses: zerg strain/skin variants for variety, and projectile meshes.
+const U = 'assets/units/', E = 'assets/effects/';
+const UNREAL_MODELS = {
+  zerglingWinged: U + 'zerg/zerglingupgrade/zerglingupgrade.m3',
+  zerglingRaptor: U + 'zerg/zerglingex1a/zerglingex1a.m3', zerglingRaptorDeath: U + 'zerg/zerglingex1adeath/zerglingex1adeath.m3',
+  zerglingSwarmling: U + 'zerg/zerglingex1b/zerglingex1b.m3', zerglingSwarmlingDeath: U + 'zerg/zerglingex1bdeath/zerglingex1bdeath.m3',
+  zerglingPrimal: U + 'zerg/zergling_primal_collection/zergling_primal_collection.m3', zerglingPrimalDeath: U + 'zerg/zergling_primal_collection_death/zergling_primal_collection_death.m3',
+  zerglingPrimalWinged: U + 'zerg/zerglingupgrade_primal_collection/zerglingupgrade_primal_collection.m3',
+  banelingSplitter: U + 'zerg/banelingex1a/banelingex1a.m3', banelingHunter: U + 'zerg/banelingex1b/banelingex1b.m3',
+  banelingPrimal: U + 'zerg/baneling_primal_collection/baneling_primal_collection.m3',
+  roachGlial: U + 'zerg/roachupgrade/roachupgrade.m3', roachVile: U + 'zerg/roachex1a/roachex1a.m3', roachCorpser: U + 'zerg/roachex1b/roachex1b.m3',
+  roachPrimal: U + 'zerg/roach_primal_collection/roach_primal_collection.m3',
+  hydraliskImpaler: U + 'zerg/hydraliskex1a/hydraliskex1a.m3', hydraliskLurkerStrain: U + 'zerg/hydraliskex1b/hydraliskex1b.m3',
+  hydraliskRemastered: U + 'zerg/hydralisk_remastered/hydralisk_remastered.m3', hydraliskPrimal: U + 'zerg/hydralisk_primal_collection/hydralisk_primal_collection.m3',
+  mutaliskPrimal: U + 'zerg/primalzergmutalisk/primalzergmutalisk.m3', mutaliskPrimalSkin: U + 'zerg/mutalisk_primal_collection/mutalisk_primal_collection.m3',
+  lurkerSeeker: U + 'zerg/lurkerex1a/lurkerex1a.m3', lurkerSpine: U + 'zerg/lurkerex1b/lurkerex1b.m3',
+  ultraliskRemastered: U + 'zerg/ultralisk_remastered/ultralisk_remastered.m3', ultraliskPrimal: U + 'zerg/ultralisk_primal_collection/ultralisk_primal_collection.m3',
+  broodlordEx1: U + 'zerg/broodlordex1/broodlordex1.m3', broodlordPrimal: U + 'zerg/broodlord_primal_collection/broodlord_primal_collection.m3',
+  // Projectiles (mesh part; their particles come from the FX list below).
+  projMutalisk: E + 'zerg/mutaliskmissile/mutaliskmissile.m3', projBanshee: E + 'terran/bansheemissile/bansheemissile.m3',
+  projYamato: E + 'terran/yamatomissile/yamatomissile.m3', projHydralisk: E + 'zerg/hydraliskmissile/hydraliskmissile.m3',
+  projRoach: E + 'zerg/roachmissile/roachmissile.m3', projMarauder: E + 'terran/maraudermissile/maraudermissile.m3',
+};
+
+// Particle effects replayed by the Unreal build: [m3, optional sequence filter, loops].
+const FX = {
+  marineLaunch: [E + 'terran/marineweaponlaunch/marineweaponlaunch.m3'], marineImpact: [E + 'terran/marineweaponimpact/marineweaponimpact.m3'],
+  firebatLaunch: [E + 'terran/firebatlaunch/firebatlaunch.m3', '^birth'], marauderLaunch: [E + 'terran/maraudermissilelaunch/maraudermissilelaunch.m3'],
+  marauderMissile: [E + 'terran/maraudermissile/maraudermissile.m3', null, true], marauderImpact: [E + 'terran/maraudermissileimpact/maraudermissileimpact.m3'],
+  tankLaunch: [E + 'terran/siegetankweaponlaunch/siegetankweaponlaunch.m3'], tankImpact: [E + 'terran/siegetankweaponimpact/siegetankweaponimpact.m3'],
+  bansheeMissile: [E + 'terran/bansheemissile/bansheemissile.m3', '^stand', true], bansheeImpact: [E + 'terran/bansheemissileimpact/bansheemissileimpact.m3'],
+  yamatoMissile: [E + 'terran/yamatomissile/yamatomissile.m3', null, true], yamatoImpact: [E + 'terran/yamatomissileimpact/yamatomissileimpact.m3'],
+  mutaliskMissile: [E + 'zerg/mutaliskmissile/mutaliskmissile.m3', '^stand$', true], mutaliskImpact: [E + 'zerg/mutaliskmissileimpact/mutaliskmissileimpact.m3'],
+  hydraliskMissile: [E + 'zerg/hydraliskmissile/hydraliskmissile.m3', null, true], hydraliskImpact: [E + 'zerg/hydraliskmissileimpact/hydraliskmissileimpact.m3'],
+  roachMissile: [E + 'zerg/roachmissile/roachmissile.m3', null, true], roachImpact: [E + 'zerg/roachmissileimpact/roachmissileimpact.m3'],
+  lurkerMissile: [E + 'zerg/lurkermissile/lurkermissile.m3'], zerglingImpact: [E + 'zerg/zerglingweaponimpact/zerglingweaponimpact.m3'],
+  ultraliskImpact: [E + 'zerg/ultraliskweaponimpact/ultraliskweaponimpact.m3'],
+};
+for (const [key, m3] of Object.entries(BS.MODELS)) if (/Death$/.test(key)) FX[key] = [m3, '^death'];
+for (const [key, m3] of Object.entries(UNREAL_MODELS)) if (/Death$/.test(key)) FX[key] = [m3, '^death'];
+
+for (const [key, m3] of Object.entries(FX_ONLY ? {} : Object.assign({}, BS.MODELS, UNREAL_MODELS))) {
   try {
     const { glb, report } = convertM3(sc2, m3, { name: key });
     if (!report.stats.primitives) { manifest.failures.push({ key, m3, reason: 'no drawable geometry' }); console.log('  skip  ' + key + ' (no mesh)'); continue; }
@@ -61,7 +106,7 @@ for (const [key, m3] of Object.entries(BS.MODELS)) {
   }
 }
 
-for (const name of icons) {
+for (const name of FX_ONLY ? [] : icons) {
   const buf = sc2.read('assets/textures/' + name + '.dds');
   if (!buf) { manifest.failures.push({ key: name, reason: 'icon not found' }); continue; }
   const rel = path.join('Icons', name + '.png');
@@ -70,7 +115,7 @@ for (const name of icons) {
 }
 console.log('  icons ' + Object.keys(manifest.icons).length);
 
-for (const [key, list] of Object.entries(BS.SOUNDS)) {
+for (const [key, list] of Object.entries(FX_ONLY ? {} : BS.SOUNDS)) {
   manifest.sounds[key] = [];
   list.forEach((src, i) => {
     let buf = sc2.read(src);
@@ -82,6 +127,35 @@ for (const [key, list] of Object.entries(BS.SOUNDS)) {
   });
 }
 console.log('  sounds ' + Object.values(manifest.sounds).reduce((s, l) => s + l.length, 0));
+
+// Particle effects: JSON per effect plus every texture they use (PNG, flipbooks intact).
+manifest.fx = {}; manifest.fxTextures = {};
+const fxTextures = new Set();
+for (const [key, [m3, seq, loop]] of Object.entries(FX)) {
+  try {
+    const fx = extractFxVariants(sc2, m3, seq);
+    if (!fx.variants.length) { manifest.failures.push({ key, m3, reason: 'no emitting sequence' }); console.log('  skip  fx ' + key); continue; }
+    fx.loop = !!loop;
+    fx.textures.forEach(t => fxTextures.add(t));
+    const rel = path.join('FX', key + '.json');
+    write(rel, Buffer.from(JSON.stringify(fx)));
+    manifest.fx[key] = rel.split(path.sep).join('/');
+    console.log('  fx    ' + key.padEnd(22) + fx.variants.length + ' variants, ' + fx.variants[0].emitters.length + ' emitters');
+  } catch (e) {
+    manifest.failures.push({ key, m3, reason: 'fx: ' + e.message });
+    console.log('  FAIL  fx ' + key + ': ' + e.message);
+  }
+}
+for (const t of fxTextures) {
+  const buf = sc2.read(t);
+  if (!buf) { manifest.failures.push({ key: t, reason: 'fx texture not found' }); continue; }
+  try {
+    const name = 'FX_' + path.basename(t, path.extname(t));
+    write(path.join('FX', 'Textures', name + '.png'), ddsToPng(buf));
+    manifest.fxTextures[t] = name;
+  } catch (e) { manifest.failures.push({ key: t, reason: 'fx texture: ' + e.message }); }
+}
+console.log('  fx textures ' + Object.keys(manifest.fxTextures).length);
 
 const groundBuf = sc2.read(BS.GROUND_TEXTURE);
 if (groundBuf) { write('Textures/Ground_Diffuse.png', ddsToPng(groundBuf)); manifest.textures.ground = 'Textures/Ground_Diffuse.png'; }

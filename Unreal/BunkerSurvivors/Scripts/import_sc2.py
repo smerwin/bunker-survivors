@@ -2,7 +2,7 @@
 # and map. Run headless:
 #   UnrealEditor-Cmd.exe BunkerSurvivors.uproject -run=pythonscript -script=Scripts/import_sc2.py
 # Everything under /Game/SC2 is derived from the player's own StarCraft II install: never commit it.
-import unreal, os, json, struct, traceback
+import unreal, os, re, json, shutil, struct, traceback
 
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXPORT = os.path.normpath(os.path.join(PROJECT, "..", "..", "SC2Export"))
@@ -241,6 +241,81 @@ def build_particle_material(path, name):
     return m
 
 
+def build_sprite_material(path, name, additive):
+    """Textured particle sprite for StarCraft II effects (see BSFx.cpp). Per-instance custom data: 0-3 RGBA,
+    4 flipbook frame, 5-6 flipbook columns and rows. Parameters: Tex, Boost (brightness)."""
+    m = new_material(path, name)
+    m.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
+    m.set_editor_property("blend_mode", unreal.BlendMode.BLEND_ADDITIVE if additive else unreal.BlendMode.BLEND_TRANSLUCENT)
+    m.set_editor_property("two_sided", True)
+    m.set_editor_property("used_with_instanced_static_meshes", True)
+
+    def cd(i, x, y):
+        e = expr(m, unreal.MaterialExpressionPerInstanceCustomData, x, y)
+        e.set_editor_property("data_index", i)
+        return e
+
+    r, g, b, a, frame = cd(0, -1600, 0), cd(1, -1600, 100), cd(2, -1600, 200), cd(3, -1600, 300), cd(4, -1600, 500)
+    cols, rows = cd(5, -1600, 650), cd(6, -1600, 750)
+    # Flipbook: column = frame mod Cols, row = floor(frame / Cols); uv' = (uv + (col, row)) / (Cols, Rows).
+    col = binop(m, unreal.MaterialExpressionFmod, frame, "", cols, "", -1400, 520)
+    div = binop(m, unreal.MaterialExpressionDivide, frame, "", cols, "", -1400, 620)
+    row = expr(m, unreal.MaterialExpressionFloor, -1250, 620)
+    mel.connect_material_expressions(div, "", row, "")
+    cr = binop(m, unreal.MaterialExpressionAppendVector, col, "", row, "", -1100, 560)
+    grid = binop(m, unreal.MaterialExpressionAppendVector, cols, "", rows, "", -1100, 700)
+    uv = expr(m, unreal.MaterialExpressionTextureCoordinate, -1100, 420)
+    uvc = binop(m, unreal.MaterialExpressionAdd, uv, "", cr, "", -950, 480)
+    uvf = binop(m, unreal.MaterialExpressionDivide, uvc, "", grid, "", -800, 520)
+    tex = tex_param(m, "Tex", -650, 450, WHITE)
+    mel.connect_material_expressions(uvf, "", tex, "UVs")
+    rg = binop(m, unreal.MaterialExpressionAppendVector, r, "", g, "", -1400, 50)
+    rgb = binop(m, unreal.MaterialExpressionAppendVector, rg, "", b, "", -1250, 100)
+    boost = scalar(m, "Boost", -650, 250, 1.6 if additive else 1.0)
+    col_rgb = binop(m, unreal.MaterialExpressionMultiply, tex, "RGB", rgb, "", -400, 200)
+    lit = binop(m, unreal.MaterialExpressionMultiply, col_rgb, "", boost, "", -250, 200)
+    alpha = binop(m, unreal.MaterialExpressionMultiply, tex, "A", a, "", -400, 500)
+    # Soft intersection with the ground and units.
+    fade = expr(m, unreal.MaterialExpressionDepthFade, -250, 500)
+    fade.set_editor_property("fade_distance_default", 40.0)
+    mel.connect_material_expressions(alpha, "", fade, "Opacity")
+    if additive:
+        out = binop(m, unreal.MaterialExpressionMultiply, lit, "", fade, "", -100, 300)
+        mel.connect_material_property(out, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    else:
+        mel.connect_material_property(lit, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+        mel.connect_material_property(fade, "", unreal.MaterialProperty.MP_OPACITY)
+    mel.recompile_material(m)
+    return m
+
+
+def fx_texture_name(sc2_path):
+    """Must match BSFx::TextureAssetName in BSFx.cpp."""
+    base = os.path.splitext(os.path.basename(sc2_path))[0]
+    return "FX_" + re.sub(r"[^A-Za-z0-9_]", "_", base)
+
+
+def import_fx(manifest):
+    """Particle textures into /Game/SC2/FX; effect descriptions copied as plain files into Content/SC2/FXData."""
+    n = 0
+    for sc2_path, exported in manifest.get("fxTextures", {}).items():
+        src = os.path.join(EXPORT, "FX", "Textures", exported + ".png")
+        if not os.path.exists(src):
+            continue
+        for p in import_file(src, "/Game/SC2/FX", fx_texture_name(sc2_path)):
+            t = load(p)
+            if isinstance(t, unreal.Texture2D):
+                t.set_editor_property("lod_group", unreal.TextureGroup.TEXTUREGROUP_EFFECTS)
+                t.set_editor_property("srgb", True)
+                eal.save_loaded_asset(t)
+                n += 1
+    data_dir = os.path.join(PROJECT, "Content", "SC2", "FXData")
+    os.makedirs(data_dir, exist_ok=True)
+    for key, rel in manifest.get("fx", {}).items():
+        shutil.copyfile(os.path.join(EXPORT, rel), os.path.join(data_dir, key + ".json"))
+    log("fx: %d textures, %d effects" % (n, len(manifest.get("fx", {}))))
+
+
 def build_ground_material(path, name, ground_tex):
     m = new_material(path, name)
     uv = expr(m, unreal.MaterialExpressionTextureCoordinate, -1100, 0)
@@ -288,6 +363,8 @@ def main():
     build_fx_material(mats, "M_FX", False)
     build_fx_material(mats, "M_FXRing", True)
     build_particle_material(mats, "M_FXParticle")
+    build_sprite_material(mats, "M_FXSpriteAdd", True)
+    build_sprite_material(mats, "M_FXSpriteBlend", False)
 
     ground = None
     gpath = os.path.join(EXPORT, "Textures", "Ground_Diffuse.png")
@@ -296,8 +373,11 @@ def main():
     build_ground_material(mats, "M_Ground", ground)
     for m in (m_unit, m_unit2, m_add, m_blend):
         eal.save_loaded_asset(m)
-    for n in ("M_FX", "M_FXRing", "M_Ground", "M_FXParticle"):
+    for n in ("M_FX", "M_FXRing", "M_Ground", "M_FXParticle", "M_FXSpriteAdd", "M_FXSpriteBlend"):
         eal.save_asset(mats + "/" + n)
+    import_fx(manifest)
+    if os.environ.get("BS_FX_ONLY") == "1":
+        return
     if os.environ.get("BS_MATERIALS_ONLY") == "1":
         log("materials rebuilt (materials-only run)")
         return

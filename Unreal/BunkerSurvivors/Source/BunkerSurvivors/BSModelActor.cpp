@@ -7,7 +7,8 @@
 #include "Components/PoseableMeshComponent.h"
 
 // Mesh-space yaw that turns an SC2 model (facing -Y) to face the actor's +X.
-static constexpr float MeshYawOffset = 90.f;
+// SC2 models face -Y in the source files; after import that ends up pointing the other way, hence -90.
+static constexpr float MeshYawOffset = -90.f;
 
 ABSModelActor::ABSModelActor()
 {

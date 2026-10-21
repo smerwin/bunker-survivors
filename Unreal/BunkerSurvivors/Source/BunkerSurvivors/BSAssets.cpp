@@ -1,4 +1,7 @@
 #include "BSAssets.h"
+#include "BSFx.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetRegistry/IAssetRegistry.h"
 #include "Engine/SkeletalMesh.h"
@@ -102,6 +105,8 @@ void UBSAssets::LoadAll()
 	FxRingMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_FXRing.M_FXRing"));
 	GroundMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_Ground.M_Ground"));
 	ParticleMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_FXParticle.M_FXParticle"));
+	SpriteAddMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_FXSpriteAdd.M_FXSpriteAdd"));
+	SpriteBlendMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_FXSpriteBlend.M_FXSpriteBlend"));
 	Sphere = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere"));
 	Cylinder = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
 	Plane = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane"));
@@ -134,4 +139,27 @@ const FSlateBrush* UBSAssets::IconBrush(const FString& Name)
 	B->DrawAs = ESlateBrushDrawType::Image;
 	Brushes.Add(Name, B);
 	return B.Get();
+}
+
+const FBSFxDef* UBSAssets::Fx(const FString& Key)
+{
+	if (const TSharedPtr<FBSFxDef>* Found = FxDefs.Find(Key)) return Found->Get();
+	// Effect descriptions are staged as plain files (DirectoriesToAlwaysStageAsUFS in DefaultGame.ini).
+	FString Text;
+	TSharedPtr<FBSFxDef> Def;
+	if (FFileHelper::LoadFileToString(Text, *FPaths::Combine(FPaths::ProjectContentDir(), TEXT("SC2/FXData"), Key + TEXT(".json"))))
+		Def = FBSFxDef::Load(Key, Text);
+	if (!Def) UE_LOG(LogTemp, Warning, TEXT("BS: no particle effect '%s'"), *Key);
+	FxDefs.Add(Key, Def);
+	return Def.Get();
+}
+
+UTexture2D* UBSAssets::FxTexture(const FString& Sc2Path)
+{
+	if (TObjectPtr<UTexture2D>* Found = FxTextures.Find(Sc2Path)) return Found->Get();
+	const FString Name = BSFx::TextureAssetName(Sc2Path);
+	UTexture2D* T = LoadObject<UTexture2D>(nullptr, *FString::Printf(TEXT("/Game/SC2/FX/%s.%s"), *Name, *Name));
+	if (!T) UE_LOG(LogTemp, Warning, TEXT("BS: missing particle texture %s (%s)"), *Name, *Sc2Path);
+	FxTextures.Add(Sc2Path, T);
+	return T;
 }

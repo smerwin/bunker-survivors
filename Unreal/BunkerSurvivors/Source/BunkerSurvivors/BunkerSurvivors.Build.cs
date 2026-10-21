@@ -7,7 +7,7 @@ public class BunkerSurvivors : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
 		PublicDependencyModuleNames.AddRange(new string[] {
-			"Core", "CoreUObject", "Engine", "InputCore", "Slate", "SlateCore", "AssetRegistry"
+			"Core", "CoreUObject", "Engine", "InputCore", "Slate", "SlateCore", "AssetRegistry", "Json"
 		});
 	}
 }

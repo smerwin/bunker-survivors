@@ -15,3 +15,4 @@ Unreal/Packaged/
 Unreal/PixelStreaming/
 *.log
 Unreal/**/Content/Probe/
+server/vendor/

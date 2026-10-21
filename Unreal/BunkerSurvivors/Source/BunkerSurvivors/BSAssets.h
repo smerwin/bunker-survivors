@@ -12,6 +12,7 @@ class UTexture2D;
 class UMaterialInterface;
 class UStaticMesh;
 struct FSlateBrush;
+struct FBSFxDef;
 
 struct FBSModel
 {
@@ -35,11 +36,15 @@ public:
 	USoundBase* Sound(const FString& Key) const;                 // random variant
 	UTexture2D* Icon(const FString& Name) const;
 	const FSlateBrush* IconBrush(const FString& Name);
+	const FBSFxDef* Fx(const FString& Key);                     // SC2 particle effect, loaded on first use
+	UTexture2D* FxTexture(const FString& Sc2Path);
 
 	UPROPERTY() TObjectPtr<UMaterialInterface> FxMaterial;
 	UPROPERTY() TObjectPtr<UMaterialInterface> FxRingMaterial;
 	UPROPERTY() TObjectPtr<UMaterialInterface> GroundMaterial;
 	UPROPERTY() TObjectPtr<UMaterialInterface> ParticleMaterial;
+	UPROPERTY() TObjectPtr<UMaterialInterface> SpriteAddMaterial;
+	UPROPERTY() TObjectPtr<UMaterialInterface> SpriteBlendMaterial;
 	UPROPERTY() TObjectPtr<UStaticMesh> Sphere;
 	UPROPERTY() TObjectPtr<UStaticMesh> Cylinder;
 	UPROPERTY() TObjectPtr<UStaticMesh> Plane;
@@ -52,5 +57,7 @@ private:
 	TMap<FString, TArray<USoundBase*>> Sounds;
 	TMap<FString, UTexture2D*> Icons;
 	TMap<FString, TSharedPtr<FSlateBrush>> Brushes;
+	TMap<FString, TSharedPtr<FBSFxDef>> FxDefs;
+	UPROPERTY() TMap<FString, TObjectPtr<UTexture2D>> FxTextures;
 	UPROPERTY() TArray<TObjectPtr<UObject>> KeepAlive;
 };
