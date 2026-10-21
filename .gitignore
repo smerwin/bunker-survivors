@@ -1,0 +1,17 @@
+node_modules/
+# Derived copies of StarCraft II assets from the local install. Never commit or share these.
+SC2Export/
+Unreal/**/Content/SC2/
+# Unreal build output
+Unreal/**/Binaries/
+Unreal/**/Intermediate/
+Unreal/**/Saved/
+Unreal/**/DerivedDataCache/
+*.sln
+.vs/
+# Packaged builds contain cooked StarCraft II assets.
+Unreal/Packaged/
+# Epic's Pixel Streaming infrastructure checkout (see Unreal/README.md).
+Unreal/PixelStreaming/
+*.log
+Unreal/**/Content/Probe/

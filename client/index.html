@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0d12">
+<title>Bunker Survivors</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="gl"></canvas>
+  <canvas id="fx"></canvas>
+
+  <div id="hud" class="hidden">
+    <div id="top">
+      <div class="stat"><span class="ico mineral"></span><b id="minerals">0</b></div>
+      <div class="stat">WAVE <b id="wave">0</b> <span id="wave-timer" class="dim">0s</span></div>
+      <div class="stat">KILLS <b id="kills">0</b></div>
+      <div class="stat dim">SCORE <b id="score">0</b></div>
+      <button id="mute" class="tiny">SND ON</button>
+      <button id="pause" class="tiny">II</button>
+    </div>
+    <div id="bunkerbar">
+      <div id="hp"><div id="hp-fill"></div><span id="hp-text"></span></div>
+      <div id="slots"></div>
+    </div>
+    <div id="bottom">
+      <div id="abilities"></div>
+      <div id="shop"></div>
+    </div>
+    <div id="toast"></div>
+    <div id="paused" class="modal hidden"><div><h2>PAUSED</h2><button id="resume" class="big">Resume</button></div></div>
+    <div id="gameover" class="modal"><div><h2>BUNKER LOST</h2><p id="go-stats"></p><button id="restart" class="big">Play again</button></div></div>
+  </div>
+
+  <div id="start">
+    <div class="panel">
+      <h1>BUNKER<br>SURVIVORS</h1>
+      <p class="sub">A Terran fireteam, one bunker, and the Swarm.</p>
+      <div class="modes">
+        <button data-mode="lane" class="big"><b>Lane Defense</b><small>Portrait. Zerg come from the top.</small></button>
+        <button data-mode="arena" class="big"><b>360 Arena</b><small>They come from everywhere. Harder, bigger waves.</small></button>
+      </div>
+      <p id="best" class="dim"></p>
+      <p id="progress" class="dim">Loading...</p>
+      <p id="status" class="dim"></p>
+      <p id="lan" class="dim"></p>
+      <p class="tiny-note">Tap a zerg to focus fire. Drag to pan, pinch or scroll to zoom, double-tap to reset.<br>Keys: S stim, A air strike, R repair, P pause.</p>
+    </div>
+  </div>
+</div>
+<script src="lib/viewer.min.js"></script>
+<script src="js/units.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/render.js"></script>
+<script src="js/game.js"></script>
+<script src="js/hud.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
