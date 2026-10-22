@@ -644,6 +644,24 @@ void ABSGame::AddProjectileModel(FBSProjectile& P, const TCHAR* Model, const TCH
 	if (Trail) P.Trail = PlayFx(Trail, P.From, Yaw, TrailScale);
 }
 
+FVector ABSGame::BunkerSlit(float Ang) const
+{
+	// The SC2 bunker has four firing slits (Ref_Weapon, 02, 04, 06). Use the one facing the target.
+	static const FName Slits[] = { TEXT("Ref_Weapon"), TEXT("Ref_Weapon 02"), TEXT("Ref_Weapon 04"), TEXT("Ref_Weapon 06") };
+	FVector Slit = FVector(FMath::Cos(Ang) * 1.5f, FMath::Sin(Ang) * 1.5f, 1.3f);
+	if (!Bunker.Actor || !Bunker.Actor->Mesh) return Slit;
+	float SlitDot = -2;
+	for (const FName& Bone : Slits)
+	{
+		if (Bunker.Actor->Mesh->GetBoneIndex(Bone) == INDEX_NONE) continue;
+		const FVector Wp = Bunker.Actor->Mesh->GetBoneLocation(Bone);
+		const FVector Sim(Wp.Y / BSSpace::UnitsPerMetre, Wp.X / BSSpace::UnitsPerMetre, Wp.Z / BSSpace::UnitsPerMetre);
+		const float Dot = FVector2D(Sim.X, Sim.Y).GetSafeNormal() | FVector2D(FMath::Cos(Ang), FMath::Sin(Ang));
+		if (Dot > SlitDot) { SlitDot = Dot; Slit = Sim; }
+	}
+	return Slit;
+}
+
 // SC2's marine muzzle flash is a small animated mesh (the particles only add sparks).
 void ABSGame::MuzzleMesh(const FVector& At, float Yaw, float Delay)
 {
@@ -1260,13 +1278,14 @@ void ABSGame::UpdateBunker(float Dt)
 		U.Cd += D->Cd;
 		const float DmgBase = D->Dmg + Up.Weapons;
 		const float Ang = FMath::Atan2(Target->Y, Target->X);
-		const FVector Muzzle(FMath::Cos(Ang) * 1.5f, FMath::Sin(Ang) * 1.5f, 1.3f);
+		const FVector Muzzle = BunkerSlit(Ang);
 		const FVector Hit(Target->X, Target->Y, Target->Z + Target->Def->Height * 0.5f);
 		if (D->Key == TEXT("marine"))
 		{
 			HurtEnemy(Target, DmgBase);
 			// Slight spread so a fireteam's volley fans out from the bunker's firing slits.
-			const FVector Slit = Muzzle + FVector(-FMath::Sin(Ang), FMath::Cos(Ang), 0) * Rnd(-0.7f, 0.7f);
+			// A little spread along the slit so a fireteam's rounds don't all leave from one pixel.
+			const FVector Slit = Muzzle + FVector(-FMath::Sin(Ang), FMath::Cos(Ang), 0) * Rnd(-0.18f, 0.18f);
 			const float Aim = FMath::Atan2(Hit.Y - Slit.Y, Hit.X - Slit.X);
 			bool bFx = true;
 			for (int32 r = 0; r < 3 && bFx; r++)
@@ -1282,7 +1301,7 @@ void ABSGame::UpdateBunker(float Dt)
 		else if (D->Key == TEXT("firebat"))
 		{
 			for (auto& V : EnemiesInRange(Target->X, Target->Y, D->Splash, Pred)) HurtEnemy(V, DmgBase + (V->Def->bLight ? D->DmgLight : 0));
-			EmitFlame(FVector(Muzzle.X, Muzzle.Y, 0.8f), FVector(Target->X, Target->Y, 0.4f));
+			EmitFlame(Muzzle, FVector(Target->X, Target->Y, 0.4f));
 			MuzzleFlash = 1;
 			PlaySound(BSSounds::FirebatFire, 0.45f, 0.3f);
 		}

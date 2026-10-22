@@ -157,6 +157,16 @@ for (const t of fxTextures) {
 }
 console.log('  fx textures ' + Object.keys(manifest.fxTextures).length);
 
+// StarCraft II's own UI fonts (Eurostile family) for the Unreal HUD.
+manifest.fonts = {};
+for (const f of ['eurostile-bol.otf', 'eurostile-reg.otf', 'eurostileext-med.otf', 'eurostileext-reg.otf']) {
+  const buf = sc2.read('mods/core.sc2mod/base.sc2data/ui/fonts/' + f);
+  if (!buf) { manifest.failures.push({ key: f, reason: 'font not found' }); continue; }
+  write(path.join('Fonts', f), buf);
+  manifest.fonts[f] = 'Fonts/' + f;
+}
+console.log('  fonts ' + Object.keys(manifest.fonts).length);
+
 const groundBuf = sc2.read(BS.GROUND_TEXTURE);
 if (groundBuf) { write('Textures/Ground_Diffuse.png', ddsToPng(groundBuf)); manifest.textures.ground = 'Textures/Ground_Diffuse.png'; }
 

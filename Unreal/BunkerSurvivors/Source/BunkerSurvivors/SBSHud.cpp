@@ -14,6 +14,9 @@
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
+#include "Fonts/CompositeFont.h"
+#include "HAL/FileManager.h"
+#include "Misc/Paths.h"
 #include "Widgets/Layout/SSpacer.h"
 #include "Widgets/Input/SButton.h"
 #include "Kismet/GameplayStatics.h"
@@ -44,17 +47,42 @@ namespace D
 {
 	using FPts = TArray<FVector2f>;
 
-	FSlateFontInfo Font(const char* Face, float Size, int32 Spacing = 0)
+	// StarCraft II's own UI typeface (Eurostile, plus Eurostile Extended for titles and numbers), exported from the
+	// player's install into Content/SC2/Fonts. Falls back to the engine font if the files are missing.
+	TSharedPtr<const FCompositeFont> Sc2Font()
 	{
-		FSlateFontInfo F = FCoreStyle::GetDefaultFontStyle(Face, FMath::Max(1, FMath::RoundToInt(Size)));
+		static TSharedPtr<FCompositeFont> Font;
+		static bool bTried = false;
+		if (bTried) return Font;
+		bTried = true;
+		const FString Dir = FPaths::Combine(FPaths::ProjectContentDir(), TEXT("SC2/Fonts"));
+		const TPair<const TCHAR*, const TCHAR*> Faces[] = {
+			{ TEXT("Regular"), TEXT("eurostile-reg.otf") }, { TEXT("Bold"), TEXT("eurostile-bol.otf") },
+			{ TEXT("Wide"), TEXT("eurostileext-med.otf") }, { TEXT("WideLight"), TEXT("eurostileext-reg.otf") } };
+		TSharedPtr<FCompositeFont> C = MakeShared<FCompositeFont>();
+		for (const auto& Face : Faces)
+		{
+			const FString Path = FPaths::Combine(Dir, Face.Value);
+			if (!IFileManager::Get().FileExists(*Path)) { UE_LOG(LogTemp, Warning, TEXT("BS: HUD font missing (%s), using the engine font"), *Path); return Font; }
+			C->DefaultTypeface.AppendFont(Face.Key, Path, EFontHinting::Default, EFontLoadingPolicy::LazyLoad);
+		}
+		Font = C;
+		return Font;
+	}
+
+	// Face: Wide (titles, numbers), Bold (labels), Regular (body). Engine-font names are the fallback.
+	FSlateFontInfo Font(const TCHAR* Face, const char* Fallback, float Size, int32 Spacing = 0)
+	{
+		const int32 Px = FMath::Max(1, FMath::RoundToInt(Size));
+		FSlateFontInfo F = Sc2Font().IsValid() ? FSlateFontInfo(Sc2Font(), Px, FName(Face)) : FCoreStyle::GetDefaultFontStyle(Fallback, Px);
 		F.LetterSpacing = Spacing;
 		return F;
 	}
-	FSlateFontInfo Num(float Size) { return Font("Black", Size, 20); }
-	FSlateFontInfo Label(float Size = 9) { return Font("BoldCondensed", Size, 160); }
-	FSlateFontInfo Title(float Size) { return Font("Black", Size, 140); }
-	FSlateFontInfo Body(float Size) { return Font("Regular", Size); }
-	FSlateFontInfo Bold(float Size) { return Font("Bold", Size); }
+	FSlateFontInfo Num(float Size) { return Font(TEXT("Wide"), "Black", Size, 10); }
+	FSlateFontInfo Label(float Size = 9) { return Font(TEXT("Bold"), "BoldCondensed", Size, 110); }
+	FSlateFontInfo Title(float Size) { return Font(TEXT("Wide"), "Black", Size, 60); }
+	FSlateFontInfo Body(float Size) { return Font(TEXT("Regular"), "Regular", Size); }
+	FSlateFontInfo Bold(float Size) { return Font(TEXT("Bold"), "Bold", Size); }
 
 	// Text is measured at the real render scale: glyph advances round up per character at high DPI, so a
 	// scale-1 measurement under-reports the drawn width by 10-15% on phones.
@@ -808,7 +836,7 @@ TSharedRef<SWidget> SBSHud::BuildStartScreen()
 			UBSAssets* As = GM.IsValid() ? GM->GetAssets() : nullptr;
 			if (As) D::Image(Out, L + 2, G, As->IconBrush(bArena ? TEXT("btn-unit-zerg-ultralisk") : TEXT("btn-unit-terran-marine")), P + FVector2f(18, 18), FVector2f(60, 60));
 			if (As) D::RLine(Out, L + 3, G, P + FVector2f(17, 17), FVector2f(62, 62), 10, C::A(C::Ink, 0.2f));
-			D::Text(Out, L + 2, G, bArena ? TEXT("360 ARENA") : TEXT("LANE DEFENCE"), D::Title(17), P + FVector2f(94, 20), C::Ink);
+			D::Text(Out, L + 2, G, bArena ? TEXT("360 ARENA") : TEXT("LANE DEFENCE"), D::Fit(bArena ? TEXT("360 ARENA") : TEXT("LANE DEFENCE"), [](float Sz) { return D::Title(Sz); }, 14.5f, 10, S.X - 94 - 14), P + FVector2f(94, 20), C::Ink);
 			const FString Desc = bArena ? TEXT("Waves from every side. Bigger, faster, deadlier.") : TEXT("Hold the lane as the Swarm pours down from the north.");
 			FString D1, D2;
 			D::SplitTwo(Desc, D1, D2);
@@ -861,7 +889,10 @@ TSharedRef<SWidget> SBSHud::BuildStartScreen()
 		const FVector2f Fp = bPortrait ? FVector2f(S.X * 0.5f, S.Y - 46) : FVector2f(56, S.Y - 46);
 		D::Text(Out, L + 1, G, FString::Printf(TEXT("BEST  LANE %d   ARENA %d"), BL, BA), D::Label(8.5f), Fp, C::Muted, Al);
 		if (GM.IsValid() && GM->GetAssets())
-			D::Text(Out, L + 1, G, TEXT("STARCRAFT II ART LINKED  ") + GM->GetAssets()->Summary.ToUpper(), D::Label(7.5f), Fp + FVector2f(0, 16), C::A(C::Green, 0.7f), Al);
+			{
+				const FString Line = TEXT("STARCRAFT II ART LINKED  ") + GM->GetAssets()->Summary.ToUpper();
+				D::Text(Out, L + 1, G, Line, D::Fit(Line, [](float Sz) { return D::Label(Sz); }, 7.5f, 5.f, G.GetLocalSize().X - 28), Fp + FVector2f(0, 16), C::A(C::Green, 0.7f), Al);
+			}
 		return L + 4;
 	});
 
@@ -890,15 +921,15 @@ TSharedRef<SWidget> SBSHud::BuildModal(bool bGameOver)
 		D::RFill(Out, L, G, FVector2f(0, 0), S, 18, C::A(C::Dark, 0.94f));
 		D::RLine(Out, L + 1, G, FVector2f(0, 0), S, 18, bGameOver ? C::A(C::Red, 0.5f) : C::Hair);
 		D::Rect(Out, L + 1, G, FVector2f(S.X * 0.5f - 24, 0), FVector2f(48, 2), bGameOver ? C::Red : C::Cyan);
-		D::Text(Out, L + 2, G, bGameOver ? TEXT("BUNKER LOST") : TEXT("PAUSED"), D::Title(24), FVector2f(S.X * 0.5f, 24), bGameOver ? C::Red : C::Ink, 0.5f);
+		D::Text(Out, L + 2, G, bGameOver ? TEXT("BUNKER LOST") : TEXT("PAUSED"), D::Fit(TEXT("BUNKER LOST"), [](float Sz) { return D::Title(Sz); }, 26, 14, S.X - 36), FVector2f(S.X * 0.5f, 22), bGameOver ? C::Red : C::Ink, 0.5f);
 		const int32 Score = bGameOver ? Gm->FinalScore : FMath::RoundToInt(Gm->Score + Gm->Kills * 10 + Gm->Wave * 250);
 		const TArray<TPair<FString, FString>> Stats = {
 			{ TEXT("WAVE"), FString::FromInt(Gm->Wave) }, { TEXT("KILLS"), FString::FromInt(Gm->Kills) }, { TEXT("SCORE"), FString::FromInt(Score) } };
 		for (int32 i = 0; i < Stats.Num(); i++)
 		{
-			const float X = 50 + i * 120;
+			const float ColW = (S.X - 24) / Stats.Num(), X = 12 + ColW * (i + 0.5f);
 			D::Text(Out, L + 2, G, Stats[i].Key, D::Label(8.5f), FVector2f(X, 72), C::Muted, 0.5f);
-			D::Text(Out, L + 2, G, Stats[i].Value, D::Num(20), FVector2f(X, 86), C::Ink, 0.5f);
+			D::Text(Out, L + 2, G, Stats[i].Value, D::Fit(Stats[i].Value, [](float Sz) { return D::Num(Sz); }, 20, 11, ColW - 16), FVector2f(X, 86), C::Ink, 0.5f);
 		}
 		if (bGameOver)
 		{
@@ -1008,7 +1039,7 @@ int32 SBSHud::PaintBanner(const FGeometry& G, FSlateWindowElementList& Out, int3
 		int32 Num = 0;
 		if (Main.StartsWith(TEXT("WAVE "))) { Num = FCString::Atoi(*Main.Mid(5)); Main = FString::Printf(TEXT("WAVE %02d"), Num); }
 		D::Text(Out, L + 2, G, Sub, D::Label(9.5f), FVector2f(S.X * 0.5f, Y + 12), C::A(Acc, Alpha), 0.5f);
-		D::Text(Out, L + 2, G, Main, D::Title(30), FVector2f(S.X * 0.5f, Y + 28), C::A(C::Ink, Alpha), 0.5f);
+		D::Text(Out, L + 2, G, Main, D::Fit(Main, [](float Sz) { return D::Title(Sz); }, 30, 16, S.X - 40), FVector2f(S.X * 0.5f, Y + 28), C::A(C::Ink, Alpha), 0.5f);
 	}
 	return L + 4;
 }

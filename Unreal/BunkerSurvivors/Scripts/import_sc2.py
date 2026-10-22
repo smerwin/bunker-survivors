@@ -326,6 +326,12 @@ def import_fx(manifest):
     for key, rel in manifest.get("fx", {}).items():
         shutil.copyfile(os.path.join(EXPORT, rel), os.path.join(data_dir, key + ".json"))
     log("fx: %d textures, %d effects" % (n, len(manifest.get("fx", {}))))
+    # HUD fonts (SC2's Eurostile family) are loaded from plain files at runtime, like the effect data.
+    font_dir = os.path.join(PROJECT, "Content", "SC2", "Fonts")
+    os.makedirs(font_dir, exist_ok=True)
+    for name, rel in manifest.get("fonts", {}).items():
+        shutil.copyfile(os.path.join(EXPORT, rel), os.path.join(font_dir, name))
+    log("fonts: %d" % len(manifest.get("fonts", {})))
 
 
 def build_ground_material(path, name, ground_tex):

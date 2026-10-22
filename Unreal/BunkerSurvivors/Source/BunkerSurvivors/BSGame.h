@@ -237,6 +237,7 @@ private:
 	void LaunchGlaive(const FVector& From, const FBSTarget& To, float Dmg, int32 Bounces, const TArray<FBSTarget>& Hit, const FBSZergDef* D);
 	void AddProjectileModel(FBSProjectile& P, const TCHAR* Model, const TCHAR* Trail, float TrailScale = 1.f);
 	void MuzzleMesh(const FVector& At, float Yaw, float Delay);
+	FVector BunkerSlit(float Ang) const;          // the bunker's gun slit (Ref_Weapon bones) facing a direction
 	TArray<FBSFlash> Flashes;
 	ABSModelActor* StationMedivac = nullptr;   // Medivac on Station: hovers over the bunker
 	FString StationAnim;
