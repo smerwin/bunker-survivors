@@ -81,7 +81,13 @@ void ABSGameMode::StartGame(EBSMode Mode)
 	if (FParse::Value(Cmd, TEXT("BSSpawn="), SpawnList, false))
 	{
 		TArray<FString> Items; SpawnList.ParseIntoArray(Items, TEXT(","));
-		for (int32 i = 0; i < Items.Num(); i++) Game->DebugSpawn(Items[i], (i - (Items.Num() - 1) * 0.5f) * 2.5f, 13.f);
+		for (int32 i = 0; i < Items.Num(); i++)
+		{
+			// "type" lines them up the lane; "type@x@y" places one exactly.
+			TArray<FString> P; Items[i].ParseIntoArray(P, TEXT("@"));
+			if (P.Num() == 3) Game->DebugSpawn(P[0], FCString::Atof(*P[1]), FCString::Atof(*P[2]));
+			else Game->DebugSpawn(Items[i], (i - (Items.Num() - 1) * 0.5f) * 2.5f, 13.f);
+		}
 	}
 	// Debug lineup: -BSShowcase=zergling,bunker:stand,scv:walk spawns models in a row in front of the bunker.
 	FString Showcase;

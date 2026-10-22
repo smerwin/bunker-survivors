@@ -1,4 +1,6 @@
 #include "BSGame.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "Misc/FileHelper.h"
 #include "HAL/FileManager.h"
 #include "BSAssets.h"
@@ -647,7 +649,8 @@ void ABSGame::AddProjectileModel(FBSProjectile& P, const TCHAR* Model, const TCH
 FVector ABSGame::BunkerSlit(float Ang) const
 {
 	// The SC2 bunker has four firing slits (Ref_Weapon, 02, 04, 06). Use the one facing the target.
-	static const FName Slits[] = { TEXT("Ref_Weapon"), TEXT("Ref_Weapon 02"), TEXT("Ref_Weapon 04"), TEXT("Ref_Weapon 06") };
+	// The importer renames the attachment bones: "Attach_Weapon 02" arrives as "Attach_Weapon_02".
+	static const FName Slits[] = { TEXT("Attach_Weapon"), TEXT("Attach_Weapon_02"), TEXT("Attach_Weapon_04"), TEXT("Attach_Weapon_06") };
 	FVector Slit = FVector(FMath::Cos(Ang) * 1.5f, FMath::Sin(Ang) * 1.5f, 1.3f);
 	if (!Bunker.Actor || !Bunker.Actor->Mesh) return Slit;
 	float SlitDot = -2;
@@ -1606,6 +1609,21 @@ void ABSGame::UpdateProjectiles(float Dt)
 
 void ABSGame::UpdateVisuals(float Dt)
 {
+	// -BSShowSlits: mark the bunker's four gun slits (red Weapon, green 02, blue 04, yellow 06).
+	static const bool bShowSlits = FParse::Param(FCommandLine::Get(), TEXT("BSShowSlits"));
+	if (bShowSlits && Bunker.Actor)
+	{
+		static const FName Slits[] = { TEXT("Attach_Weapon"), TEXT("Attach_Weapon_02"), TEXT("Attach_Weapon_04"), TEXT("Attach_Weapon_06") };
+		static const FLinearColor Cols[] = { FLinearColor::Red, FLinearColor::Green, FLinearColor::Blue, FLinearColor::Yellow };
+		for (int32 i = 0; i < 4; i++)
+		{
+			if (Bunker.Actor->Mesh->GetBoneIndex(Slits[i]) == INDEX_NONE) continue;
+			const FVector Wp = Bunker.Actor->Mesh->GetBoneLocation(Slits[i]);
+			FBSParticle& P = Emit();
+			P.P = FVector(Wp.Y / BSSpace::UnitsPerMetre, Wp.X / BSSpace::UnitsPerMetre, Wp.Z / BSSpace::UnitsPerMetre);
+			P.Life = P.MaxLife = 0.05f; P.Size0 = P.Size1 = 0.35f; P.Inten = 20; P.C0 = P.C1 = P.C2 = Cols[i];
+		}
+	}
 	for (int32 i = Flashes.Num() - 1; i >= 0; i--)
 	{
 		FBSFlash& F = Flashes[i];
