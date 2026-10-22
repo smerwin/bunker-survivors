@@ -240,6 +240,7 @@ private:
 	TArray<FBSFlash> Flashes;
 	ABSModelActor* StationMedivac = nullptr;   // Medivac on Station: hovers over the bunker
 	FString StationAnim;
+	float StationYaw = PI / 2, StationAnimT = 10;
 	void YamatoImpact(const FVector& At, float Dmg);
 	void UpdateVisuals(float Dt);
 	void AutoPlay();

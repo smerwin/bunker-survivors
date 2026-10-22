@@ -1223,13 +1223,20 @@ void ABSGame::UpdateBunker(float Dt)
 		if (Patient) Patient->Hp = FMath::Min(Patient->MaxHp, Patient->Hp + 12.6f * Dt);
 		if (StationMedivac)
 		{
-			// Drift toward its patient a little, otherwise idle over the bunker with a gentle bob.
-			const FVector2D Goal = Patient ? FVector2D(Patient->X * 0.4f, -1.2f + Patient->Y * 0.3f) : FVector2D(1.9f, -0.9f);
-			const float Yaw = Patient ? FMath::Atan2(Patient->Y - Goal.Y, Patient->X - Goal.X) : PI / 2;
-			StationMedivac->SetSim(Goal.X, Goal.Y, 2.7f + 0.12f * FMath::Sin(Time * 1.7f), Yaw);
+			// Parked at the bunker's shoulder; it only turns (slowly) toward whoever it is healing.
+			const FVector2D Park(1.9f, -0.9f);
+			const float WantYaw = Patient ? FMath::Atan2(Patient->Y - Park.Y, Patient->X - Park.X) : PI / 2;
+			StationYaw += FMath::Clamp(FMath::FindDeltaAngleRadians(StationYaw, WantYaw), -1.5f * Dt, 1.5f * Dt);
+			StationMedivac->SetSim(Park.X, Park.Y, 2.7f + 0.12f * FMath::Sin(Time * 1.7f), StationYaw);
 			StationMedivac->SetScale(0.75f);
+			// Hold each animation at least a second so a topped-up SCV does not make it flicker.
+			StationAnimT += Dt;
 			const FString Want = Patient ? TEXT("work") : TEXT("idle");
-			if (StationAnim != Want) { StationAnim = Want; StationMedivac->Play(Patient ? TArray<FString>{ TEXT("stand work"), TEXT("attack") } : WalkNames, true); }
+			if (StationAnim != Want && StationAnimT > 1.f)
+			{
+				StationAnim = Want; StationAnimT = 0;
+				StationMedivac->Play(Patient ? TArray<FString>{ TEXT("stand work"), TEXT("attack") } : WalkNames, true);
+			}
 		}
 	}
 	for (FBSInfantryUnit& U : Bunker.Units)
