@@ -6,7 +6,7 @@ namespace BSSounds
 	const TCHAR* MarauderFire = TEXT("marauderFire"); const TCHAR* TankFire = TEXT("tankFire"); const TCHAR* TankHit = TEXT("tankHit");
 	const TCHAR* TankDeath = TEXT("tankDeath"); const TCHAR* BansheeFire = TEXT("bansheeFire"); const TCHAR* BansheeHit = TEXT("bansheeHit");
 	const TCHAR* ScvRepair = TEXT("scvRepair"); const TCHAR* MedivacUnload = TEXT("medivacUnload"); const TCHAR* BanelingDeath = TEXT("banelingDeath");
-	const TCHAR* Explosion = TEXT("explosion");
+	const TCHAR* Explosion = TEXT("explosion"); const TCHAR* SamFire = TEXT("samFire");
 }
 
 namespace
@@ -96,18 +96,18 @@ namespace
 		{
 			FBSInfantryDef& D = Out.AddDefaulted_GetRef();
 			D.Key = TEXT("marine"); D.Name = TEXT("Marine"); D.Icon = TEXT("btn-unit-terran-marine"); D.Sound = TEXT("marineFire");
-			D.Desc = TEXT("Gauss rifle. Cheap, reliable, stims well."); D.Hp = 45; D.Dmg = 6; D.Cd = 0.61f; D.Range = 5; D.Cost = 50; D.StimHp = 10;
+			D.Desc = TEXT("Gauss rifle. Cheap, reliable, stims well."); D.Death = TEXT("marineDeath"); D.Hp = 45; D.Dmg = 6; D.Cd = 0.61f; D.Range = 5; D.Cost = 50; D.StimHp = 10;
 		}
 		{
 			FBSInfantryDef& D = Out.AddDefaulted_GetRef();
 			D.Key = TEXT("firebat"); D.Name = TEXT("Firebat"); D.Icon = TEXT("btn-unit-terran-firebat"); D.Sound = TEXT("firebatFire");
-			D.Desc = TEXT("Flamethrower. Burns packs of lings and banelings."); D.Hp = 100; D.Dmg = 8; D.DmgLight = 6; D.Cd = 0.86f; D.Range = 2; D.Splash = 1.3f;
+			D.Desc = TEXT("Flamethrower. Burns packs of lings and banelings."); D.Death = TEXT("firebatDeath"); D.Hp = 100; D.Dmg = 8; D.DmgLight = 6; D.Cd = 0.86f; D.Range = 2; D.Splash = 1.3f;
 			D.bGroundOnly = true; D.Cost = 100; D.StimHp = 10;
 		}
 		{
 			FBSInfantryDef& D = Out.AddDefaulted_GetRef();
 			D.Key = TEXT("marauder"); D.Name = TEXT("Marauder"); D.Icon = TEXT("btn-unit-terran-marauder"); D.Sound = TEXT("marauderFire");
-			D.Desc = TEXT("Punisher grenades. Slows and shreds armour."); D.Hp = 125; D.Dmg = 10; D.DmgArmored = 10; D.Cd = 1.07f; D.Range = 6; D.Slow = 1.5f;
+			D.Desc = TEXT("Punisher grenades. Slows and shreds armour."); D.Death = TEXT("marauderDeath"); D.Hp = 125; D.Dmg = 10; D.DmgArmored = 10; D.Cd = 1.07f; D.Range = 6; D.Slow = 1.5f;
 			D.bGroundOnly = true; D.Cost = 100; D.StimHp = 20;
 		}
 		return Out;
@@ -129,6 +129,7 @@ namespace
 		Add(TEXT("hisec"), TEXT("Hi-Sec Auto Tracking"), TEXT("+1 range for the bunker and siege tanks."), { TEXT("btn-upgrade-terran-hisecautotracking") }, { 200 });
 		Add(TEXT("vehicle"), TEXT("Vehicle Weapons"), TEXT("+5 (+3 armoured) siege tank damage."), { TEXT("btn-upgrade-terran-vehicleweaponslevel1") }, { 150, 225, 300, 400, 525, 650, 800, 950, 1150, 1350 });
 		Add(TEXT("medivac"), TEXT("Medivac on Station"), TEXT("Heals bunker infantry 9 HP/s so they can stim again."), { TEXT("btn-ability-terran-heal") }, { 200 });
+		Add(TEXT("rails"), TEXT("Magnetic Rails"), TEXT("+2 range for the troops in the bunker."), { TEXT("btn-upgrade-terran-magrailmunitions") }, { 300 });
 		return Out;
 	}
 }

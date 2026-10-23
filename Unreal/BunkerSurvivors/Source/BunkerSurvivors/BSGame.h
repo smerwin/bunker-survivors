@@ -49,11 +49,32 @@ struct FBSScv
 	bool bDead = false;
 };
 
+// A soldier standing outside the bunker (ejected, or recruited while it was full).
+struct FBSTrooper
+{
+	const FBSInfantryDef* Def = nullptr;
+	float X = 0, Y = 0, Yaw = -PI / 2, Hp = 0, MaxHp = 0, Cd = 0, Flash = 0, StandAt = 0;
+	FVector2D Spot = FVector2D::ZeroVector;
+	FString Anim;
+	ABSModelActor* Actor = nullptr;
+	bool bBoarding = false, bDead = false;
+};
+
+// Missile turret (anti-air) or sensor tower (radar).
+struct FBSStructure
+{
+	bool bSam = true, bReady = false, bDead = false;
+	float X = 0, Y = 0, Yaw = PI / 2, Hp = 0, MaxHp = 0, Radius = 1, Cd = 0, T = 0, Flash = 0;
+	ABSModelActor* Actor = nullptr;
+};
+
 struct FBSTarget
 {
-	enum EKind : uint8 { None, Bunker, Tank, Scv } Kind = None;
+	enum EKind : uint8 { None, Bunker, Tank, Scv, Trooper, Structure } Kind = None;
 	TWeakPtr<FBSTank> TankRef;
 	TWeakPtr<FBSScv> ScvRef;
+	TWeakPtr<FBSTrooper> TrooperRef;
+	TWeakPtr<FBSStructure> StructureRef;
 	float X = 0, Y = 0, Radius = 0;
 	bool bStructure = false, bArmored = false, bLight = false;
 	bool IsValid(const FBSBunker& B) const
@@ -63,10 +84,12 @@ struct FBSTarget
 		case Bunker: return !B.bDead;
 		case Tank: { auto P = TankRef.Pin(); return P && !P->bDead && P->State == FBSTank::Ready; }
 		case Scv: { auto P = ScvRef.Pin(); return P && !P->bDead; }
+		case Trooper: { auto P = TrooperRef.Pin(); return P && !P->bDead; }
+		case Structure: { auto P = StructureRef.Pin(); return P && !P->bDead; }
 		default: return false;
 		}
 	}
-	bool Same(const FBSTarget& O) const { return Kind == O.Kind && TankRef == O.TankRef && ScvRef == O.ScvRef; }
+	bool Same(const FBSTarget& O) const { return Kind == O.Kind && TankRef == O.TankRef && ScvRef == O.ScvRef && TrooperRef == O.TrooperRef && StructureRef == O.StructureRef; }
 };
 
 struct FBSEnemy
@@ -82,9 +105,16 @@ struct FBSEnemy
 	bool Alive() const { return Hp > 0; }
 };
 
-struct FBSBanshee { float X = 0, Y = 0, Z = 0, Yaw = 0, Cd = 0; bool bReturning = false; ABSModelActor* Actor = nullptr; };
+// Air strike banshee: flies in to a hover post, fires on ground zerg below, then leaves.
+struct FBSBanshee
+{
+	enum EState : uint8 { In, Hover, Out } State = In;
+	FVector2D Post = FVector2D::ZeroVector;
+	float X = 0, Y = 0, Z = 0, Yaw = 0, Cd = 0, T = 0, StandAt = 0;
+	ABSModelActor* Actor = nullptr;
+};
 
-enum class EBSProjKind : uint8 { Shell, Grenade, Rocket, Acid, Spine, Bullet, Glaive, Spines, Brood, Yamato };
+enum class EBSProjKind : uint8 { Shell, Grenade, Rocket, Acid, Spine, Bullet, Glaive, Spines, Brood, Yamato, Sam };
 
 struct FBSProjectile
 {
@@ -168,6 +198,13 @@ public:
 	bool EmergencyRepair();
 	bool BuyUpgrade(const FString& Id);
 	bool FocusAt(float SimX, float SimY);
+	bool Eject(int32 Index);              // send a bunker trooper out to stand behind it
+	bool Board(int32 Index);              // walk an outside trooper back in (toggles)
+	bool BuildStructure(bool bSam);       // missile turret or sensor tower
+	bool TroopsFull() const { return Bunker.Units.Num() + Squad.Num() + PendingInfantry() >= Bunker.Slots + BSDefs::SquadMax; }
+	int32 SamCount() const { int32 N = 0; for (auto& S : Structures) N += S->bSam; return N; }
+	bool HasSensor() const { for (auto& S : Structures) if (!S->bSam) return true; return false; }
+	bool SensorUp() const { for (auto& S : Structures) if (!S->bSam && S->bReady) return true; return false; }
 	void Toast(const FString& Msg);
 
 	// State read by the HUD and camera.
@@ -182,9 +219,11 @@ public:
 	TArray<TSharedPtr<FBSScv>> Scvs;
 	TArray<TSharedPtr<FBSEnemy>> Enemies;
 	TArray<FBSBanshee> Banshees;
+	TArray<TSharedPtr<FBSTrooper>> Squad;
+	TArray<TSharedPtr<FBSStructure>> Structures;
 	TArray<FBSFloater> Floaters;
 	TWeakPtr<FBSEnemy> Focus; float FocusUntil = 0;
-	struct FUp { bool bStim = false, bNeosteel = false, bMedivac = false, bHiSec = false; int32 Weapons = 0, Vehicle = 0, Plating = 0; } Up;
+	struct FUp { bool bStim = false, bNeosteel = false, bMedivac = false, bHiSec = false, bRails = false; int32 Weapons = 0, Vehicle = 0, Plating = 0; } Up;
 	struct FAb { float StimUntil = 0, StimCd = 0, StrikeCd = 0, RepairCd = 0, YamatoCd = 0; } Ab;
 	bool UseYamato();
 	int32 TankCost() const { return BSDefs::TankCost + BSDefs::TankCostStep * FMath::Max(0, Tanks.Num() - 1); }
@@ -234,6 +273,13 @@ private:
 	void UpdateBanshees(float Dt);
 	void UpdateProjectiles(float Dt);
 	void UpdateReinforcements(float Dt);
+	void UpdateSquad(float Dt);
+	void UpdateStructures(float Dt);
+	TSharedPtr<FBSTrooper> JoinSquad(const FBSInfantryDef* Def, float Hp, float X, float Y, ABSModelActor* Actor);
+	void KillTrooper(const FBSInfantryDef* Def, float X, float Y, float Yaw, ABSModelActor* Actor, bool bStim);
+	void DestroyStructure(const TSharedPtr<FBSStructure>& S);
+	FVector2D RoundBunker(float X, float Y, float Gx, float Gy) const;
+	void FireInfantry(const FBSInfantryDef* D, const FVector& Muzzle, const TSharedPtr<FBSEnemy>& Target);
 	void LaunchGlaive(const FVector& From, const FBSTarget& To, float Dmg, int32 Bounces, const TArray<FBSTarget>& Hit, const FBSZergDef* D);
 	void AddProjectileModel(FBSProjectile& P, const TCHAR* Model, const TCHAR* Trail, float TrailScale = 1.f);
 	void MuzzleMesh(const FVector& At, float Yaw, float Delay);
@@ -292,7 +338,8 @@ private:
 	TArray<FBSSpawn> SpawnQueue;
 	float SpawnTimer = 0, Acc = 0, MuzzleFlash = 0, AutoT = 0;
 	int32 NextId = 1;
-	TArray<FVector2D> TankSlots, ScvIdle;
+	TArray<FVector2D> TankSlots, ScvIdle, SquadSpots, SamSlots, StrikePosts;
+	FVector2D SensorSlot = FVector2D::ZeroVector;
 	TMap<FString, float> LastSound;
 	FLinearColor TerranColor = FLinearColor(0.08f, 0.32f, 1.0f), ZergColor = FLinearColor(0.55f, 0.08f, 0.7f);
 };

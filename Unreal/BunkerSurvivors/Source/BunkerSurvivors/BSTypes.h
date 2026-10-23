@@ -25,7 +25,7 @@ struct FBSZergDef
 
 struct FBSInfantryDef
 {
-	FString Key, Name, Icon, Sound, Desc;
+	FString Key, Name, Icon, Sound, Desc, Death;
 	float Hp = 45, Dmg = 6, DmgLight = 0, DmgArmored = 0, Cd = 0.61f, Range = 5, Splash = 0, Slow = 0;
 	bool bGroundOnly = false;
 	int32 Cost = 50;
@@ -56,8 +56,15 @@ namespace BSDefs
 	constexpr float TankHp = 175, TankArmor = 1, TankDmg = 40, TankDmgArmored = 30, TankCd = 2.14f, TankRange = 13, TankMinRange = 2, TankRadius = 0.9f;
 	constexpr float TankSplash1 = 0.47f, TankSplash2 = 0.78f, TankSplash3 = 1.25f;
 	constexpr int32 TankCost = 300, TankCostStep = 100, TankMaxLane = 4, TankMaxArena = 4;
-	constexpr float BansheeDmg = 12, BansheeCd = 0.55f, BansheeRange = 7, BansheeSpeed = 9, BansheeFly = 4.5f, BansheeCooldown = 25;
-	constexpr int32 BansheeShots = 2, BansheeCost = 150;
+	// Air strike: four banshees hover over the lane (and its ledges) and fire missiles at passing zerg.
+	constexpr float BansheeDmg = 12, BansheeCd = 1.1f, BansheeRange = 6, BansheeSpeed = 9, BansheeFly = 2.4f, BansheeHover = 14, BansheeCooldown = 32;
+	constexpr int32 BansheeShots = 2, BansheeCost = 200, BansheeCount = 4;
+	// Troops standing behind the bunker (ejected, or recruited while it is full).
+	constexpr int32 SquadMax = 24;
+	// Missile turrets: anti-air only, like SC2 (12 x2, range 7). Sensor tower: the radar only works while one stands.
+	constexpr float SamHp = 250, SamDmg = 12, SamCd = 0.86f, SamRange = 7, SamRadius = 1.0f, SensorHp = 200, SensorRadius = 0.8f, BuildTime = 3;
+	constexpr int32 SamShots = 2, SamCost = 100, SamMax = 3, SensorCost = 125;
+	constexpr float RailsRange = 2.f;
 	// Yamato strike: a Battlecruiser fires on the densest cluster.
 	constexpr float YamatoDmg = 240, YamatoSplash = 120, YamatoRadius = 3.f, YamatoCooldown = 40;
 	constexpr int32 YamatoCost = 300;
@@ -72,5 +79,5 @@ namespace BSSounds
 	extern const TCHAR* MarineFire; extern const TCHAR* Stim; extern const TCHAR* FirebatFire; extern const TCHAR* MarauderFire;
 	extern const TCHAR* TankFire; extern const TCHAR* TankHit; extern const TCHAR* TankDeath; extern const TCHAR* BansheeFire;
 	extern const TCHAR* BansheeHit; extern const TCHAR* ScvRepair; extern const TCHAR* MedivacUnload; extern const TCHAR* BanelingDeath;
-	extern const TCHAR* Explosion;
+	extern const TCHAR* Explosion; extern const TCHAR* SamFire;
 }

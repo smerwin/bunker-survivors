@@ -176,6 +176,35 @@ void ABSGameMode::Tick(float Dt)
 		Game->CallAirStrike();
 		Game->UseYamato();
 	}
+	// -BSTestSquad: exercise the outside squad, turrets, sensor tower, magnetic rails, lethal stim and the hovering air strike.
+	static int32 SquadStep = 0;
+	if (Game && Game->bStarted && FParse::Param(FCommandLine::Get(), TEXT("BSTestSquad")))
+	{
+		if (SquadStep == 0 && Game->Time > 3.f)
+		{
+			SquadStep = 1;
+			Game->Minerals += 5000;
+			for (int32 i = 0; i < 10; i++) Game->AddInfantry(i % 3 == 1 ? TEXT("firebat") : i % 3 == 2 ? TEXT("marauder") : TEXT("marine"), false, true);
+			Game->BuildStructure(true); Game->BuildStructure(true); Game->BuildStructure(true); Game->BuildStructure(false);
+			Game->BuyUpgrade(TEXT("stim")); Game->BuyUpgrade(TEXT("hisec")); Game->BuyUpgrade(TEXT("rails"));
+		}
+		else if (SquadStep == 1 && Game->Time > 10.f)
+		{
+			SquadStep = 2;
+			Game->Eject(0);
+			if (Game->Squad.Num()) Game->Squad[0]->Hp = 5;          // too hurt to stim: should die
+			Game->UseStim();
+			Game->CallAirStrike();
+			Game->DebugSpawn(TEXT("mutalisk"), 0, 12); Game->DebugSpawn(TEXT("mutalisk"), 2, 12); Game->DebugSpawn(TEXT("broodlord"), -2, 14);
+			UE_LOG(LogTemp, Display, TEXT("BSTestSquad step2 %s"), *Game->DebugState());
+		}
+		else if (SquadStep == 2 && Game->Time > 16.f)
+		{
+			SquadStep = 3;
+			Game->Board(0);
+			UE_LOG(LogTemp, Display, TEXT("BSTestSquad step3 %s"), *Game->DebugState());
+		}
+	}
 	// Automated test games: stop on game over, or when the bot outlasts the time cap (sim seconds).
 	if (Game && Game->bStarted && !bTestDone)
 	{

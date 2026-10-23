@@ -37,4 +37,5 @@ private:
 	float Yaw = 0, TargetYaw = 0;
 	FVector2D Pan = FVector2D::ZeroVector, TargetPan = FVector2D::ZeroVector;    // metres, in view-aligned axes
 	float ShakeT = 0;
+	float SquadBack = 0;                // eases the lane view back to show troopers standing behind the bunker
 };

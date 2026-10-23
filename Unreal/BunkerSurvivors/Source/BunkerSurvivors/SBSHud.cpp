@@ -488,10 +488,25 @@ TSharedRef<SWidget> SBSHud::BuildCommandStrip()
 // =====================================================================================================
 // Squad card: bunker badge, 10-segment armour bar, fireteam portraits
 // =====================================================================================================
+// Troops standing outside: a row of small portraits under the fireteam (tap one to send it back in).
+namespace SquadRow
+{
+	constexpr float X0 = 70, Top = 70, Size = 15, Gap = 3;
+	int32 PerRow(float CardW) { return FMath::Max(1, FMath::FloorToInt((CardW - X0 - 12 + Gap) / (Size + Gap))); }
+	FVector2f At(int32 i, float CardW) { const int32 N = PerRow(CardW); return FVector2f(X0 + (i % N) * (Size + Gap), Top + (i / N) * (Size + Gap + 1)); }
+}
+
 TSharedRef<SWidget> SBSHud::BuildSquadCard()
 {
-	return SNew(SBSPaint)
-		.Size_Lambda([this]() { return FVector2D(Portrait() ? FMath::Max(200.f, (float)LocalSize.X - 20 - 104) : 400.f, 70); })
+	return SAssignNew(SquadCard, SBSPaint)
+		.Size_Lambda([this]()
+		{
+			const float Wd = Portrait() ? FMath::Max(200.f, (float)LocalSize.X - 20 - 104) : 400.f;
+			const ABSGame* Gm = Game();
+			const int32 N = Gm ? Gm->Squad.Num() : 0;
+			const int32 Rows = N ? (N + SquadRow::PerRow(Wd) - 1) / SquadRow::PerRow(Wd) : 0;
+			return FVector2D(Wd, 70 + (Rows ? Rows * (SquadRow::Size + SquadRow::Gap + 1) + 4 : 0));
+		})
 		.Paint([this](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
 		{
 			ABSGame* Gm = Game(); if (!Gm) return L;
@@ -544,6 +559,15 @@ TSharedRef<SWidget> SBSHud::BuildSquadCard()
 				else D::RLine(Out, L + 2, G, P, FVector2f(Ps, Ps), 5, C::A(C::Ink, 0.12f));
 			}
 			if (bStim) D::Text(Out, L + 2, G, TEXT("STIMMED"), D::Label(8), FVector2f(X0 + Bw, 47), C::Amber, 1.f);
+			for (int32 i = 0; i < Gm->Squad.Num(); i++)
+			{
+				const FBSTrooper& M = *Gm->Squad[i];
+				const FVector2f P = SquadRow::At(i, S.X), Sz(SquadRow::Size, SquadRow::Size);
+				D::Image(Out, L + 2, G, As->IconBrush(M.Def->Icon), P, Sz, FLinearColor(1, 1, 1, 0.85f));
+				D::RLine(Out, L + 3, G, P - FVector2f(1, 1), Sz + FVector2f(2, 2), 4, M.bBoarding ? C::Green : bStim ? C::A(C::Amber, 0.7f) : C::A(C::Cyan, 0.45f), 1.f);
+				const float Hp = FMath::Clamp(M.Hp / FMath::Max(1.f, M.MaxHp), 0.f, 1.f);
+				D::Rect(Out, L + 4, G, P + FVector2f(0, SquadRow::Size - 2), FVector2f(SquadRow::Size * Hp, 2), Hp > 0.5f ? C::Green : Hp > 0.25f ? C::Amber : C::Red);
+			}
 			return L + 8;
 		});
 }
@@ -650,7 +674,7 @@ static const TArray<FBSArmItem>& ArmItems()
 			FBSArmItem I; I.Id = Key; I.Name = Inf.Name; I.Short = Key == TEXT("marine") ? TEXT("Gauss rifle infantry") : Key == TEXT("firebat") ? TEXT("Flamethrower, anti-swarm") : TEXT("Slows, shreds armour");
 			I.Icon = [Key](ABSGame*) { return BSDefs::FindInfantry(Key)->Icon; };
 			I.Cost = [Key](ABSGame*) { return BSDefs::FindInfantry(Key)->Cost; };
-			I.Avail = [](ABSGame* G) { return G->Bunker.Units.Num() < G->Bunker.Slots; };
+			I.Avail = [](ABSGame* G) { return !G->TroopsFull(); };
 			I.Tag = [](ABSGame*) { return FString(TEXT("FULL")); };
 			I.Level = [](ABSGame*) { return -1; };
 			I.Buy = [Key](ABSGame* G) { G->AddInfantry(Key); };
@@ -669,6 +693,10 @@ static const TArray<FBSArmItem>& ArmItems()
 		};
 		Simple(TEXT("scv"), TEXT("SCV"), TEXT("Repairs bunker and tanks"), TEXT("btn-unit-terran-scv"), BSDefs::ScvCost,
 			[](ABSGame* G) { return G->Scvs.Num() < BSDefs::ScvMax; }, [](ABSGame* G) { G->AddScv(); });
+		Simple(TEXT("sam"), TEXT("Missile Turret"), TEXT("Anti-air, up to three"), TEXT("btn-building-terran-missileturret"), BSDefs::SamCost,
+			[](ABSGame* G) { return G->SamCount() < BSDefs::SamMax; }, [](ABSGame* G) { G->BuildStructure(true); });
+		Simple(TEXT("sensor"), TEXT("Sensor Tower"), TEXT("Powers the radar"), TEXT("btn-building-terran-sensortower-silver"), BSDefs::SensorCost,
+			[](ABSGame* G) { return !G->HasSensor(); }, [](ABSGame* G) { G->BuildStructure(false); });
 		Simple(TEXT("tank"), TEXT("Siege Tank"), TEXT("Air-dropped, long-range splash"), TEXT("btn-unit-terran-siegetank"), 0,
 			[](ABSGame* G) { return G->Tanks.Num() < G->TankMax; }, [](ABSGame* G) { G->DropTank(); });
 		for (const FBSUpgradeDef& U : BSDefs::Upgrades())
@@ -676,7 +704,8 @@ static const TArray<FBSArmItem>& ArmItems()
 			const FString Key = U.Key;
 			FBSArmItem I; I.Id = Key; I.Name = U.Name; I.MaxLevel = U.Costs.Num();
 			I.Short = Key == TEXT("stim") ? TEXT("Unlocks STIM ability") : Key == TEXT("weapons") ? TEXT("+1 infantry damage") : Key == TEXT("neosteel") ? TEXT("Bunker holds six")
-				: Key == TEXT("plating") ? TEXT("+150 HP per level") : Key == TEXT("vehicle") ? TEXT("+5 tank damage") : Key == TEXT("hisec") ? TEXT("+1 range, bunker and tanks") : TEXT("Heals troops in the bunker");
+				: Key == TEXT("plating") ? TEXT("+150 HP per level") : Key == TEXT("vehicle") ? TEXT("+5 tank damage") : Key == TEXT("hisec") ? TEXT("+1 range, bunker and tanks")
+				: Key == TEXT("rails") ? TEXT("+2 bunker range") : TEXT("Heals troops and SCVs");
 			I.Icon = [Key](ABSGame* G) { const FBSUpgradeDef* D0 = BSDefs::FindUpgrade(Key); return D0->Icons[FMath::Min(G->UpgradeLevel(Key), D0->Icons.Num() - 1)]; };
 			I.Cost = [Key](ABSGame* G) { return G->CostOfUpgrade(Key); };
 			I.Avail = [Key](ABSGame* G) { return G->UpgradeAvailable(Key); };
@@ -684,6 +713,7 @@ static const TArray<FBSArmItem>& ArmItems()
 			{
 				if (Key == TEXT("medivac") && !G->Up.bStim) return FString(TEXT("NEEDS STIM"));
 				if (Key == TEXT("vehicle") && G->Tanks.Num() == 0 && G->Up.Vehicle < 3) return FString(TEXT("NEEDS TANK"));
+				if (Key == TEXT("rails") && !G->Up.bHiSec) return FString(TEXT("NEEDS HI-SEC"));
 				return FString(BSDefs::FindUpgrade(Key)->Costs.Num() > 1 ? TEXT("MAX") : TEXT("DONE"));
 			};
 			I.Level = [Key](ABSGame* G) { return BSDefs::FindUpgrade(Key)->Costs.Num() > 1 ? G->UpgradeLevel(Key) : -1; };
@@ -1100,19 +1130,20 @@ int32 SBSHud::PaintWorld(const FGeometry& G, FSlateWindowElementList& Out, int32
 		D::Text(Out, L + 5, G, Fl.Text.ToUpper(), D::Label(12), FVector2f(P), C::A(Fl.Color, 1 - Fl.T / 1.3f), 0.5f, true);
 	}
 
-	// Radar, top-right below the command strip.
+	// Radar, top-right below the command strip: only while a sensor tower stands.
 	const bool bPortrait = S.Y > S.X;
+	const bool bRadar = Gm->SensorUp();
 	const float Rr = bPortrait ? 44 : 56;
 	const FVector2f Rc(S.X - 10 - Rr, 66 + Rr + 4);
-	D::Disc(Out, L + 6, G, Rc, Rr, C::Glass, 48);
-	D::Circle(Out, L + 7, G, Rc, Rr * 0.5f, C::Faint, 1, 36);
+	if (bRadar) D::Disc(Out, L + 6, G, Rc, Rr, C::Glass, 48);
+	if (bRadar) D::Circle(Out, L + 7, G, Rc, Rr * 0.5f, C::Faint, 1, 36);
 	const float Sweep = (float)FMath::Fmod(NowS * 1.8, 2 * PI);
-	for (int32 k = 0; k < 6; k++)
+	if (bRadar) for (int32 k = 0; k < 6; k++)
 	{
 		const float A0 = Sweep - k * 0.09f;
 		D::Poly(Out, L + 7, G, { Rc, Rc + FVector2f(FMath::Cos(A0), FMath::Sin(A0)) * Rr, Rc + FVector2f(FMath::Cos(A0 - 0.09f), FMath::Sin(A0 - 0.09f)) * Rr }, C::A(C::Cyan, 0.14f * (1 - k / 6.f)));
 	}
-	D::Circle(Out, L + 8, G, Rc, Rr, C::A(C::Cyan, 0.35f), 1.f, 48);
+	if (bRadar) D::Circle(Out, L + 8, G, Rc, Rr, C::A(C::Cyan, 0.35f), 1.f, 48);
 	ABSCameraPawn* Cm = Cam();
 	const float Yaw = Cm ? FMath::DegreesToRadians(Cm->GetYaw()) : 0;
 	const float RangeM = Gm->Mode == EBSMode::Lane ? 32.f : 30.f;
@@ -1126,10 +1157,11 @@ int32 SBSHud::PaintWorld(const FGeometry& G, FSlateWindowElementList& Out, int32
 		if (P.Size() > Rr - 3) P = P.GetSafeNormal() * (Rr - 3);
 		return Rc + P;
 	};
-	for (const TSharedPtr<FBSEnemy>& E : Gm->Enemies)
+	if (bRadar) for (const TSharedPtr<FBSEnemy>& E : Gm->Enemies)
 		D::Disc(Out, L + 9, G, ToRadar(E->X, E->Y), E->Def->Budget >= 16 ? 2.6f : 1.6f, E->Def->bFlying ? C::Amber : C::Violet, 8);
-	for (const TSharedPtr<FBSTank>& K : Gm->Tanks) D::Disc(Out, L + 9, G, ToRadar(K->X, K->Y), 2.2f, C::Cyan, 8);
-	D::Disc(Out, L + 9, G, Rc, 3, C::Green, 10);
+	if (bRadar) for (const TSharedPtr<FBSTank>& K : Gm->Tanks) D::Disc(Out, L + 9, G, ToRadar(K->X, K->Y), 2.2f, C::Cyan, 8);
+	if (bRadar) for (const TSharedPtr<FBSStructure>& St : Gm->Structures) D::Disc(Out, L + 9, G, ToRadar(St->X, St->Y), 2.2f, C::Cyan, 8);
+	if (bRadar) D::Disc(Out, L + 9, G, Rc, 3, C::Green, 10);
 
 	// Threat markers on the screen edge for off-screen zerg, kept clear of the HUD.
 	const float TopY = 150, BottomY = S.Y - (bPortrait ? (bArmouryOpen ? 300.f : 190.f) : 130.f);
@@ -1169,6 +1201,7 @@ void SBSHud::Tap(const FGeometry& Geo, const FVector2D& ScreenPos)
 {
 	ABSGame* Gm = Game();
 	if (!Gm || !PC.IsValid()) return;
+	if (TapSquadCard(ScreenPos)) return;
 	const double Now = FPlatformTime::Seconds();
 	if (Now - LastTapAt < 0.3) { if (ABSCameraPawn* C0 = Cam()) C0->ResetView(); LastTapAt = -1; return; }
 	LastTapAt = Now;
@@ -1179,6 +1212,22 @@ void SBSHud::Tap(const FGeometry& Geo, const FVector2D& ScreenPos)
 	if (T < 0) return;
 	const FVector Hit = Origin + Dir * T;
 	if (Gm->FocusAt(Hit.Y / BSSpace::UnitsPerMetre, Hit.X / BSSpace::UnitsPerMetre)) Gm->Toast(TEXT("Focus fire"));
+}
+
+// Tap a trooper in the bunker to send them outside; tap one outside to bring them back in.
+bool SBSHud::TapSquadCard(const FVector2D& ScreenPos)
+{
+	ABSGame* Gm = Game();
+	if (!Gm || !SquadCard.IsValid()) return false;
+	const FGeometry& CG = SquadCard->GetCachedGeometry();
+	const FVector2f P = FVector2f(CG.AbsoluteToLocal(ScreenPos)), S = FVector2f(CG.GetLocalSize());
+	if (P.X < 0 || P.Y < 0 || P.X > S.X || P.Y > S.Y) return false;
+	auto In = [&P](const FVector2f& At, float Sz) { return P.X >= At.X - 3 && P.X <= At.X + Sz + 3 && P.Y >= At.Y - 3 && P.Y <= At.Y + Sz + 3; };
+	for (int32 i = 0; i < Gm->Bunker.Units.Num(); i++)
+		if (In(FVector2f(SquadRow::X0 + i * 27.f, 41), 22)) { Gm->Eject(i); return true; }
+	for (int32 i = 0; i < Gm->Squad.Num(); i++)
+		if (In(SquadRow::At(i, S.X), SquadRow::Size)) { Gm->Board(i); return true; }
+	return true;                                      // taps on the card never focus-fire
 }
 
 FReply SBSHud::OnMouseButtonDown(const FGeometry& Geo, const FPointerEvent& E)

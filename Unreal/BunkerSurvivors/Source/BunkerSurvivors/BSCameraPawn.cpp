@@ -56,6 +56,8 @@ void ABSCameraPawn::Tick(float Dt)
 	Zoom += (TargetZoom - Zoom) * K;
 	Pan += (TargetPan - Pan) * K;
 	Yaw += (TargetYaw - Yaw) * K;
+	const bool bSquadOut = !bArena && !bAttract && Game.IsValid() && Game->Squad.Num() > 0;
+	SquadBack += ((bSquadOut ? 2.f : 0.f) - SquadBack) * (1 - FMath::Exp(-Dt * 2.f));
 
 	const float Z = Zoom, E = EaseInOut(Z);
 	const float Arm = ArmLength(Z, bArena);
@@ -65,7 +67,7 @@ void ABSCameraPawn::Tick(float Dt)
 	// Focus: lane looks ahead of the bunker toward the threat; the arena centres on the bunker.
 	// The bottom deck covers roughly the lower quarter of the screen, so the lane focus stays close enough
 	// that the bunker sits just above it.
-	const float Ahead = bArena ? FMath::Lerp(1.5f, -2.f, Z) : FMath::Lerp(1.2f, 3.2f, Z);
+	const float Ahead = bArena ? FMath::Lerp(1.5f, -2.f, Z) : FMath::Lerp(1.2f, 3.2f, Z) - SquadBack;
 	const float YawRad = FMath::DegreesToRadians(Yaw);
 	const FVector2D Fwd(FMath::Cos(YawRad), FMath::Sin(YawRad)), Right(-FMath::Sin(YawRad), FMath::Cos(YawRad));
 	const FVector2D FocusXY = Fwd * (Ahead + Pan.Y) + Right * Pan.X;               // world X/Y in metres

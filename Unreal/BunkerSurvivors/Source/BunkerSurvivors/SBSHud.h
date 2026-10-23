@@ -56,6 +56,7 @@ private:
 	ABSCameraPawn* Cam() const;
 	bool Portrait() const { return LocalSize.Y > LocalSize.X; }
 	void Tap(const FGeometry& Geo, const FVector2D& ScreenPos);
+	bool TapSquadCard(const FVector2D& ScreenPos);   // eject / board a trooper; true if the tap landed on the card
 	bool WorldToLocal(const FVector& World, FVector2D& Out) const;
 	void TogglePause();
 
@@ -86,6 +87,7 @@ private:
 	double BannerAt = -10; FString BannerText;
 	TArray<double> SegmentLostAt;
 	bool bArmouryOpen = true;
+	TSharedPtr<SWidget> SquadCard;
 
 	// Input state.
 	struct FPtr { FVector2D Start, Last; double Down = 0; };

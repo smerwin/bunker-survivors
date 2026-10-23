@@ -170,7 +170,7 @@ window.BS = window.BS || {};
     scv: { hp: 45, repairRate: 13.8, speed: 3.94, radius: 0.375, cost: 50, max: 4 },
     tank: { hp: 175, armor: 1, dmg: 40, dmgArmored: 30, cd: 2.14, range: 13, minRange: 2, splash: [0.47, 0.78, 1.25], radius: 0.9, cost: 300, costStep: 100, maxLane: 4, maxArena: 4 },
     // Air strike: four banshees hover over the lane (and its ledges) and fire missiles at passing zerg.
-    banshee: { count: 4, dmg: 12, shots: 2, cd: 1.1, range: 6, speed: 9, fly: 4.5, hover: 14, cost: 200, cooldown: 32 },
+    banshee: { count: 4, dmg: 12, shots: 2, cd: 1.1, range: 6, speed: 9, fly: 2.4, hover: 14, cost: 200, cooldown: 32 },
     // Troops standing behind the bunker (ejected, or recruited while it is full).
     squad: { max: 24 },
     // Missile turrets: anti-air only, like SC2 (12 x2, range 7).

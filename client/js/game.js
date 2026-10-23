@@ -46,7 +46,7 @@ window.BS = window.BS || {};
         this.tankMax = T().tank.maxLane;
         this.samSlots = [[-5.6, 1.2], [5.6, 1.2], [-3.6, -4.6]];
         this.sensorSlot = [3.6, -4.6];
-        this.strikePosts = [[-7, 6.2], [7, 6.2], [-2.4, 11], [2.4, 11]];   // over both ledges and up the stem
+        this.strikePosts = [[-3.4, 3.6], [3.4, 3.6], [-1.4, 6.4], [1.4, 6.4]];   // in view: covering both ledges and the stem
       } else {
         this.tankSlots = [[-3.0, -2.6], [3.0, -2.6], [-3.0, 2.6], [3.0, 2.6]];
         this.scvIdle = [[-2.6, -2.6], [2.6, 2.6], [-2.6, 2.6], [2.6, -2.6]];

@@ -129,13 +129,21 @@ void ABSGame::Init(UBSAssets* InAssets, EBSMode InMode)
 		TankSlots = { FVector2D(-3.4f, -0.4f), FVector2D(3.4f, -0.4f), FVector2D(-5.4f, -2.8f), FVector2D(5.4f, -2.8f) };
 		ScvIdle = { FVector2D(-2.6f, -2.9f), FVector2D(2.6f, -2.9f), FVector2D(-4.4f, -2.4f), FVector2D(4.4f, -2.4f) };
 		TankMax = BSDefs::TankMaxLane;
+		SamSlots = { FVector2D(-5.6f, 1.2f), FVector2D(5.6f, 1.2f), FVector2D(-3.6f, -4.6f) };
+		SensorSlot = FVector2D(3.6f, -4.6f);
+		StrikePosts = { FVector2D(-3.4f, 3.6f), FVector2D(3.4f, 3.6f), FVector2D(-1.4f, 6.4f), FVector2D(1.4f, 6.4f) };   // in view: covering both ledges and the lane
 	}
 	else
 	{
 		TankSlots = { FVector2D(-3.0f, -2.6f), FVector2D(3.0f, -2.6f), FVector2D(-3.0f, 2.6f), FVector2D(3.0f, 2.6f) };
 		ScvIdle = { FVector2D(-2.6f, -2.6f), FVector2D(2.6f, 2.6f), FVector2D(-2.6f, 2.6f), FVector2D(2.6f, -2.6f) };
 		TankMax = BSDefs::TankMaxArena;
+		SamSlots = { FVector2D(0, 4), FVector2D(-4, 0), FVector2D(4, 0) };
+		SensorSlot = FVector2D(-4.2f, -4.2f);
+		for (const float A : { 45.f, 135.f, 225.f, 315.f }) StrikePosts.Add(FVector2D(FMath::Cos(FMath::DegreesToRadians(A)) * 7, FMath::Sin(FMath::DegreesToRadians(A)) * 7));
 	}
+	// Four ranks of six behind the bunker (the side away from the lane).
+	for (const float Y : { -2.3f, -3.1f, -3.9f, -4.7f }) for (const float X : { -2.f, -1.2f, -0.4f, 0.4f, 1.2f, 2.f }) SquadSpots.Add(FVector2D(X, Y));
 	BuildWorld(Mode);
 	Bunker.Actor = AcquireModel(TEXT("bunker"));
 	if (Bunker.Actor) { Bunker.Actor->SetSim(0, 0, 0, PI / 2); Bunker.Actor->SetTeamColor(TerranColor); }
@@ -433,10 +441,11 @@ bool ABSGame::AddInfantry(const FString& Type, bool bFree, bool bInstant)
 {
 	const FBSInfantryDef* D = BSDefs::FindInfantry(Type);
 	if (!D) return false;
-	if (Bunker.Units.Num() + PendingInfantry() >= Bunker.Slots) { Toast(TEXT("Bunker is full")); return false; }
+	if (TroopsFull()) { Toast(TEXT("No room for more troops")); return false; }
 	if (!bFree) { if (Minerals < D->Cost) { Toast(TEXT("Not enough minerals")); return false; } Minerals -= D->Cost; }
 	if (bInstant || !Assets->Model(TEXT("medivac")))
 	{
+		if (Bunker.Units.Num() >= Bunker.Slots) { JoinSquad(D, D->Hp, BSDefs::BunkerHalfSize + 0.3f, 0.4f, nullptr); return true; }
 		Bunker.Units.Add({ D, D->Hp, D->Hp, Rnd(0, 0.3f) });
 		if (Bunker.Actor) Bunker.Actor->Play(TEXT("stand work"), true);
 		return true;
@@ -520,6 +529,15 @@ void ABSGame::UpdateReinforcements(float Dt)
 	{
 		FBSWalker& W = Walkers[i];
 		if (W.Delay > 0) { W.Delay -= Dt; continue; }
+		// Bunker full: fall in behind it instead.
+		int32 Heading = 0;
+		for (const FBSWalker& O : Walkers) if (&O != &W && O.Delay <= 0) Heading++;
+		if (!Bunker.bDead && Bunker.Units.Num() + Heading >= Bunker.Slots && Squad.Num() < BSDefs::SquadMax)
+		{
+			JoinSquad(W.Def, W.Def->Hp, W.X, W.Y, W.Actor);
+			Walkers.RemoveAt(i);
+			continue;
+		}
 		const FVector2D Door(W.X < 0 ? -BSDefs::BunkerHalfSize - 0.1f : BSDefs::BunkerHalfSize + 0.1f, 0.4f);
 		const float Dx = Door.X - W.X, Dy = Door.Y - W.Y, Dd = FMath::Sqrt(Dx * Dx + Dy * Dy);
 		if (Dd < 0.3f || Bunker.bDead)
@@ -543,6 +561,249 @@ void ABSGame::UpdateReinforcements(float Dt)
 			W.Actor->SetSim(W.X, W.Y, 0, W.Yaw);
 		}
 	}
+}
+
+// ---- Squad behind the bunker ------------------------------------------------------------------------
+TSharedPtr<FBSTrooper> ABSGame::JoinSquad(const FBSInfantryDef* Def, float Hp, float X, float Y, ABSModelActor* Actor)
+{
+	const FVector2D* Spot = SquadSpots.FindByPredicate([this](const FVector2D& S) { return !Squad.ContainsByPredicate([&S](const TSharedPtr<FBSTrooper>& M) { return M->Spot == S; }); });
+	if (!Spot) { ReleaseModel(Actor); return nullptr; }
+	TSharedPtr<FBSTrooper> M = MakeShared<FBSTrooper>();
+	M->Def = Def; M->Hp = Hp; M->MaxHp = Def->Hp; M->Cd = Rnd(0, 0.3f); M->X = X; M->Y = Y; M->Spot = *Spot;
+	M->Actor = Actor ? Actor : AcquireModel(Def->Key);
+	if (M->Actor) { M->Actor->SetTeamColor(TerranColor); M->Actor->SetSim(X, Y, 0, M->Yaw); }
+	Squad.Add(M);
+	return M;
+}
+
+// Send a trooper out of the bunker's side hatch to stand behind it.
+bool ABSGame::Eject(int32 Index)
+{
+	if (Bunker.bDead || !Bunker.Units.IsValidIndex(Index)) return false;
+	if (Squad.Num() >= BSDefs::SquadMax) { Toast(TEXT("No room behind the bunker")); return false; }
+	const FBSInfantryUnit U = Bunker.Units[Index];
+	Bunker.Units.RemoveAt(Index);
+	int32 Left = 0;
+	for (const TSharedPtr<FBSTrooper>& M : Squad) Left += M->X < 0;
+	const float Side = Left <= Squad.Num() - Left ? -1.f : 1.f;
+	if (TSharedPtr<FBSTrooper> M = JoinSquad(U.Def, U.Hp, Side * (BSDefs::BunkerHalfSize + 0.3f), 0.4f, nullptr)) M->Cd = U.Cd;
+	if (!Bunker.Units.Num() && Bunker.Actor) Bunker.Actor->Play(StandNames, true);
+	Floater(0, 0, 3, U.Def->Name + TEXT(" out"), FLinearColor(0.5f, 0.85f, 1));
+	return true;
+}
+
+bool ABSGame::Board(int32 Index)
+{
+	if (!Squad.IsValidIndex(Index) || Squad[Index]->bDead) return false;
+	if (Bunker.Units.Num() >= Bunker.Slots) { Toast(TEXT("Bunker is full")); return false; }
+	Squad[Index]->bBoarding = !Squad[Index]->bBoarding;
+	return true;
+}
+
+// Troopers path round the bunker: straight to the goal if the way is clear, else via the corner that makes the
+// shortest clear route.
+FVector2D ABSGame::RoundBunker(float X, float Y, float Gx, float Gy) const
+{
+	const float B = BSDefs::BunkerHalfSize + 0.25f, C = B + 0.3f;
+	auto Hits = [B](float Ax, float Ay, float Bx, float By)   // segment against the box (slab test)
+	{
+		float T0 = 0, T1 = 1;
+		const float Dx = Bx - Ax, Dy = By - Ay;
+		const float Ps[4] = { -Dx, Dx, -Dy, Dy }, Qs[4] = { Ax + B, B - Ax, Ay + B, B - Ay };
+		for (int32 k = 0; k < 4; k++)
+		{
+			if (FMath::Abs(Ps[k]) < 1e-9f) { if (Qs[k] < 0) return false; continue; }
+			const float R = Qs[k] / Ps[k];
+			if (Ps[k] < 0) { if (R > T1) return false; if (R > T0) T0 = R; }
+			else { if (R < T0) return false; if (R < T1) T1 = R; }
+		}
+		return T0 <= T1;
+	};
+	if ((FMath::Abs(X) < B && FMath::Abs(Y) < B) || !Hits(X, Y, Gx, Gy)) return FVector2D(Gx, Gy);
+	FVector2D Nearest(Gx, Gy); float BestLen = 1e9f;
+	for (const FVector2D Cn : { FVector2D(C, C), FVector2D(-C, C), FVector2D(C, -C), FVector2D(-C, -C) })
+	{
+		if (Hits(X, Y, Cn.X, Cn.Y)) continue;
+		const float L = FMath::Sqrt(Dist2(X, Y, Cn.X, Cn.Y)) + FMath::Sqrt(Dist2(Cn.X, Cn.Y, Gx, Gy)) + (Hits(Cn.X, Cn.Y, Gx, Gy) ? 2 * C : 0);
+		if (L < BestLen) { BestLen = L; Nearest = Cn; }
+	}
+	return Nearest;
+}
+
+void ABSGame::UpdateSquad(float Dt)
+{
+	const float Hs = BSDefs::BunkerHalfSize;
+	const bool bStim = Ab.StimUntil > Time;
+	// Keep a little elbow room so troopers converging on one spot do not stack.
+	for (int32 i = 0; i < Squad.Num(); i++)
+		for (int32 j = i + 1; j < Squad.Num(); j++)
+		{
+			FBSTrooper& A = *Squad[i]; FBSTrooper& B = *Squad[j];
+			const float Dx = B.X - A.X, Dy = B.Y - A.Y, D2 = Dx * Dx + Dy * Dy;
+			if (D2 < 0.49f && D2 > 1e-6f) { const float D = FMath::Sqrt(D2), Push = (0.7f - D) / D * 0.25f; A.X -= Dx * Push; A.Y -= Dy * Push; B.X += Dx * Push; B.Y += Dy * Push; }
+		}
+	TArray<TSharedPtr<FBSTrooper>> Snapshot = Squad;
+	for (const TSharedPtr<FBSTrooper>& MP : Snapshot)
+	{
+		FBSTrooper& M = *MP;
+		if (M.bDead) continue;
+		const FBSInfantryDef* D = M.Def;
+		auto Pred = [D](const FBSEnemy& E) { return !(D->bGroundOnly && E.Def->bFlying); };
+		float Gx = M.Spot.X, Gy = M.Spot.Y;
+		if (M.bBoarding) { Gx = (M.X < 0 ? -1 : 1) * (Hs + 0.3f); Gy = 0.4f; }
+		else if (EnemiesInRange(M.X, M.Y, D->Range, Pred).Num()) { Gx = M.X; Gy = M.Y; }   // hold and fire
+		else
+		{
+			// Advance on the nearest zerg that is attacking our position from beyond our reach.
+			const FBSEnemy* Th = nullptr; float Nearest = 1e9f;
+			for (const TSharedPtr<FBSEnemy>& E : Enemies)
+			{
+				if (!E->Alive() || !E->bAttacking || !Pred(*E) || Dist2(0, 0, E->X, E->Y) > 14 * 14) continue;
+				const float Dd = Dist2(M.X, M.Y, E->X, E->Y);
+				if (Dd < Nearest) { Nearest = Dd; Th = E.Get(); }
+			}
+			if (Th)
+			{
+				const float A = FMath::Atan2(M.Y - Th->Y, M.X - Th->X), R = D->Range * 0.8f + Th->Radius;
+				Gx = Th->X + FMath::Cos(A) * R; Gy = Th->Y + FMath::Sin(A) * R;
+			}
+		}
+		const float Far = FMath::Sqrt(Dist2(M.X, M.Y, Gx, Gy));
+		const FVector2D Wp = RoundBunker(M.X, M.Y, Gx, Gy);
+		const float Dx = Wp.X - M.X, Dy = Wp.Y - M.Y, Dd = FMath::Max(0.001f, FMath::Sqrt(Dx * Dx + Dy * Dy));
+		if (Far > 0.12f)
+		{
+			const float Sp = FMath::Min(Dd, 3.15f * Dt);
+			M.X += Dx / Dd * Sp; M.Y += Dy / Dd * Sp; M.Yaw = FMath::Atan2(Dy, Dx);
+			if (M.Actor && M.Anim != TEXT("walk")) { M.Anim = TEXT("walk"); M.Actor->Play(WalkNames, true, 1.2f); }
+			if (M.Actor) M.Actor->SetSim(M.X, M.Y, 0, M.Yaw);
+			continue;
+		}
+		if (M.bBoarding)
+		{
+			M.bBoarding = false;
+			if (!Bunker.bDead && Bunker.Units.Num() < Bunker.Slots)
+			{
+				Bunker.Units.Add({ D, M.Hp, M.MaxHp, M.Cd });
+				if (Bunker.Actor) Bunker.Actor->Play(TEXT("stand work"), true);
+				ReleaseModel(M.Actor); M.Actor = nullptr; M.bDead = true;
+				Squad.Remove(MP);
+				Floater(0, 0, 3, TEXT("+") + D->Name, FLinearColor(0.5f, 0.85f, 1));
+			}
+			else Toast(TEXT("Bunker is full"));
+			continue;
+		}
+		// Holding position: fire at whatever comes into (unboosted) range.
+		M.Cd -= Dt * (bStim ? 1.5f : 1.f);
+		if (M.Cd <= 0)
+		{
+			TSharedPtr<FBSEnemy> Target;
+			if (TSharedPtr<FBSEnemy> F = Focus.Pin())
+				if (F->Alive() && Pred(*F) && FMath::Sqrt(Dist2(M.X, M.Y, F->X, F->Y)) - F->Radius <= D->Range) Target = F;
+			if (!Target) { TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(M.X, M.Y, D->Range, Pred); if (L.Num()) Target = L[0]; }
+			if (Target)
+			{
+				M.Cd += D->Cd;
+				M.Yaw = FMath::Atan2(Target->Y - M.Y, Target->X - M.X);
+				FireInfantry(D, FVector(M.X + FMath::Cos(M.Yaw) * 0.45f, M.Y + FMath::Sin(M.Yaw) * 0.45f, 0.85f), Target);
+				const float Len = M.Actor ? M.Actor->Play(TEXT("attack"), false, 1.4f) : 0.f;
+				M.Anim = TEXT("attack"); M.StandAt = Time + FMath::Min(D->Cd, Len > 0 ? Len : 0.5f);
+			}
+			else M.Cd = 0.1f;
+		}
+		if (M.Actor && (M.Anim == TEXT("walk") || (M.Anim == TEXT("attack") && Time > M.StandAt))) { M.Anim = TEXT("stand"); M.Actor->Play(StandNames, true); }
+		if (M.Actor) M.Actor->SetSim(M.X, M.Y, 0, M.Yaw);
+	}
+}
+
+// A trooper dies: outside, it falls with SC2's death animation; inside, it is carried out. The caller removes it.
+void ABSGame::KillTrooper(const FBSInfantryDef* Def, float X, float Y, float Yaw, ABSModelActor* Actor, bool bStim)
+{
+	if (Actor) { ReleaseModel(Actor); Corpse(Def->Death, X, Y, 0, Yaw, 3.5f, 1, true); }
+	Toast(Def->Name + (bStim ? TEXT(" overdosed on stim") : TEXT(" down")));
+	Floater(X, Y, 2.5f, bStim ? TEXT("OVERDOSE") : TEXT("KIA"), FLinearColor(1, 0.42f, 0.35f));
+}
+
+// ---- Structures: missile turrets and the sensor tower ---------------------------------------------------------
+bool ABSGame::BuildStructure(bool bSam)
+{
+	FVector2D Slot;
+	if (bSam)
+	{
+		if (SamCount() >= BSDefs::SamMax) { Toast(TEXT("Turret limit reached")); return false; }
+		const FVector2D* Free = SamSlots.FindByPredicate([this](const FVector2D& Sl) { return !Structures.ContainsByPredicate([&Sl](const TSharedPtr<FBSStructure>& S) { return S->X == Sl.X && S->Y == Sl.Y; }); });
+		if (!Free) { Toast(TEXT("No room")); return false; }
+		Slot = *Free;
+	}
+	else
+	{
+		if (HasSensor()) { Toast(TEXT("Sensor tower already built")); return false; }
+		Slot = SensorSlot;
+	}
+	const int32 Cost = bSam ? BSDefs::SamCost : BSDefs::SensorCost;
+	if (Minerals < Cost) { Toast(TEXT("Not enough minerals")); return false; }
+	Minerals -= Cost;
+	TSharedPtr<FBSStructure> S = MakeShared<FBSStructure>();
+	S->bSam = bSam; S->X = Slot.X; S->Y = Slot.Y;
+	S->MaxHp = bSam ? BSDefs::SamHp : BSDefs::SensorHp; S->Hp = S->MaxHp * 0.1f;
+	S->Radius = bSam ? BSDefs::SamRadius : BSDefs::SensorRadius;
+	S->Actor = AcquireModel(bSam ? TEXT("missileturret") : TEXT("sensortower"));
+	if (S->Actor) { S->Actor->SetTeamColor(TerranColor); S->Actor->SetSim(S->X, S->Y, 0, S->Yaw); S->Actor->Play(TEXT("birth"), false); }
+	Structures.Add(S);
+	Toast(bSam ? TEXT("Building missile turret") : TEXT("Building sensor tower"));
+	return true;
+}
+
+void ABSGame::UpdateStructures(float Dt)
+{
+	TArray<TSharedPtr<FBSStructure>> Snapshot = Structures;
+	for (const TSharedPtr<FBSStructure>& SP : Snapshot)
+	{
+		FBSStructure& S = *SP;
+		if (S.bDead) continue;
+		if (!S.bReady)
+		{
+			// Rises from 10% to full health while it builds, as in SC2.
+			S.T += Dt; S.Hp = FMath::Min(S.MaxHp, S.Hp + S.MaxHp * 0.9f / BSDefs::BuildTime * Dt);
+			if (S.T >= BSDefs::BuildTime)
+			{
+				S.bReady = true;
+				if (S.Actor) S.Actor->Play(StandNames, true);
+				Toast(S.bSam ? TEXT("Missile turret online") : TEXT("Sensor tower online: radar active"));
+			}
+			continue;
+		}
+		if (!S.bSam) continue;
+		S.Cd -= Dt;
+		if (S.Cd > 0) continue;
+		TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(S.X, S.Y, BSDefs::SamRange, [](const FBSEnemy& E) { return E.Def->bFlying; });
+		if (!L.Num()) { S.Cd = 0.1f; continue; }
+		const TSharedPtr<FBSEnemy>& Target = L[0];
+		S.Cd = BSDefs::SamCd;
+		S.Yaw = FMath::Atan2(Target->Y - S.Y, Target->X - S.X);
+		if (S.Actor) { S.Actor->SetSim(S.X, S.Y, 0, S.Yaw); S.Actor->Play(TEXT("attack"), false); }
+		for (int32 k = 0; k < BSDefs::SamShots; k++)
+		{
+			const float Off = k ? 0.35f : -0.35f;
+			FBSProjectile P; P.Kind = EBSProjKind::Sam; P.bFriendly = true;
+			P.From = FVector(S.X - FMath::Sin(S.Yaw) * Off, S.Y + FMath::Cos(S.Yaw) * Off, 1.6f);
+			P.To = FVector(Target->X, Target->Y, Target->Z); P.T = -k * 0.12f; P.Dur = 0.4f; P.Dmg = BSDefs::SamDmg; P.TargetEnemy = Target; P.ImpactFx = TEXT("samImpact");
+			AddProjectileModel(P, TEXT("projSam"), TEXT("samMissile"));
+			if (!P.Model) AddProjectileVisual(P, FLinearColor(1, 0.8f, 0.5f), 0.15f);
+			Projectiles.Add(P);
+		}
+		PlaySound(BSSounds::SamFire, 0.45f, 0.2f);
+	}
+}
+
+void ABSGame::DestroyStructure(const TSharedPtr<FBSStructure>& S)
+{
+	S->bDead = true;
+	ReleaseModel(S->Actor); S->Actor = nullptr;
+	Structures.Remove(S);
+	Corpse(S->bSam ? TEXT("missileturretDeath") : TEXT("sensortowerDeath"), S->X, S->Y, 0, S->Yaw, 4, 1, true);
+	PlaySound(BSSounds::Explosion, 0.6f);
+	Toast(S->bSam ? TEXT("Missile turret destroyed") : TEXT("Sensor tower destroyed: radar offline"));
 }
 
 bool ABSGame::AddScv(bool bFree)
@@ -585,11 +846,11 @@ bool ABSGame::CallAirStrike()
 	Minerals -= BSDefs::BansheeCost;
 	Ab.StrikeCd = BSDefs::BansheeCooldown;
 	const bool bLane = Mode == EBSMode::Lane;
-	for (int32 i = 0; i < 2; i++)
+	for (int32 i = 0; i < BSDefs::BansheeCount; i++)
 	{
 		FBSBanshee B;
-		B.X = bLane ? (i ? 2.2f : -2.2f) : (i ? 3.f : -3.f);
-		B.Y = bLane ? -14.f : -34.f; B.Z = BSDefs::BansheeFly; B.Yaw = PI / 2; B.Cd = 0.3f + i * 0.25f;
+		B.Post = StrikePosts[i % StrikePosts.Num()];
+		B.X = B.Post.X * 0.5f; B.Y = (bLane ? -16.f : -34.f) - i * 1.2f; B.Z = BSDefs::BansheeFly + 1.5f; B.Yaw = PI / 2; B.Cd = 0.3f + i * 0.2f;
 		B.Actor = AcquireModel(TEXT("banshee"));
 		if (B.Actor) { B.Actor->SetTeamColor(TerranColor); B.Actor->Play(WalkNames, true); }
 		Banshees.Add(B);
@@ -694,9 +955,19 @@ bool ABSGame::UseStim()
 {
 	if (!Up.bStim) { Toast(TEXT("Research Stimpack first")); return false; }
 	if (Ab.StimCd > 0) return false;
-	bool bAny = false;
-	for (FBSInfantryUnit& U : Bunker.Units) if (U.Hp > U.Def->StimHp + 1) { U.Hp -= U.Def->StimHp; bAny = true; }
-	if (!bAny) { Toast(TEXT("Troops too wounded to stim")); return false; }
+	if (!Bunker.Units.Num() && !Squad.Num()) { Toast(TEXT("No troops to stim")); return false; }
+	// Everyone stims; anyone too hurt to take it dies.
+	for (int32 i = Bunker.Units.Num() - 1; i >= 0; i--)
+	{
+		FBSInfantryUnit& U = Bunker.Units[i];
+		if (U.Hp <= U.Def->StimHp) { const FBSInfantryDef* D = U.Def; Bunker.Units.RemoveAt(i); KillTrooper(D, 0, 0, 0, nullptr, true); }
+		else U.Hp -= U.Def->StimHp;
+	}
+	for (const TSharedPtr<FBSTrooper>& M : TArray<TSharedPtr<FBSTrooper>>(Squad))
+	{
+		if (M->Hp <= M->Def->StimHp) { M->bDead = true; KillTrooper(M->Def, M->X, M->Y, M->Yaw, M->Actor, true); M->Actor = nullptr; Squad.Remove(M); }
+		else M->Hp -= M->Def->StimHp;
+	}
 	Ab.StimUntil = Time + BSDefs::StimDuration; Ab.StimCd = BSDefs::StimCooldown;
 	PlaySound(BSSounds::Stim, 0.9f);
 	Floater(0, 0, 3, TEXT("STIM!"), FLinearColor(1, 0.83f, 0.3f));
@@ -722,6 +993,7 @@ int32 ABSGame::UpgradeLevel(const FString& Id) const
 	if (Id == TEXT("stim")) return Up.bStim; if (Id == TEXT("neosteel")) return Up.bNeosteel;
 	if (Id == TEXT("plating")) return Up.Plating; if (Id == TEXT("medivac")) return Up.bMedivac;
 	if (Id == TEXT("hisec")) return Up.bHiSec;
+	if (Id == TEXT("rails")) return Up.bRails;
 	return 0;
 }
 
@@ -739,6 +1011,7 @@ bool ABSGame::UpgradeAvailable(const FString& Id) const
 	if (!D) return false;
 	if (Id == TEXT("medivac") && !Up.bStim) return false;
 	if (Id == TEXT("vehicle") && Tanks.Num() == 0) return false;
+	if (Id == TEXT("rails") && !Up.bHiSec) return false;
 	return UpgradeLevel(Id) < D->Costs.Num();
 }
 
@@ -755,6 +1028,7 @@ bool ABSGame::BuyUpgrade(const FString& Id)
 	else if (Id == TEXT("plating")) { Up.Plating++; Bunker.MaxHp += 150; Bunker.Hp += 150; if (Up.Plating <= 3) Bunker.Armor += 1; Toast(FString::Printf(TEXT("Building Armor level %d"), Up.Plating)); }
 	else if (Id == TEXT("hisec")) { Up.bHiSec = true; Toast(TEXT("Hi-Sec Auto Tracking online")); }
 	else if (Id == TEXT("medivac")) { Up.bMedivac = true; Toast(TEXT("Medivac on station")); }
+	else if (Id == TEXT("rails")) { Up.bRails = true; Toast(TEXT("Magnetic rails fitted: +2 bunker range")); }
 	return true;
 }
 
@@ -923,6 +1197,19 @@ void ABSGame::BuildTargets()
 		FBSTarget T; T.Kind = FBSTarget::Scv; T.ScvRef = S; T.X = S->X; T.Y = S->Y; T.Radius = BSDefs::ScvRadius; T.bLight = true;
 		Targets.Add(T);
 	}
+	for (const TSharedPtr<FBSTrooper>& M : Squad)
+	{
+		if (M->bDead) continue;
+		const bool bMarauder = M->Def->Key == TEXT("marauder");
+		FBSTarget T; T.Kind = FBSTarget::Trooper; T.TrooperRef = M; T.X = M->X; T.Y = M->Y; T.Radius = 0.375f; T.bLight = !bMarauder; T.bArmored = bMarauder;
+		Targets.Add(T);
+	}
+	for (const TSharedPtr<FBSStructure>& S : Structures)
+	{
+		if (S->bDead) continue;
+		FBSTarget T; T.Kind = FBSTarget::Structure; T.StructureRef = S; T.X = S->X; T.Y = S->Y; T.Radius = S->Radius; T.bStructure = true; T.bArmored = true;
+		Targets.Add(T);
+	}
 }
 
 void ABSGame::DamageDefender(const FBSTarget& T, float Dmg)
@@ -964,6 +1251,23 @@ void ABSGame::DamageDefender(const FBSTarget& T, float Dmg)
 			Scvs.Remove(S);
 			Toast(TEXT("SCV lost"));
 		}
+	}
+	else if (T.Kind == FBSTarget::Trooper)
+	{
+		TSharedPtr<FBSTrooper> M = T.TrooperRef.Pin();
+		M->Hp -= FMath::Max(0.5f, Dmg - (M->Def->Key == TEXT("marauder") ? 1.f : 0.f)); M->Flash = 1;
+		if (M->Hp <= 0 && !M->bDead)
+		{
+			M->bDead = true;
+			KillTrooper(M->Def, M->X, M->Y, M->Yaw, M->Actor, false); M->Actor = nullptr;
+			Squad.Remove(M);
+		}
+	}
+	else if (T.Kind == FBSTarget::Structure)
+	{
+		TSharedPtr<FBSStructure> S = T.StructureRef.Pin();
+		S->Hp -= FMath::Max(0.5f, Dmg); S->Flash = 1;
+		if (S->Hp <= 0 && !S->bDead) DestroyStructure(S);
 	}
 }
 
@@ -1086,6 +1390,8 @@ void ABSGame::Step(float Dt)
 	UpdateBunker(Dt);
 	UpdateTanks(Dt);
 	UpdateScvs(Dt);
+	UpdateSquad(Dt);
+	UpdateStructures(Dt);
 	UpdateBanshees(Dt);
 	UpdateProjectiles(Dt);
 	UpdateReinforcements(Dt);
@@ -1231,10 +1537,11 @@ void ABSGame::UpdateBunker(float Dt)
 {
 	if (Bunker.bDead) return;
 	const bool bStim = Ab.StimUntil > Time;
-	const float Bonus = BSDefs::BunkerRangeBonus + BSDefs::BunkerHalfSize + (Up.bHiSec ? BSDefs::HiSecRange : 0.f) + (Mode == EBSMode::Arena ? 1.f : 0.f);
+	const float Bonus = BSDefs::BunkerRangeBonus + BSDefs::BunkerHalfSize + (Up.bHiSec ? BSDefs::HiSecRange : 0.f) + (Up.bRails ? BSDefs::RailsRange : 0.f) + (Mode == EBSMode::Arena ? 1.f : 0.f);
 	if (Up.bMedivac)
 	{
 		for (FBSInfantryUnit& U : Bunker.Units) U.Hp = FMath::Min(U.MaxHp, U.Hp + 9 * Dt);
+		for (const TSharedPtr<FBSTrooper>& M : Squad) if (!M->bDead) M->Hp = FMath::Min(M->MaxHp, M->Hp + 9 * Dt);
 		// The medivac hovers over the bunker and also mends the most hurt SCV nearby (12.6 HP/s, as in SC2).
 		if (!StationMedivac && Assets->Model(TEXT("medivac")))
 		{
@@ -1282,45 +1589,50 @@ void ABSGame::UpdateBunker(float Dt)
 			if (D->Key == TEXT("firebat")) for (auto& E : L) if (E->Def->bLight) { Target = E; break; }
 		}
 		U.Cd += D->Cd;
-		const float DmgBase = D->Dmg + Up.Weapons;
+		// The slit facing the target, with a little spread along it so a fireteam's rounds don't all leave from one pixel.
 		const float Ang = FMath::Atan2(Target->Y, Target->X);
-		const FVector Muzzle = BunkerSlit(Ang);
-		const FVector Hit(Target->X, Target->Y, Target->Z + Target->Def->Height * 0.5f);
-		if (D->Key == TEXT("marine"))
+		FireInfantry(D, BunkerSlit(Ang) + FVector(-FMath::Sin(Ang), FMath::Cos(Ang), 0) * Rnd(-0.18f, 0.18f), Target);
+	}
+}
+
+// One shot from a trooper at a muzzle position (a bunker slit, or the rifle of a soldier standing outside).
+void ABSGame::FireInfantry(const FBSInfantryDef* D, const FVector& Muzzle, const TSharedPtr<FBSEnemy>& Target)
+{
+	auto Pred = [D](const FBSEnemy& E) { return !(D->bGroundOnly && E.Def->bFlying); };
+	const float DmgBase = D->Dmg + Up.Weapons;
+	const FVector Hit(Target->X, Target->Y, Target->Z + Target->Def->Height * 0.5f);
+	const float Ang = FMath::Atan2(Hit.Y - Muzzle.Y, Hit.X - Muzzle.X);
+	if (D->Key == TEXT("marine"))
+	{
+		HurtEnemy(Target, DmgBase);
+		// Three-round bursts with SC2's muzzle mesh and impact sparks.
+		bool bFx = true;
+		for (int32 r = 0; r < 3 && bFx; r++)
 		{
-			HurtEnemy(Target, DmgBase);
-			// Slight spread so a fireteam's volley fans out from the bunker's firing slits.
-			// A little spread along the slit so a fireteam's rounds don't all leave from one pixel.
-			const FVector Slit = Muzzle + FVector(-FMath::Sin(Ang), FMath::Cos(Ang), 0) * Rnd(-0.18f, 0.18f);
-			const float Aim = FMath::Atan2(Hit.Y - Slit.Y, Hit.X - Slit.X);
-			bool bFx = true;
-			for (int32 r = 0; r < 3 && bFx; r++)
-			{
-				bFx = PlayFx(TEXT("marineLaunch"), Slit, Aim, 1.4f, r * 0.08f) != 0;
-				MuzzleMesh(Slit, Aim, r * 0.08f);
-				PlayFx(TEXT("marineImpact"), Hit + FVector(Rnd(-0.2f, 0.2f), Rnd(-0.2f, 0.2f), Rnd(-0.15f, 0.25f)), Aim + PI, 1.f, r * 0.08f + 0.03f);
-			}
-			if (!bFx) EmitGunfire(Slit, Hit);
-			MuzzleFlash = 1;
-			PlaySound(BSSounds::MarineFire, 0.3f, 0.09f);
+			bFx = PlayFx(TEXT("marineLaunch"), Muzzle, Ang, 1.4f, r * 0.08f) != 0;
+			MuzzleMesh(Muzzle, Ang, r * 0.08f);
+			PlayFx(TEXT("marineImpact"), Hit + FVector(Rnd(-0.2f, 0.2f), Rnd(-0.2f, 0.2f), Rnd(-0.15f, 0.25f)), Ang + PI, 1.f, r * 0.08f + 0.03f);
 		}
-		else if (D->Key == TEXT("firebat"))
-		{
-			for (auto& V : EnemiesInRange(Target->X, Target->Y, D->Splash, Pred)) HurtEnemy(V, DmgBase + (V->Def->bLight ? D->DmgLight : 0));
-			EmitFlame(Muzzle, FVector(Target->X, Target->Y, 0.4f));
-			MuzzleFlash = 1;
-			PlaySound(BSSounds::FirebatFire, 0.45f, 0.3f);
-		}
-		else
-		{
-			FBSProjectile P; P.Kind = EBSProjKind::Grenade; P.bFriendly = true; P.From = Muzzle; P.To = Hit; P.Dur = 0.3f; P.Arc = 0.6f;
-			P.TargetEnemy = Target; P.Dmg = DmgBase; P.IDef = D; P.ImpactFx = TEXT("marauderImpact");
-			PlayFx(TEXT("marauderLaunch"), Muzzle, Ang);
-			AddProjectileModel(P, TEXT("projMarauder"), TEXT("marauderMissile"));
-			if (!P.Model) AddProjectileVisual(P, FLinearColor(0.5f, 0.8f, 1), 0.18f);
-			Projectiles.Add(P);
-			PlaySound(BSSounds::MarauderFire, 0.4f, 0.2f);
-		}
+		if (!bFx) EmitGunfire(Muzzle, Hit);
+		MuzzleFlash = 1;
+		PlaySound(BSSounds::MarineFire, 0.3f, 0.09f);
+	}
+	else if (D->Key == TEXT("firebat"))
+	{
+		for (auto& V : EnemiesInRange(Target->X, Target->Y, D->Splash, Pred)) HurtEnemy(V, DmgBase + (V->Def->bLight ? D->DmgLight : 0));
+		EmitFlame(Muzzle, FVector(Target->X, Target->Y, 0.4f));
+		MuzzleFlash = 1;
+		PlaySound(BSSounds::FirebatFire, 0.45f, 0.3f);
+	}
+	else
+	{
+		FBSProjectile P; P.Kind = EBSProjKind::Grenade; P.bFriendly = true; P.From = Muzzle; P.To = Hit; P.Dur = 0.3f; P.Arc = 0.6f;
+		P.TargetEnemy = Target; P.Dmg = DmgBase; P.IDef = D; P.ImpactFx = TEXT("marauderImpact");
+		PlayFx(TEXT("marauderLaunch"), Muzzle, Ang);
+		AddProjectileModel(P, TEXT("projMarauder"), TEXT("marauderMissile"));
+		if (!P.Model) AddProjectileVisual(P, FLinearColor(0.5f, 0.8f, 1), 0.18f);
+		Projectiles.Add(P);
+		PlaySound(BSSounds::MarauderFire, 0.4f, 0.2f);
 	}
 }
 
@@ -1425,6 +1737,9 @@ void ABSGame::UpdateScvs(float Dt)
 	if (BunkerFrac > 0.4f)
 		for (const TSharedPtr<FBSTank>& K : Tanks)
 			if (K->State == FBSTank::Ready && !K->bDead && K->Hp < K->MaxHp - 1) Jobs.Add({ K->X, K->Y, BSDefs::TankRadius, 0.4f, &K->Hp, K->MaxHp, K->Hp / K->MaxHp });
+	if (BunkerFrac > 0.4f)
+		for (const TSharedPtr<FBSStructure>& St : Structures)
+			if (St->bReady && !St->bDead && St->Hp < St->MaxHp - 1) Jobs.Add({ St->X, St->Y, St->Radius, 0.3f, &St->Hp, St->MaxHp, St->Hp / St->MaxHp });
 	Jobs.Sort([](const FJob& A, const FJob& B) { return A.Need < B.Need; });
 	int32 ScvIndex = 0;
 	for (const TSharedPtr<FBSScv>& SP : Scvs)
@@ -1464,32 +1779,58 @@ void ABSGame::UpdateScvs(float Dt)
 	}
 }
 
+// Air strike: fly in, hover over a post firing missiles at ground zerg passing below, then leave.
 void ABSGame::UpdateBanshees(float Dt)
 {
-	const bool bLane = Mode == EBSMode::Lane;
-	const float FarY = bLane ? 30.f : 32.f, HomeY = bLane ? -16.f : -36.f;
+	const float HomeY = Mode == EBSMode::Lane ? -18.f : -36.f;
 	for (int32 i = Banshees.Num() - 1; i >= 0; i--)
 	{
 		FBSBanshee& B = Banshees[i];
-		if (!B.bReturning) { B.Y += BSDefs::BansheeSpeed * Dt; if (B.Y >= FarY) { B.bReturning = true; B.Yaw = -PI / 2; } }
-		else { B.Y -= BSDefs::BansheeSpeed * Dt; if (B.Y <= HomeY) { ReleaseModel(B.Actor); Banshees.RemoveAt(i); continue; } }
-		if (B.Actor) B.Actor->SetSim(B.X, B.Y, B.Z, B.Yaw);
-		B.Cd -= Dt;
-		if (B.Cd > 0) continue;
-		TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(B.X, B.Y, BSDefs::BansheeRange, [](const FBSEnemy& E) { return !E.Def->bFlying; });
-		if (!L.Num()) { B.Cd = 0.1f; continue; }
-		B.Cd = BSDefs::BansheeCd;
-		for (int32 k = 0; k < BSDefs::BansheeShots; k++)
+		B.T += Dt;
+		if (B.State == FBSBanshee::In)
 		{
-			FBSProjectile P; P.Kind = EBSProjKind::Rocket; P.bFriendly = true;
-			P.From = FVector(B.X + (k ? 0.4f : -0.4f), B.Y, B.Z - 0.3f);
-			P.To = FVector(L[0]->X, L[0]->Y, 0.3f); P.Dur = 0.35f; P.Dmg = BSDefs::BansheeDmg; P.TargetEnemy = L[0]; P.ImpactFx = TEXT("bansheeImpact");
-			AddProjectileModel(P, TEXT("projBanshee"), TEXT("bansheeMissile"));
-			if (!P.Model) AddProjectileVisual(P, FLinearColor(1, 0.7f, 0.3f), 0.15f);
-			Projectiles.Add(P);
+			const FVector D = FVector(B.Post.X, B.Post.Y, BSDefs::BansheeFly) - FVector(B.X, B.Y, B.Z);
+			if (D.Size() > 0.2f)
+			{
+				const FVector Mv = D.GetSafeNormal() * FMath::Min(D.Size(), BSDefs::BansheeSpeed * Dt);
+				B.X += Mv.X; B.Y += Mv.Y; B.Z += Mv.Z; B.Yaw = FMath::Atan2(D.Y, D.X);
+			}
+			else { B.State = FBSBanshee::Hover; B.T = 0; if (B.Actor) B.Actor->Play(StandNames, true); }
 		}
-		if (B.Actor) B.Actor->Play(TEXT("attack"), false);
-		PlaySound(BSSounds::BansheeFire, 0.5f, 0.2f);
+		else if (B.State == FBSBanshee::Hover)
+		{
+			TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(B.X, B.Y, BSDefs::BansheeRange, [](const FBSEnemy& E) { return !E.Def->bFlying; });
+			if (L.Num()) B.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(B.Yaw, FMath::Atan2(L[0]->Y - B.Y, L[0]->X - B.X)), -4 * Dt, 4 * Dt);
+			B.Cd -= Dt;
+			if (B.Cd <= 0 && L.Num())
+			{
+				B.Cd = BSDefs::BansheeCd;
+				for (int32 k = 0; k < BSDefs::BansheeShots; k++)
+				{
+					const float Off = k ? 0.4f : -0.4f;
+					FBSProjectile P; P.Kind = EBSProjKind::Rocket; P.bFriendly = true;
+					P.From = FVector(B.X - FMath::Sin(B.Yaw) * Off, B.Y + FMath::Cos(B.Yaw) * Off, B.Z - 0.3f);
+					P.To = FVector(L[0]->X, L[0]->Y, L[0]->Z + 0.3f); P.T = -k * 0.1f; P.Dur = 0.35f; P.Dmg = BSDefs::BansheeDmg; P.TargetEnemy = L[0]; P.ImpactFx = TEXT("bansheeImpact");
+					AddProjectileModel(P, TEXT("projBanshee"), TEXT("bansheeMissile"));
+					if (!P.Model) AddProjectileVisual(P, FLinearColor(1, 0.7f, 0.3f), 0.15f);
+					Projectiles.Add(P);
+				}
+				const float Len = B.Actor ? B.Actor->Play(TEXT("attack"), false) : 0.f;
+				B.StandAt = Time + (Len > 0 ? Len : 0.5f);
+				PlaySound(BSSounds::BansheeFire, 0.5f, 0.2f);
+			}
+			else if (B.Cd <= 0) B.Cd = 0.1f;
+			if (B.StandAt > 0 && Time > B.StandAt) { B.StandAt = 0; if (B.Actor) B.Actor->Play(StandNames, true); }
+			B.Z = BSDefs::BansheeFly + 0.15f * FMath::Sin(Time * 2.1f + i);
+			if (B.T > BSDefs::BansheeHover) { B.State = FBSBanshee::Out; B.T = 0; if (B.Actor) B.Actor->Play(WalkNames, true); }
+		}
+		else
+		{
+			B.Y -= BSDefs::BansheeSpeed * Dt; B.Z += 1.5f * Dt;
+			B.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(B.Yaw, -PI / 2), -3 * Dt, 3 * Dt);
+			if (B.Y <= HomeY) { ReleaseModel(B.Actor); Banshees.RemoveAt(i); continue; }
+		}
+		if (B.Actor) B.Actor->SetSim(B.X, B.Y, B.Z, B.Yaw);
 	}
 }
 
@@ -1499,6 +1840,7 @@ void ABSGame::UpdateProjectiles(float Dt)
 	{
 		FBSProjectile& P = Projectiles[i];
 		P.T += Dt;
+		if (P.T < 0) continue;                     // staggered launch (second missile of a pair)
 		if (TSharedPtr<FBSEnemy> TE = P.TargetEnemy.Pin()) P.To = FVector(TE->X, TE->Y, TE->Z + TE->Def->Height * 0.5f);
 		if (P.Visual)
 		{
@@ -1560,6 +1902,11 @@ void ABSGame::UpdateProjectiles(float Dt)
 					AddFx(EBSFxKind::Flash, Done.To, Done.To, 0.15f, 0.5f, FLinearColor(1, 0.8f, 0.5f), 10);
 				}
 				PlaySound(BSSounds::BansheeHit, 0.35f, 0.1f);
+			}
+			else if (Done.Kind == EBSProjKind::Sam)
+			{
+				if (TSharedPtr<FBSEnemy> TE = Done.TargetEnemy.Pin()) HurtEnemy(TE, Done.Dmg);
+				if (!bImpactFx) AddFx(EBSFxKind::Flash, Done.To, Done.To, 0.15f, 0.5f, FLinearColor(1, 0.8f, 0.5f), 10);
 			}
 			else if (Done.Kind == EBSProjKind::Yamato) YamatoImpact(Done.To, Done.Dmg);
 		}
@@ -1649,6 +1996,8 @@ void ABSGame::UpdateVisuals(float Dt)
 	if (Bunker.Actor) Bunker.Actor->SetHitFlash(Bunker.Flash * 0.22f);   // a hint of white: constant zergling hits used to white it out
 	for (auto& K : Tanks) { K->Flash = FMath::Max(0.f, K->Flash - Dt * 4); if (K->Actor) K->Actor->SetHitFlash(K->Flash * 0.3f); }
 	for (auto& S : Scvs) { S->Flash = FMath::Max(0.f, S->Flash - Dt * 4); if (S->Actor) S->Actor->SetHitFlash(S->Flash * 0.3f); }
+	for (auto& M : Squad) { M->Flash = FMath::Max(0.f, M->Flash - Dt * 4); if (M->Actor) M->Actor->SetHitFlash(M->Flash * 0.3f); }
+	for (auto& St : Structures) { St->Flash = FMath::Max(0.f, St->Flash - Dt * 4); if (St->Actor) St->Actor->SetHitFlash(St->Flash * 0.3f); }
 
 	UpdateParticles(Dt);
 	UpdateFx(Dt);
@@ -1829,8 +2178,14 @@ FString ABSGame::DebugState() const
 			Bunker.Actor->IsHidden() ? 1 : 0, Bunker.Actor->Mesh->IsVisible() ? 1 : 0, Bunker.Actor->Mesh->GetSkeletalMeshAsset() ? *Bunker.Actor->Mesh->GetSkeletalMeshAsset()->GetName() : TEXT("null"),
 			*Bd.Origin.ToCompactString(), Bd.SphereRadius, *Bunker.Actor->CurrentSequence());
 	}
-	return FString::Printf(TEXT("t=%.1f wave=%d enemies=%d kills=%d minerals=%.0f bunker=%.0f/%.0f units=%d tanks=%d scvs=%d over=%d bunkerActor[%s]"),
-		Time, Wave, Enemies.Num(), Kills, Minerals, Bunker.Hp, Bunker.MaxHp, Bunker.Units.Num(), Tanks.Num(), Scvs.Num(), bOver ? 1 : 0, *B);
+	FString Out;
+	for (const TSharedPtr<FBSTrooper>& M : Squad) Out += FString::Printf(TEXT("%.1f,%.1f "), M->X, M->Y);
+	FString Str;
+	for (const TSharedPtr<FBSStructure>& S : Structures) Str += FString::Printf(TEXT("%s:%d:%.0f "), S->bSam ? TEXT("sam") : TEXT("sensor"), S->bReady ? 1 : 0, S->Hp);
+	FString Ban;
+	for (const FBSBanshee& Bn : Banshees) Ban += FString::Printf(TEXT("%d@%.1f,%.1f "), (int32)Bn.State, Bn.X, Bn.Y);
+	return FString::Printf(TEXT("t=%.1f wave=%d enemies=%d kills=%d minerals=%.0f bunker=%.0f/%.0f units=%d tanks=%d scvs=%d over=%d squad=[%s] structures=[%s] banshees=[%s] radar=%d rails=%d bunkerActor[%s]"),
+		Time, Wave, Enemies.Num(), Kills, Minerals, Bunker.Hp, Bunker.MaxHp, Bunker.Units.Num(), Tanks.Num(), Scvs.Num(), bOver ? 1 : 0, *Out, *Str, *Ban, SensorUp() ? 1 : 0, Up.bRails ? 1 : 0, *B);
 }
 
 void ABSGame::WriteTelemetry(const FString& Kind)
