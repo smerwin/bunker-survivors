@@ -1349,9 +1349,17 @@ bool ABSGame::CallBattlecruiser()
 	Minerals -= BSDefs::BcCost;
 	const bool bLane = Mode == EBSMode::Lane;
 	Bc = MakeShared<FBSBattlecruiser>();
-	// On station over the right-hand plateau (not the middle of the lane, which it would hide), a little scaled down.
-	Bc->X = Bc->Sx = bLane ? 5.5f : 0.f; Bc->Y = bLane ? -24.f : -34.f; Bc->Z = 10; Bc->Sy = bLane ? 3.f : 0.f; Bc->Sz = bLane ? 7.f : 8.f;
+	// On station over the tip of the mesa where the lane forks (the bottom of the V), nose to the south, a little scaled
+	// down: it overlooks both arms and the stem without hiding the lane.
+	Bc->X = Bc->Sx = 0; Bc->Y = bLane ? -24.f : -34.f; Bc->Z = 10; Bc->Sy = bLane ? 13.f : 0.f; Bc->Sz = bLane ? 6.5f : 8.f;
 	Bc->Actor = AcquireModel(TEXT("battlecruiser"));
+	// The hull's hardpoints (Ref_Weapon bones; the importer turns "Ref_Weapon 10" into "Ref_Weapon_10").
+	int32 Ti = 0;
+	for (const TCHAR* Bone : { TEXT("Ref_Weapon_10"), TEXT("Ref_Weapon_13"), TEXT("Ref_Weapon_12"), TEXT("Ref_Weapon_15"), TEXT("Ref_Weapon_24"), TEXT("Ref_Weapon_25") })
+	{
+		FBSBcTurret Tu; Tu.Bone = Bone; Tu.Cd = 0.3f + 0.2f * Ti++;
+		Bc->Turrets.Add(Tu);
+	}
 	if (Bc->Actor) { Bc->Actor->SetScale(0.75f); Bc->Actor->SetTeamColor(TerranColor); Bc->Actor->SetSim(Bc->X, Bc->Y, Bc->Z, Bc->Yaw); Bc->Actor->Play(WalkNames, true); }
 	Toast(TEXT("Battlecruiser inbound"));
 	CheckTech();
@@ -1371,24 +1379,38 @@ void ABSGame::UpdateBc(float Dt)
 		if (B.Actor) B.Actor->SetSim(B.X, B.Y, B.Z, B.Yaw);
 		return;
 	}
+	B.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(B.Yaw, -PI / 2), -0.6f * Dt, 0.6f * Dt);   // swing round to face south
 	if (B.Actor) B.Actor->SetSim(B.X, B.Y, B.Sz + 0.25f * FMath::Sin(B.T * 0.7f), B.Yaw);
 	auto Any = [](const FBSEnemy& E) { return E.Alive(); };
-	// Laser batteries: rapid fire spread over whatever is in reach, air and ground alike.
-	B.CdL -= Dt;
-	if (B.CdL <= 0)
+	// Six laser turrets on the hull's hardpoints, each with its own target, firing two-shot bursts: the beam is drawn as
+	// a tracer (the wraith's laser is an M3 ribbon, which is not imported) and lands with the wraith's laser hit.
+	for (int32 i = 0; i < B.Turrets.Num(); i++)
 	{
-		B.CdL = BSDefs::BcLaserCd;
-		TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(B.X, B.Y, BSDefs::BcRange, Any);
-		if (L.Num())
+		FBSBcTurret& Tu = B.Turrets[i];
+		Tu.Cd -= Dt;
+		if (Tu.Cd > 0) continue;
+		FVector At(B.X + (i % 2 ? 1.6f : -1.6f), B.Y + (1 - i / 2) * 1.8f, B.Sz - 0.3f);
+		if (B.Actor && B.Actor->Mesh && B.Actor->Mesh->GetBoneIndex(Tu.Bone) != INDEX_NONE)
 		{
-			const TSharedPtr<FBSEnemy> E = L[FMath::RandRange(0, FMath::Min(6, L.Num()) - 1)];
-			HurtEnemy(E, E->Def->bFlying ? BSDefs::BcLaserA : BSDefs::BcLaserG);
-			const FVector From(B.X + Rnd(-1.5f, 1.5f), B.Y + Rnd(-2.5f, 2.5f), B.Sz - 0.6f);
-			const float Ang = FMath::Atan2(E->Y - From.Y, E->X - From.X);
-			PlayFx(TEXT("marineLaunch"), From, Ang, 2.2f);
-			PlayFx(TEXT("marineImpact"), FVector(E->X + Rnd(-0.2f, 0.2f), E->Y + Rnd(-0.2f, 0.2f), E->Z + E->Def->Height * 0.5f), Ang + PI, 1.8f);
-			PlaySound(TEXT("bcFire"), 0.4f, 0.22f);
+			const FVector Wp = B.Actor->Mesh->GetBoneLocation(Tu.Bone);
+			At = FVector(Wp.Y / BSSpace::UnitsPerMetre, Wp.X / BSSpace::UnitsPerMetre, Wp.Z / BSSpace::UnitsPerMetre);
 		}
+		TSharedPtr<FBSEnemy> E = Tu.Target.Pin();
+		if (!E || !E->Alive() || FMath::Sqrt(Dist2(At.X, At.Y, E->X, E->Y)) - E->Radius > BSDefs::BcRange)
+		{
+			TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(At.X, At.Y, BSDefs::BcRange, Any);
+			E = L.Num() ? L[FMath::RandRange(0, FMath::Min(4, L.Num()) - 1)] : nullptr;
+			Tu.Target = E; Tu.Shots = 0;
+		}
+		if (!E) { Tu.Cd = 0.2f; continue; }
+		HurtEnemy(E, E->Def->bFlying ? BSDefs::BcLaserA : BSDefs::BcLaserG);
+		const FVector Hit(E->X + Rnd(-0.15f, 0.15f), E->Y + Rnd(-0.15f, 0.15f), E->Z + E->Def->Height * 0.5f);
+		AddFx(EBSFxKind::Tracer, At, Hit, 0.14f, 0.05f, FLinearColor(1.f, 0.32f, 0.14f), 22);
+		PlayFx(TEXT("laserImpact"), Hit, FMath::Atan2(At.Y - Hit.Y, At.X - Hit.X), 1.4f);
+		PlaySound(TEXT("laserHit"), 0.3f, 0.1f);
+		PlaySound(TEXT("bcFire"), 0.3f, 0.3f);
+		if (++Tu.Shots >= BSDefs::BcBurst) { Tu.Shots = 0; Tu.Cd = BSDefs::BcTurretCd * Rnd(0.85f, 1.15f); }
+		else Tu.Cd = BSDefs::BcBurstGap;
 	}
 	// Missile pods every few seconds at a spread of targets.
 	B.CdM -= Dt;

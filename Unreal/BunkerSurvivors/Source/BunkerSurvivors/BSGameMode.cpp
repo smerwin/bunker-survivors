@@ -195,6 +195,7 @@ void ABSGameMode::Tick(float Dt)
 			Game->Minerals += 20000;
 			for (int32 i = 0; i < 4; i++) Game->BuyTech(TEXT("goliath"));
 			Game->BuyTech(TEXT("thor")); Game->BuyTech(TEXT("thor")); Game->BuyTech(TEXT("bc")); Game->BuyTech(TEXT("odin")); Game->BuyTech(TEXT("vikings"));
+			Game->BuildStructure(false);              // sensor tower, for the radar
 		}
 		UE_LOG(LogTemp, Display, TEXT("BSTechMax unlocked=%d mechs=%d bc=%d"), Game->TechUnlocked.Num(), Game->Mechs.Num(), Game->Bc.IsValid() ? 1 : 0);
 	}

@@ -180,6 +180,18 @@ window.BS = window.BS || {};
         const [sx, sy] = r.worldToScreen(g.focus.x, g.focus.y, 0.05);
         c.strokeStyle = '#ff6a5a'; c.lineWidth = 2; c.beginPath(); c.ellipse(sx, sy, 22 + g.focus.radius * 14, 12 + g.focus.radius * 7, 0, 0, Math.PI * 2); c.stroke();
       }
+      // Battlecruiser laser beams: bright red-orange bolts with a glow, fading fast.
+      if (g.beams.length) {
+        c.save(); c.globalCompositeOperation = 'lighter'; c.lineCap = 'round';
+        for (const bm of g.beams) {
+          if (!r.inFront(bm.a[0], bm.a[1], bm.a[2]) || !r.inFront(bm.b[0], bm.b[1], bm.b[2])) continue;
+          const [ax, ay] = r.worldToScreen(bm.a[0], bm.a[1], bm.a[2]), [bx, by] = r.worldToScreen(bm.b[0], bm.b[1], bm.b[2]);
+          const k = 1 - bm.t / bm.life;
+          c.strokeStyle = 'rgba(255, 70, 40, ' + (0.35 * k) + ')'; c.lineWidth = 6; c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
+          c.strokeStyle = 'rgba(255, 200, 150, ' + (0.9 * k) + ')'; c.lineWidth = 1.8; c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
+        }
+        c.restore();
+      }
       c.textAlign = 'center'; c.font = '700 15px Eurostile, system-ui, sans-serif';
       for (const f of g.floaters) {
         if (!r.inFront(f.x, f.y, f.z)) continue;
@@ -247,6 +259,14 @@ window.BS = window.BS || {};
       const plot = (x, y) => { const rx = x * cs - y * sn, ry = x * sn + y * cs; return [R + rx * scale, cy - ry * scale]; };
       c.fillStyle = '#8de08a';
       for (const p of [[0, 0], ...g.tanks.map(t => [t.x, t.y]), ...g.structures.map(s => [s.x, s.y])]) { const [x, y] = plot(p[0], p[1]); c.fillRect(x - 2.5, y - 2.5, 5, 5); }
+      // Troopers outside: small dots; goliaths, thors and the odin: squares by size; the battlecruiser and air support:
+      // cyan diamonds.
+      for (const m of g.squad) { const [x, y] = plot(m.x, m.y); c.fillRect(x - 1, y - 1, 2, 2); }
+      for (const m of g.mechs) { const [x, y] = plot(m.x, m.y), s = m.kind === 'odin' ? 4.5 : m.kind === 'thor' ? 3.5 : 2.5; c.fillRect(x - s, y - s, s * 2, s * 2); }
+      c.fillStyle = '#5fe3ff';
+      const diamond = (wx, wy, s) => { const [x, y] = plot(wx, wy); c.beginPath(); c.moveTo(x, y - s); c.lineTo(x + s, y); c.lineTo(x, y + s); c.lineTo(x - s, y); c.closePath(); c.fill(); };
+      if (g.bc) diamond(g.bc.x, g.bc.y, 6);
+      for (const v of g.vikingWing.concat(g.banshees)) diamond(v.x, v.y, 2.5);
       for (const e of g.enemies) {
         const [x, y] = plot(e.x, e.y);
         if (Math.hypot(x - R, y - R) > R - 3) continue;

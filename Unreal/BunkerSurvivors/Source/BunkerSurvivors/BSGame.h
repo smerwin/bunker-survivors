@@ -60,10 +60,14 @@ struct FBSMech
 	ABSModelActor* Actor = nullptr;
 };
 
-// Battlecruiser on station.
+struct FBSEnemy;
+
+// Battlecruiser on station, with six laser turrets on its hardpoints.
+struct FBSBcTurret { FName Bone; TWeakPtr<FBSEnemy> Target; float Cd = 0; int32 Shots = 0; };
 struct FBSBattlecruiser
 {
-	float X = 0, Y = 0, Z = 0, Sx = 0, Sy = 0, Sz = 0, Yaw = PI / 2, T = 0, CdL = 0, CdM = 3, CdY = 5;
+	float X = 0, Y = 0, Z = 0, Sx = 0, Sy = 0, Sz = 0, Yaw = PI / 2, T = 0, CdM = 3, CdY = 5;
+	TArray<FBSBcTurret> Turrets;
 	bool bOnStation = false;
 	ABSModelActor* Actor = nullptr;
 };
@@ -239,6 +243,7 @@ public:
 	float NukeCd = 0, VikingCd = 0;
 	TArray<TSharedPtr<FBSMech>> Mechs;
 	TSharedPtr<FBSBattlecruiser> Bc;
+	TArray<FBSBanshee> VikingWing;
 	bool TreeMaxed(const FString& Tree) const;
 	void CheckTech();
 	int32 TechCount(const FString& Kind) const { int32 N = 0; for (auto& M : Mechs) N += M->Def->Key == Kind; return N; }
@@ -327,7 +332,6 @@ private:
 	void UpdateVikings(float Dt);
 	bool LaunchNuke();
 	void UpdateNukes(float Dt);
-	TArray<FBSBanshee> VikingWing;
 	TArray<FBSNuke> Nukes;
 	TMap<FString, TArray<FVector2D>> MechSlots;
 	void BuildTerrain();                      // the lane chokepoint's ground mesh (BSTerrain heights)

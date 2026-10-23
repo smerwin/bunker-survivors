@@ -97,6 +97,17 @@ window.BS = window.BS || {};
     hasSeq(name) { return this.model ? this.r.findSequence(this.model, name) >= 0 : false; }
     get elapsed() { return (this.r.time - this.seqStart) * this.timeScale; }
     get ended() { return !this.loop && this.seqLen > 0 && this.elapsed >= this.seqLen; }
+    // World position of a named bone (a hardpoint), or null until the model has loaded.
+    boneWorld(name) {
+      const inst = this.inst;
+      if (!inst || !inst.skeleton || !this.model) return null;
+      const cache = this.model.bsBones || (this.model.bsBones = {});
+      let i = cache[name];
+      if (i === undefined) i = cache[name] = this.model.bones.findIndex(b => b.name === name);
+      if (i < 0) return null;
+      const w = inst.skeleton.nodes[i].worldLocation;
+      return [w[0], w[1], w[2]];
+    }
     // Turn one bone (a siege tank's turret) about the vertical by an angle relative to the hull, on top of the
     // animation, as the Unreal build does with a poseable mesh.
     setTurret(bone, rel) {

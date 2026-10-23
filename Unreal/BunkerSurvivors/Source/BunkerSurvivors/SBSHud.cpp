@@ -1206,6 +1206,17 @@ int32 SBSHud::PaintWorld(const FGeometry& G, FSlateWindowElementList& Out, int32
 		D::Disc(Out, L + 9, G, ToRadar(E->X, E->Y), E->Def->Budget >= 16 ? 2.6f : 1.6f, E->Def->bFlying ? C::Amber : C::Violet, 8);
 	if (bRadar) for (const TSharedPtr<FBSTank>& K : Gm->Tanks) D::Disc(Out, L + 9, G, ToRadar(K->X, K->Y), 2.2f, C::Cyan, 8);
 	if (bRadar) for (const TSharedPtr<FBSStructure>& St : Gm->Structures) D::Disc(Out, L + 9, G, ToRadar(St->X, St->Y), 2.2f, C::Cyan, 8);
+	if (bRadar)
+	{
+		// Troopers outside: small dots; goliaths, thors and the odin: discs by size; the battlecruiser and air support: green
+		// on cyan.
+		for (const TSharedPtr<FBSTrooper>& M : Gm->Squad) D::Disc(Out, L + 9, G, ToRadar(M->X, M->Y), 1.1f, C::Green, 6);
+		for (const TSharedPtr<FBSMech>& M : Gm->Mechs)
+			D::Disc(Out, L + 9, G, ToRadar(M->X, M->Y), M->Def->Key == TEXT("odin") ? 4.5f : M->Def->Key == TEXT("thor") ? 3.5f : 2.5f, C::Green, 10);
+		if (Gm->Bc.IsValid()) { D::Disc(Out, L + 9, G, ToRadar(Gm->Bc->X, Gm->Bc->Y), 6.f, C::Cyan, 12); D::Disc(Out, L + 10, G, ToRadar(Gm->Bc->X, Gm->Bc->Y), 3.f, C::Green, 10); }
+		for (const FBSBanshee& V : Gm->VikingWing) D::Disc(Out, L + 9, G, ToRadar(V.X, V.Y), 2.2f, C::Cyan, 8);
+		for (const FBSBanshee& V : Gm->Banshees) D::Disc(Out, L + 9, G, ToRadar(V.X, V.Y), 2.2f, C::Cyan, 8);
+	}
 	if (bRadar) D::Disc(Out, L + 9, G, Rc, 3, C::Green, 10);
 
 	// Threat markers on the screen edge for off-screen zerg, kept clear of the HUD.

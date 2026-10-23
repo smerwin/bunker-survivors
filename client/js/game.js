@@ -32,7 +32,7 @@ window.BS = window.BS || {};
       this.up = { stim: 0, weapons: 0, vehicle: 0, neosteel: 0, plating: 0, hisec: 0, medivac: 0, rails: 0 };
       this.ab = { stimUntil: 0, stimCd: 0, strikeCd: 0, repairCd: 0, yamatoCd: 0 };
       this.techUnlocked = {}; this.techCd = { nuke: 0, vikings: 0 };
-      this.mechs = []; this.bc = null; this.vikingWing = []; this.nukes = [];
+      this.mechs = []; this.bc = null; this.vikingWing = []; this.nukes = []; this.beams = [];
       this.station = null;
       BS.Terrain.setMode(this.mode);
       this.layout();
@@ -574,8 +574,10 @@ window.BS = window.BS || {};
       if (this.minerals < D.cost) return this.toast('Not enough minerals');
       this.minerals -= D.cost;
       const lane = this.mode === 'lane';
-      // On station over the right-hand plateau (not the middle of the lane, which it would hide), a little scaled down.
-      this.bc = { x: lane ? 5.5 : 0, y: lane ? -24 : -34, z: 10, sx: lane ? 5.5 : 0, sy: lane ? 3 : 0, sz: lane ? 7 : 8, yaw: Math.PI / 2, state: 'in', cdL: 0, cdM: 3, cdY: 5, t: 0 };
+      // On station over the tip of the mesa where the lane forks (the bottom of the V), nose to the south, a little scaled
+      // down: it overlooks both arms and the stem without hiding the lane.
+      this.bc = { x: 0, y: lane ? -24 : -34, z: 10, sx: 0, sy: lane ? 13 : 0, sz: lane ? 6.5 : 8, yaw: Math.PI / 2, state: 'in', cdM: 3, cdY: 5, t: 0,
+        turrets: D.turrets.map((bone, i) => ({ bone, cd: 0.3 + i * 0.2, shots: 0, target: null })) };
       this.bc.handle = this.r.spawn('battlecruiser', this.bc.x, this.bc.y, this.bc.z, this.bc.yaw).setTeam(1).setScale(0.75);
       this.bc.handle.play(/^walk|^fly|^stand/i, true);
       this.toast('Battlecruiser inbound');
@@ -593,21 +595,30 @@ window.BS = window.BS || {};
         b.handle.setPos(b.x, b.y, b.z).setYaw(b.yaw);
         return;
       }
+      b.yaw += clamp(angDelta(b.yaw, -Math.PI / 2), -0.6 * dt, 0.6 * dt);     // swing round to face south
       b.handle.setPos(b.x, b.y, b.sz + 0.25 * Math.sin(b.t * 0.7)).setYaw(b.yaw);
-      // Laser batteries: rapid fire spread over whatever is in reach, air and ground alike.
-      b.cdL -= dt;
-      if (b.cdL <= 0) {
-        b.cdL = D.laserCd;
-        const list = this.enemiesInRange(b.x, b.y, D.range);
-        if (list.length) {
-          const e = list[Math.floor(Math.random() * Math.min(6, list.length))];
-          this.hurtEnemy(e, e.def.flying ? D.laserA : D.laserG);
-          const sx = b.x + rnd(-1.5, 1.5), sy = b.y + rnd(-2.5, 2.5), sz = b.sz - 0.6, ang = Math.atan2(e.y - sy, e.x - sx);
-          this.fx.play('marineLaunch', sx, sy, sz, ang, 2.2);
-          this.fx.play('marineImpact', e.x + rnd(-0.2, 0.2), e.y + rnd(-0.2, 0.2), e.z + e.def.height * 0.5, ang + Math.PI, 1.8);
-          BS.audio.play('bcFire', { vol: 0.4, gap: 0.22 });
+      // Six laser turrets on the hull's hardpoints, each with its own target, firing two-shot bursts.
+      b.turrets.forEach((tu, i) => {
+        tu.cd -= dt;
+        if (tu.cd > 0) return;
+        const at = b.handle.boneWorld(tu.bone) || [b.x + (i % 2 ? 1.6 : -1.6), b.y + (1 - Math.floor(i / 2)) * 1.8, b.sz - 0.3];
+        const t = tu.target;
+        if (!t || t.hp <= 0 || dist(at[0], at[1], t.x, t.y) - t.radius > D.range) {
+          const near = this.enemiesInRange(at[0], at[1], D.range);
+          tu.target = near.length ? near[Math.floor(Math.random() * Math.min(4, near.length))] : null;
+          tu.shots = 0;
         }
-      }
+        const e = tu.target;
+        if (!e) { tu.cd = 0.2; return; }
+        this.hurtEnemy(e, e.def.flying ? D.laserA : D.laserG);
+        const hit = [e.x + rnd(-0.15, 0.15), e.y + rnd(-0.15, 0.15), e.z + e.def.height * 0.5];
+        this.beams.push({ a: at, b: hit, t: 0, life: 0.14 });
+        this.fx.play('laserImpact', hit[0], hit[1], hit[2], Math.atan2(at[1] - hit[1], at[0] - hit[0]), 1.4);
+        BS.audio.play('laserHit', { vol: 0.3, gap: 0.1 });
+        BS.audio.play('bcFire', { vol: 0.3, gap: 0.3 });
+        tu.shots++;
+        if (tu.shots >= D.burst) { tu.shots = 0; tu.cd = D.turretCd * rnd(0.85, 1.15); } else tu.cd = D.burstGap;
+      });
       // Missile pods every few seconds at a spread of targets.
       b.cdM -= dt;
       if (b.cdM <= 0) {
@@ -1442,6 +1453,7 @@ window.BS = window.BS || {};
       }
       for (const st of this.structures) st.flash = Math.max(0, st.flash - dt * 4);
       for (const m of this.mechs) m.flash = Math.max(0, m.flash - dt * 4);
+      for (let i = this.beams.length - 1; i >= 0; i--) { this.beams[i].t += dt; if (this.beams[i].t > this.beams[i].life) this.beams.splice(i, 1); }
     }
 
     focusAt(wx, wy) {

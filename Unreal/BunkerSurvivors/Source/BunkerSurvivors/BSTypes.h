@@ -83,10 +83,10 @@ namespace BSDefs
 	constexpr float SamHp = 250, SamDmg = 12, SamCd = 0.86f, SamRange = 7, SamRadius = 1.0f, SensorHp = 200, SensorRadius = 0.8f, BuildTime = 3;
 	constexpr int32 SamShots = 2, SamCost = 100, SamMax = 3, SensorCost = 125;
 	constexpr float RailsRange = 2.f;
-	// Battlecruiser on station: hovers over the lane out of reach; laser batteries at air and ground, missile pods,
-	// and a Yamato cannon on its own.
-	constexpr float BcLaserG = 8, BcLaserA = 5, BcLaserCd = 0.16f, BcRange = 10, BcYamato = 240, BcYamatoCd = 20, BcMissileCd = 6, BcMissileDmg = 20;
-	constexpr int32 BcCost = 1500, BcMissiles = 6;
+	// Battlecruiser on station: hovers over the lane out of reach; six laser turrets on its hardpoints (each with its own
+	// target, firing two-shot bursts), missile pods, and a Yamato cannon on its own.
+	constexpr float BcLaserG = 8, BcLaserA = 5, BcTurretCd = 1.5f, BcBurstGap = 0.12f, BcRange = 10, BcYamato = 240, BcYamatoCd = 20, BcMissileCd = 6, BcMissileDmg = 20;
+	constexpr int32 BcCost = 1500, BcMissiles = 6, BcBurst = 2;
 	// A ghost calls a tactical nuke on the densest pack well away from the bunker.
 	constexpr float NukeDmg = 300, NukeRadius = 7, NukeDelay = 3, NukeMinDist = 9, NukeCooldown = 45;
 	constexpr int32 NukeCost = 400;

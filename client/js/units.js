@@ -105,6 +105,8 @@ window.BS = window.BS || {};
   vikingImpact: [E + 'terran/vikingfightermissileimpact/vikingfightermissileimpact.m3'],
   bcMissile: [E + 'terran/battlecruisermissile/battlecruisermissile.m3', null, true], bcMissileImpact: [E + 'terran/battlecruisermissileimpact/battlecruisermissileimpact.m3'],
   nukeFalling: [E + 'terran/nukefalling/nukefalling.m3', null, true], nuke: [E + 'terran/nuke/nuke.m3'],
+  // The wraith's laser hit (its beam is an M3 ribbon, which neither build reads, so the games draw the beam themselves).
+  laserImpact: [E + 'terran/wraithlasermissileimpact/wraithlasermissileimpact.m3'],
   samMissile: [E + 'terran/missileturretmissile/missileturretmissile.m3', null, true], samImpact: [E + 'terran/missileturretmissileimpact/missileturretmissileimpact.m3'],
   };
   // Every death model also carries its blood/acid burst: the plain "Death" one (the numbered sequences are SC2's
@@ -140,6 +142,7 @@ window.BS = window.BS || {};
     bcFire: [0, 1, 2].map(i => S + 'terran/battlecruiser/battlecruiser_attacklaunch' + i + '.wav'),
     bcMissiles: [0, 1, 2].map(i => S + 'terran/battlecruiser/battlecruiser_missilepodslaunch' + i + '.wav'),
     bcYamato: [S + 'terran/battlecruiser/battlecruiser_yamatoattacklaunch0.wav'],
+    laserHit: [0, 1, 2, 3, 4].map(i => S + 'terran/wraith/wraith_groundattackimpact' + i + '.wav'),
     thorFire: [0, 1, 2].map(i => S + 'terran/thor/thor_attacklaunch' + i + '.wav'),
     thorHit: [0, 1, 2].map(i => S + 'terran/thor/thor_attackimpact' + i + '.wav'),
     goliathFire: [0, 1, 2].map(i => S + 'terran/goliath/goliath_groundattacklaunch' + i + '.wav'),
@@ -210,7 +213,9 @@ window.BS = window.BS || {};
     thor: { hp: 450, armor: 1, radius: 1.25, cost: 600, max: 2, speed: 2.2, gDmg: 30, gShots: 2, gCd: 1.28, gRange: 10, aDmg: 6, aShots: 4, aCd: 2.1, aRange: 12, aSplash: 0.6 },
     odin: { hp: 1500, armor: 2, radius: 2.2, cost: 2500, max: 1, speed: 2, gDmg: 60, gShots: 2, gCd: 1.1, gRange: 16, gSplash: 1.2, aDmg: 15, aShots: 6, aCd: 2, aRange: 16, aSplash: 0.8 },
     // Battlecruiser on station: hovers over the lane out of reach; laser batteries at air and ground, Yamato on its own.
-    bc: { cost: 1500, laserG: 8, laserA: 5, laserCd: 0.16, range: 10, yamato: 240, yamatoCd: 20, missiles: 6, missileCd: 6, missileDmg: 20 },
+    // Six laser turrets on its hardpoints (Ref_Weapon bones), each picking its own target and firing two-shot bursts.
+    bc: { cost: 1500, laserG: 8, laserA: 5, turretCd: 1.5, burst: 2, burstGap: 0.12, range: 10, yamato: 240, yamatoCd: 20, missiles: 6, missileCd: 6, missileDmg: 20,
+      turrets: ['Ref_Weapon 10', 'Ref_Weapon 13', 'Ref_Weapon 12', 'Ref_Weapon 15', 'Ref_Weapon 24', 'Ref_Weapon 25'] },
     // A ghost calls a tactical nuke on the densest pack well away from the bunker.
     nuke: { cost: 400, cooldown: 45, dmg: 300, radius: 7, delay: 3, minDist: 9 },
     // Four viking fighters patrol overhead hunting air for a while.
