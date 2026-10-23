@@ -16,6 +16,9 @@ window.BS = window.BS || {};
       this.cache = {};
       this.toastShown = -1; this.toastT = 0; this.bannerSerial = null;
       this.buildSegments(); this.buildAbilities(); this.buildArmoury();
+      // Tap a trooper in the bunker to send them outside; tap one outside to bring them back in.
+      $('slots').onclick = ev => { const el = ev.target.closest('[data-i]'); if (el) game.eject(+el.dataset.i); };
+      $('outside').onclick = ev => { const el = ev.target.closest('[data-o]'); if (el) game.board(+el.dataset.o); };
       $('armouryToggle').onclick = () => { const c = $('armoury').classList.toggle('closed'); $('armouryToggle').classList.toggle('closed', c); };
     }
 
@@ -44,8 +47,10 @@ window.BS = window.BS || {};
       const g = this.g, T = BS.TERRAN;
       const items = [];
       for (const [k, d] of Object.entries(BS.INFANTRY)) items.push({ name: d.name, icon: () => d.icon, cost: () => d.cost,
-        state: () => g.bunker.units.length + g.pendingInfantry() >= g.bunker.slots ? 'full' : '', buy: () => g.addInfantry(k) });
+        state: () => g.troopsFull() ? 'full' : '', buy: () => g.addInfantry(k) });
       items.push({ name: 'SCV', icon: () => 'btn-unit-terran-scv', cost: () => T.scv.cost, state: () => g.scvs.length >= T.scv.max ? 'max' : '', buy: () => g.addScv() });
+      items.push({ name: 'Missile Turret', icon: () => 'btn-building-terran-missileturret', cost: () => T.sam.cost, state: () => g.samCount() >= T.sam.max ? 'max' : '', buy: () => g.buildStructure('sam') });
+      items.push({ name: 'Sensor Tower', icon: () => 'btn-building-terran-sensortower-silver', cost: () => T.sensor.cost, state: () => g.structures.some(s => s.kind === 'sensor') ? 'max' : '', buy: () => g.buildStructure('sensor') });
       items.push({ name: 'Siege Tank', icon: () => 'btn-unit-terran-siegetank', cost: () => g.tankCost(), state: () => g.tanks.length >= g.tankMax ? 'max' : '', buy: () => g.dropTank() });
       for (const [k, u] of Object.entries(BS.UPGRADES)) items.push({ name: u.name, up: k,
         icon: () => u.icons[Math.min(g.upgradeLevel(k), u.icons.length - 1)], cost: () => g.upgradeCost(k),
@@ -84,15 +89,21 @@ window.BS = window.BS || {};
       this.set('hpText', Math.ceil(Math.max(0, b.hp)) + ' / ' + b.maxHp);
       const stim = g.ab.stimUntil > g.time;
       this.set('stimTag', stim ? 'STIMMED' : '');
-      const slotKey = b.slots + ':' + b.units.map(u => u.type + Math.round(u.hp / u.maxHp * 10)).join(',') + (stim ? 's' : '');
+      const low = u => u.hp <= u.def.stimHp ? ' low' : '';
+      const slotKey = b.slots + ':' + b.units.map(u => u.type + Math.round(u.hp / u.maxHp * 10) + low(u)).join(',') + (stim ? 's' : '');
       if (this.cache.slots !== slotKey) {
         this.cache.slots = slotKey;
         let html = '';
         for (let i = 0; i < b.slots; i++) {
           const u = b.units[i];
-          html += u ? '<div class="slot' + (stim ? ' stim' : '') + '"><img src="' + icon(u.def.icon) + '" alt=""><i style="width:' + Math.round(u.hp / u.maxHp * 100) + '%"></i></div>' : '<div class="slot"></div>';
+          html += u ? '<div class="slot' + (stim ? ' stim' : '') + low(u) + '" data-i="' + i + '"><img src="' + icon(u.def.icon) + '" alt=""><i style="width:' + Math.round(u.hp / u.maxHp * 100) + '%"></i></div>' : '<div class="slot"></div>';
         }
         $('slots').innerHTML = html;
+      }
+      const outKey = g.squad.map(m => m.type + Math.round(m.hp / m.maxHp * 10) + low(m) + (m.boarding ? 'b' : '')).join(',');
+      if (this.cache.outside !== outKey) {
+        this.cache.outside = outKey;
+        $('outside').innerHTML = g.squad.map((m, i) => '<div class="slot' + low(m) + (m.boarding ? ' boarding' : '') + '" data-o="' + i + '"><img src="' + icon(m.def.icon) + '" alt=""><i style="width:' + Math.round(m.hp / m.maxHp * 100) + '%"></i></div>').join('');
       }
       // Abilities.
       for (const x of this.abEls) {
@@ -184,7 +195,11 @@ window.BS = window.BS || {};
       }
     }
 
+    // Only while a sensor tower stands.
     drawRadar() {
+      const on = this.g.sensorUp();
+      if (this.cache.radar !== on) { this.cache.radar = on; this.radar.classList.toggle('offline', !on); }
+      if (!on) return;
       const cv = this.radar, dpr = this.r.dpr, size = cv.clientWidth;
       if (cv.width !== Math.round(size * dpr)) { cv.width = cv.height = Math.round(size * dpr); }
       const c = this.rctx, R = size / 2, g = this.g;
@@ -201,7 +216,7 @@ window.BS = window.BS || {};
       const yaw = this.r.cam.yaw || 0, cs = Math.cos(yaw), sn = Math.sin(yaw);
       const plot = (x, y) => { const rx = x * cs - y * sn, ry = x * sn + y * cs; return [R + rx * scale, cy - ry * scale]; };
       c.fillStyle = '#8de08a';
-      for (const p of [[0, 0], ...g.tanks.map(t => [t.x, t.y])]) { const [x, y] = plot(p[0], p[1]); c.fillRect(x - 2.5, y - 2.5, 5, 5); }
+      for (const p of [[0, 0], ...g.tanks.map(t => [t.x, t.y]), ...g.structures.map(s => [s.x, s.y])]) { const [x, y] = plot(p[0], p[1]); c.fillRect(x - 2.5, y - 2.5, 5, 5); }
       for (const e of g.enemies) {
         const [x, y] = plot(e.x, e.y);
         if (Math.hypot(x - R, y - R) > R - 3) continue;

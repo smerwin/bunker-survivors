@@ -38,6 +38,13 @@ window.BS = window.BS || {};
     marine: U + 'terran/marine/marine.m3',
     firebat: U + 'terran/firebat/firebat.m3',
     marauder: U + 'terran/marauder/marauder.m3',
+    marineDeath: U + 'terran/marinedeath/marinedeath.m3',
+    firebatDeath: U + 'terran/firebatdeath/firebatdeath.m3',
+    marauderDeath: U + 'terran/marauderdeath/marauderdeath.m3',
+    missileturret: 'assets/buildings/terran/missileturret/missileturret.m3',
+    missileturretDeath: 'assets/buildings/terran/missileturretdeath/missileturretdeath.m3',
+    sensortower: 'assets/buildings/terran/sensortower/sensortower.m3',
+    sensortowerDeath: 'assets/buildings/terran/sensortowerdeath/sensortowerdeath.m3',
     // Effects (particle-only effect models cannot be drawn by the viewer, so only mesh-based ones are listed)
     fxMuzzle: 'assets/effects/terran/marineweaponlaunch/marineweaponlaunch.m3',
   };
@@ -64,6 +71,7 @@ window.BS = window.BS || {};
   projMutalisk: E + 'zerg/mutaliskmissile/mutaliskmissile.m3', projBanshee: E + 'terran/bansheemissile/bansheemissile.m3',
   projYamato: E + 'terran/yamatomissile/yamatomissile.m3', projHydralisk: E + 'zerg/hydraliskmissile/hydraliskmissile.m3',
   projRoach: E + 'zerg/roachmissile/roachmissile.m3', projMarauder: E + 'terran/maraudermissile/maraudermissile.m3',
+  projSam: E + 'terran/missileturretmissile/missileturretmissile.m3',
   };
 
   // SC2 particle effects, replayed by both builds: [m3, optional sequence filter, loops].
@@ -79,6 +87,7 @@ window.BS = window.BS || {};
   roachMissile: [E + 'zerg/roachmissile/roachmissile.m3', null, true], roachImpact: [E + 'zerg/roachmissileimpact/roachmissileimpact.m3'],
   lurkerMissile: [E + 'zerg/lurkermissile/lurkermissile.m3'], zerglingImpact: [E + 'zerg/zerglingweaponimpact/zerglingweaponimpact.m3'],
   ultraliskImpact: [E + 'zerg/ultraliskweaponimpact/ultraliskweaponimpact.m3'],
+  samMissile: [E + 'terran/missileturretmissile/missileturretmissile.m3', null, true], samImpact: [E + 'terran/missileturretmissileimpact/missileturretmissileimpact.m3'],
   };
   // Every death model also carries its blood/acid burst.
   BS.fxList = () => {
@@ -108,6 +117,7 @@ window.BS = window.BS || {};
     tankDeath: [S + 'terran/siegetank/siegetank_death0.wav'],
     bansheeFire: [S + 'terran/banshee/banshee_attacklaunch0.wav'],
     bansheeHit: [S + 'terran/banshee/banshee_attackimpact0.wav'],
+    samFire: [0, 1, 2].map(i => S + 'terran/missileturret/missileturret_attacklaunch' + i + '.wav'),
     scvRepair: [S + 'terran/scv/scv_repair0.wav'],
     medivacUnload: [S + 'terran/medivac/medivac_unload0.wav'],
     zerglingAttack: [S + 'zerg/zergling/zergling_attacklaunch0.wav'],
@@ -150,16 +160,24 @@ window.BS = window.BS || {};
 
   // Bunker occupants.
   BS.INFANTRY = {
-    marine: { name: 'Marine', icon: 'btn-unit-terran-marine', hp: 45, dmg: 6, cd: 0.61, range: 5, cost: 50, stimHp: 10, sound: 'marineFire', desc: 'Gauss rifle. Cheap, reliable, stims well.' },
-    firebat: { name: 'Firebat', icon: 'btn-unit-terran-firebat', hp: 100, dmg: 8, dmgLight: 6, cd: 0.86, range: 2, splash: 1.3, groundOnly: true, cost: 100, stimHp: 10, sound: 'firebatFire', desc: 'Flamethrower. Burns packs of lings and banelings.' },
-    marauder: { name: 'Marauder', icon: 'btn-unit-terran-marauder', hp: 125, dmg: 10, dmgArmored: 10, cd: 1.07, range: 6, slow: 1.5, groundOnly: true, cost: 100, stimHp: 20, sound: 'marauderFire', desc: 'Punisher grenades. Slows and shreds armoured.' },
+    marine: { name: 'Marine', icon: 'btn-unit-terran-marine', hp: 45, dmg: 6, cd: 0.61, range: 5, cost: 50, stimHp: 10, sound: 'marineFire', death: 'marineDeath', desc: 'Gauss rifle. Cheap, reliable, stims well.' },
+    firebat: { name: 'Firebat', icon: 'btn-unit-terran-firebat', hp: 100, dmg: 8, dmgLight: 6, cd: 0.86, range: 2, splash: 1.3, groundOnly: true, cost: 100, stimHp: 10, sound: 'firebatFire', death: 'firebatDeath', desc: 'Flamethrower. Burns packs of lings and banelings.' },
+    marauder: { name: 'Marauder', icon: 'btn-unit-terran-marauder', hp: 125, dmg: 10, dmgArmored: 10, cd: 1.07, range: 6, slow: 1.5, groundOnly: true, cost: 100, stimHp: 20, sound: 'marauderFire', death: 'marauderDeath', desc: 'Punisher grenades. Slows and shreds armoured.' },
   };
 
   BS.TERRAN = {
     bunker: { hp: 400, armor: 1, slots: 4, slotsUpgraded: 6, rangeBonus: 1, halfSize: 1.5 },
     scv: { hp: 45, repairRate: 13.8, speed: 3.94, radius: 0.375, cost: 50, max: 4 },
     tank: { hp: 175, armor: 1, dmg: 40, dmgArmored: 30, cd: 2.14, range: 13, minRange: 2, splash: [0.47, 0.78, 1.25], radius: 0.9, cost: 300, costStep: 100, maxLane: 4, maxArena: 4 },
-    banshee: { dmg: 12, shots: 2, cd: 0.55, range: 7, speed: 9, fly: 4.5, cost: 150, cooldown: 25 },
+    // Air strike: four banshees hover over the lane (and its ledges) and fire missiles at passing zerg.
+    banshee: { count: 4, dmg: 12, shots: 2, cd: 1.1, range: 6, speed: 9, fly: 4.5, hover: 14, cost: 200, cooldown: 32 },
+    // Troops standing behind the bunker (ejected, or recruited while it is full).
+    squad: { max: 24 },
+    // Missile turrets: anti-air only, like SC2 (12 x2, range 7).
+    sam: { hp: 250, armor: 0, dmg: 12, shots: 2, cd: 0.86, range: 7, radius: 1.0, cost: 100, max: 3, build: 3 },
+    // Sensor tower: the radar only works while one stands.
+    sensor: { hp: 200, armor: 0, radius: 0.8, cost: 125, build: 3 },
+    railsRange: 2,
     yamato: { dmg: 240, splash: 120, radius: 3, cost: 300, cooldown: 40 },
     stim: { duration: 11, cooldown: 13 },
     repair: { cost: 75, cooldown: 20, amount: 150 },
@@ -175,6 +193,7 @@ window.BS = window.BS || {};
     hisec: { name: 'Hi-Sec Auto Tracking', icons: ['btn-upgrade-terran-hisecautotracking'], costs: [200], short: '+1 range, bunker and tanks' },
     vehicle: { name: 'Vehicle Weapons', icons: ['btn-upgrade-terran-vehicleweaponslevel1'], costs: [150, 225, 300, 400, 525, 650, 800, 950, 1150, 1350], short: '+5 tank damage' },
     medivac: { name: 'Medivac on Station', icons: ['btn-ability-terran-heal'], costs: [200], short: 'Heals troops and SCVs' },
+    rails: { name: 'Magnetic Rails', icons: ['btn-upgrade-terran-magrailmunitions'], costs: [300], short: '+2 bunker range' },
   };
 
   // Abilities on the action bar.

@@ -28,8 +28,8 @@ window.BS = window.BS || {};
       this.focus = null; this.focusUntil = 0; this.shake = 0;
       this.toasts = []; this.waveBanner = null; this.events = [];
       this.bunker = { x: 0, y: 0, yaw: Math.PI / 2, hp: T().bunker.hp, maxHp: T().bunker.hp, armor: T().bunker.armor, slots: T().bunker.slots, units: [], handle: null, dead: false, flash: 0 };
-      this.tanks = []; this.scvs = []; this.banshees = [];
-      this.up = { stim: 0, weapons: 0, vehicle: 0, neosteel: 0, plating: 0, hisec: 0, medivac: 0 };
+      this.tanks = []; this.scvs = []; this.banshees = []; this.squad = []; this.structures = [];
+      this.up = { stim: 0, weapons: 0, vehicle: 0, neosteel: 0, plating: 0, hisec: 0, medivac: 0, rails: 0 };
       this.ab = { stimUntil: 0, stimCd: 0, strikeCd: 0, repairCd: 0, yamatoCd: 0 };
       this.station = null;
       BS.Terrain.setMode(this.mode);
@@ -44,11 +44,20 @@ window.BS = window.BS || {};
         this.tankSlots = [[-3.4, -0.4], [3.4, -0.4], [-5.4, -2.8], [5.4, -2.8]];
         this.scvIdle = [[-2.6, -2.9], [2.6, -2.9], [-4.4, -2.4], [4.4, -2.4]];
         this.tankMax = T().tank.maxLane;
+        this.samSlots = [[-5.6, 1.2], [5.6, 1.2], [-3.6, -4.6]];
+        this.sensorSlot = [3.6, -4.6];
+        this.strikePosts = [[-7, 6.2], [7, 6.2], [-2.4, 11], [2.4, 11]];   // over both ledges and up the stem
       } else {
         this.tankSlots = [[-3.0, -2.6], [3.0, -2.6], [-3.0, 2.6], [3.0, 2.6]];
         this.scvIdle = [[-2.6, -2.6], [2.6, 2.6], [-2.6, 2.6], [2.6, -2.6]];
         this.tankMax = T().tank.maxArena;
+        this.samSlots = [[0, 4.0], [-4.0, 0], [4.0, 0]];
+        this.sensorSlot = [-4.2, -4.2];
+        this.strikePosts = [45, 135, 225, 315].map(a => [Math.cos(a * Math.PI / 180) * 7, Math.sin(a * Math.PI / 180) * 7]);
       }
+      // Four ranks of six behind the bunker (the side away from the lane).
+      this.squadSpots = [];
+      for (const y of [-2.3, -3.1, -3.9, -4.7]) for (const x of [-2, -1.2, -0.4, 0.4, 1.2, 2]) this.squadSpots.push([x, y]);
     }
 
     // ---- Opening and reinforcements -------------------------------------------------------------
@@ -62,10 +71,11 @@ window.BS = window.BS || {};
       this.walkers.push(w);
     }
     pendingInfantry() { return this.walkers.length + this.drops.reduce((n, d) => n + d.cargo.length, 0); }
+    troopsFull() { return this.bunker.units.length + this.squad.length + this.pendingInfantry() >= this.bunker.slots + T().squad.max; }
 
     addInfantry(type, free) {
       const d = BS.INFANTRY[type];
-      if (this.bunker.units.length + this.pendingInfantry() >= this.bunker.slots) return this.toast('Bunker is full');
+      if (this.troopsFull()) return this.toast('No room for more troops');
       if (!free) { if (this.minerals < d.cost) return this.toast('Not enough minerals'); this.minerals -= d.cost; }
       // Ride along with a medivac that is still inbound, or call a new one.
       const ride = this.drops.find(dr => dr.state === 'incoming' && dr.cargo.length < 4);
@@ -100,6 +110,12 @@ window.BS = window.BS || {};
       for (let i = this.walkers.length - 1; i >= 0; i--) {
         const w = this.walkers[i];
         if (w.delay > 0) { w.delay -= dt; continue; }
+        // Bunker full: fall in behind it instead.
+        if (!this.bunker.dead && this.bunker.units.length + this.walkers.filter(o => o !== w && o.delay <= 0 && !o.outside).length >= this.bunker.slots && this.squad.length < T().squad.max) {
+          w.outside = true;
+          this.joinSquad(w.type, w.def.hp, w.x, w.y, w.handle);
+          this.walkers.splice(i, 1); continue;
+        }
         // Head for the nearest side hatch.
         const hx = w.x < 0 ? -T().bunker.halfSize - 0.1 : T().bunker.halfSize + 0.1, hy = 0.4;
         const dx = hx - w.x, dy = hy - w.y, dd = Math.hypot(dx, dy);
@@ -116,6 +132,209 @@ window.BS = window.BS || {};
         if (!w.walking) { w.walking = true; w.handle.play(/^walk/i, true, 1.2); }
         w.handle.setPos(w.x, w.y, 0).setYaw(Math.atan2(dy, dx));
       }
+    }
+
+    // One step for a ground unit: straight on if it can, otherwise the nearest heading off the cliff face, so nothing
+    // hangs on a corner. Returns false when boxed in.
+    stepGround(o, mx, my) {
+      const open = (x, y) => BS.Terrain.walkable(x, y);
+      if (open(o.x + mx, o.y + my)) { o.x += mx; o.y += my; return true; }
+      for (const a of [0.5, -0.5, 1.0, -1.0, Math.PI / 2, -Math.PI / 2, 2.1, -2.1]) {
+        const c = Math.cos(a), sn = Math.sin(a), k = Math.max(0.35, Math.cos(a)), rx = (mx * c - my * sn) * k, ry = (mx * sn + my * c) * k;
+        if (open(o.x + rx, o.y + ry)) { o.x += rx; o.y += ry; return true; }
+      }
+      // Wedged on a slope: step down it, back towards the low ground.
+      const e = 0.2, gx = BS.Terrain.height(o.x + e, o.y) - BS.Terrain.height(o.x - e, o.y), gy = BS.Terrain.height(o.x, o.y + e) - BS.Terrain.height(o.x, o.y - e), gl = Math.hypot(gx, gy);
+      if (gl > 1e-4) { const L = Math.hypot(mx, my); o.x -= gx / gl * L; o.y -= gy / gl * L; return true; }
+      return false;
+    }
+
+    // Troopers path round the bunker: straight to the goal if the way is clear, else via the corner that makes the
+    // shortest clear route.
+    roundBunker(m, gx, gy) {
+      const B = T().bunker.halfSize + 0.25, C = B + 0.3;
+      const hits = (ax, ay, bx, by) => {   // segment against the box (slab test)
+        let t0 = 0, t1 = 1;
+        const dx = bx - ax, dy = by - ay;
+        for (const [p, q] of [[-dx, ax + B], [dx, B - ax], [-dy, ay + B], [dy, B - ay]]) {
+          if (Math.abs(p) < 1e-9) { if (q < 0) return false; continue; }
+          const r = q / p;
+          if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; } else { if (r < t0) return false; if (r < t1) t1 = r; }
+        }
+        return t0 <= t1;
+      };
+      if ((Math.abs(m.x) < B && Math.abs(m.y) < B) || !hits(m.x, m.y, gx, gy)) return [gx, gy];
+      let best = null, bl = 1e9;
+      for (const [cx, cy] of [[C, C], [-C, C], [C, -C], [-C, -C]]) {
+        if (hits(m.x, m.y, cx, cy)) continue;
+        const l = dist(m.x, m.y, cx, cy) + dist(cx, cy, gx, gy) + (hits(cx, cy, gx, gy) ? 2 * C : 0);
+        if (l < bl) { bl = l; best = [cx, cy]; }
+      }
+      return best || [gx, gy];
+    }
+
+    // ---- Squad behind the bunker ----------------------------------------------------------------------
+    freeSquadSpot() { return this.squadSpots.find(sp => !this.squad.some(m => m.spot === sp)); }
+    joinSquad(type, hp, x, y, handle) {
+      const def = BS.INFANTRY[type], spot = this.freeSquadSpot();
+      if (!spot) { if (handle) handle.release(); return null; }
+      const m = { type, def, hp, maxHp: def.hp, cd: Math.random() * 0.3, x, y, yaw: -Math.PI / 2, spot, boarding: false, anim: '', dead: false, flash: 0, radius: 0.375 };
+      m.handle = handle || this.r.spawn(type, x, y, 0, m.yaw).setTeam(1);
+      this.squad.push(m);
+      return m;
+    }
+    // Send a trooper out of the bunker's side hatch to stand behind it.
+    eject(i) {
+      const b = this.bunker, u = b.units[i];
+      if (!u || b.dead) return false;
+      if (this.squad.length >= T().squad.max) return this.toast('No room behind the bunker');
+      b.units.splice(i, 1);
+      const side = this.squad.filter(m => m.x < 0).length <= this.squad.filter(m => m.x >= 0).length ? -1 : 1;
+      this.joinSquad(u.type, u.hp, side * (T().bunker.halfSize + 0.3), 0.4);
+      if (!b.units.length) b.handle.play(/^stand$/i, true);
+      this.floater(0, 0, 3, u.def.name + ' out', '#7fd8ff');
+      return true;
+    }
+    board(i) {
+      const m = this.squad[i];
+      if (!m || m.dead) return false;
+      if (this.bunker.units.length >= this.bunker.slots) return this.toast('Bunker is full');
+      m.boarding = !m.boarding;
+      return true;
+    }
+    updateSquad(dt) {
+      const hs = T().bunker.halfSize, stim = this.ab.stimUntil > this.time, Q = this.squad;
+      // Keep a little elbow room so troopers converging on one spot do not stack.
+      for (let i = 0; i < Q.length; i++) for (let j = i + 1; j < Q.length; j++) {
+        const p = Q[i], q = Q[j], dx = q.x - p.x, dy = q.y - p.y, d2 = dx * dx + dy * dy;
+        if (d2 < 0.49 && d2 > 1e-6) { const d = Math.sqrt(d2), push = (0.7 - d) / d * 0.25; p.x -= dx * push; p.y -= dy * push; q.x += dx * push; q.y += dy * push; }
+      }
+      for (const m of Q.slice()) {
+        if (m.dead) continue;
+        const d = m.def, pred = e => !(d.groundOnly && e.def.flying);
+        let gx = m.spot[0], gy = m.spot[1];
+        if (m.boarding) { gx = (m.x < 0 ? -1 : 1) * (hs + 0.3); gy = 0.4; }
+        else if (this.enemiesInRange(m.x, m.y, d.range, pred).length) { gx = m.x; gy = m.y; }   // hold and fire
+        else {
+          // Advance on the nearest zerg that is attacking our position from beyond our reach.
+          let th = null, best = 1e9;
+          for (const e of this.enemies) {
+            if (e.hp <= 0 || !e.attacking || !pred(e) || dist(0, 0, e.x, e.y) > 14) continue;
+            const dd = dist(m.x, m.y, e.x, e.y);
+            if (dd < best) { best = dd; th = e; }
+          }
+          if (th) { const a = Math.atan2(m.y - th.y, m.x - th.x), r = d.range * 0.8 + th.radius; gx = th.x + Math.cos(a) * r; gy = th.y + Math.sin(a) * r; }
+        }
+        const far = Math.hypot(gx - m.x, gy - m.y);
+        [gx, gy] = this.roundBunker(m, gx, gy);
+        const dx = gx - m.x, dy = gy - m.y, dd = Math.hypot(dx, dy) || 1;
+        if (far > 0.12) {
+          const sp = Math.min(dd, 3.15 * dt), ox = m.x, oy = m.y;
+          this.stepGround(m, dx / dd * sp, dy / dd * sp);
+          if (m.x !== ox || m.y !== oy) m.yaw = Math.atan2(m.y - oy, m.x - ox);
+          if (m.anim !== 'walk') { m.anim = 'walk'; m.handle.play(/^walk/i, true, 1.2); }
+          m.handle.setPos(m.x, m.y, BS.Terrain.height(m.x, m.y)).setYaw(m.yaw);
+          continue;
+        }
+        if (m.boarding) {
+          m.boarding = false;
+          if (this.bunker.units.length < this.bunker.slots && !this.bunker.dead) {
+            this.bunker.units.push({ type: m.type, def: m.def, hp: m.hp, maxHp: m.maxHp, cd: m.cd });
+            this.bunker.handle.play(/^stand work/i, true);
+            m.handle.release(); this.squad.splice(this.squad.indexOf(m), 1);
+            this.floater(0, 0, 3, '+' + m.def.name, '#7fd8ff');
+          } else this.toast('Bunker is full');
+          continue;
+        }
+        // Holding position: fire at whatever comes into (unboosted) range.
+        m.cd -= dt * (stim ? 1.5 : 1);
+        if (m.cd <= 0) {
+          let target = null;
+          if (this.focus && this.focus.hp > 0 && pred(this.focus) && dist(m.x, m.y, this.focus.x, this.focus.y) - this.focus.radius <= d.range) target = this.focus;
+          if (!target) target = this.enemiesInRange(m.x, m.y, d.range, pred)[0];
+          if (target) {
+            m.cd += d.cd;
+            m.yaw = Math.atan2(target.y - m.y, target.x - m.x);
+            const cs = Math.cos(m.yaw), sn = Math.sin(m.yaw);
+            this.fireInfantry(m, m.x + cs * 0.45, m.y + sn * 0.45, BS.Terrain.height(m.x, m.y) + 0.85, target);
+            m.anim = 'attack'; m.standAt = this.time + Math.min(m.def.cd, m.handle.play(/^attack/i, false, 1.4) || 0.5);
+          } else m.cd = 0.1;
+        }
+        if (m.anim === 'walk' || (m.anim === 'attack' && this.time > m.standAt)) { m.anim = 'stand'; m.handle.play(/^stand$/i, true); }
+        m.handle.setPos(m.x, m.y, BS.Terrain.height(m.x, m.y)).setYaw(m.yaw);
+      }
+    }
+    // A trooper dies: behind the bunker it falls with SC2's death animation; inside, it is carried out.
+    killTrooper(u, why) {
+      const b = this.bunker;
+      if (b.units.includes(u)) b.units.splice(b.units.indexOf(u), 1);
+      else {
+        u.dead = true;
+        this.squad.splice(this.squad.indexOf(u), 1);
+        u.handle.release();
+        this.corpse(u.def.death, u.x, u.y, BS.Terrain.height(u.x, u.y), u.yaw, 3.5, 1, true);
+      }
+      this.toast(u.def.name + (why === 'stim' ? ' overdosed on stim' : ' down'));
+      this.floater(u.x || 0, u.y || 0, 2.5, why === 'stim' ? 'OVERDOSE' : 'KIA', '#ff6a5a');
+    }
+
+    // ---- Structures: missile turrets and the sensor tower -----------------------------------------------
+    samCount() { return this.structures.filter(s => s.kind === 'sam').length; }
+    sensorUp() { return this.structures.some(s => s.kind === 'sensor' && s.state === 'ready'); }
+    buildStructure(kind) {
+      const D = T()[kind];
+      let slot;
+      if (kind === 'sam') {
+        if (this.samCount() >= D.max) return this.toast('Turret limit reached');
+        slot = this.samSlots.find(sl => !this.structures.some(s => s.x === sl[0] && s.y === sl[1]));
+      } else {
+        if (this.structures.some(s => s.kind === 'sensor')) return this.toast('Sensor tower already built');
+        slot = this.sensorSlot;
+      }
+      if (!slot) return this.toast('No room');
+      if (this.minerals < D.cost) return this.toast('Not enough minerals');
+      this.minerals -= D.cost;
+      const st = { kind, x: slot[0], y: slot[1], hp: D.hp * 0.1, maxHp: D.hp, armor: D.armor, radius: D.radius, cd: 0, state: 'building', t: 0, dead: false, flash: 0, yaw: Math.PI / 2 };
+      st.handle = this.r.spawn(kind === 'sam' ? 'missileturret' : 'sensortower', st.x, st.y, BS.Terrain.height(st.x, st.y), st.yaw).setTeam(1);
+      st.handle.play(/^birth/i, false);
+      this.structures.push(st);
+      this.toast(kind === 'sam' ? 'Building missile turret' : 'Building sensor tower');
+      return true;
+    }
+    updateStructures(dt) {
+      const D = T().sam;
+      for (const st of this.structures) {
+        if (st.dead) continue;
+        if (st.state === 'building') {
+          const B = T()[st.kind];
+          st.t += dt; st.hp = Math.min(st.maxHp, st.hp + st.maxHp * 0.9 / B.build * dt);
+          if (st.t >= B.build) { st.state = 'ready'; st.handle.play(/^stand$/i, true); this.toast(st.kind === 'sam' ? 'Missile turret online' : 'Sensor tower online: radar active'); }
+          continue;
+        }
+        if (st.kind !== 'sam') continue;
+        st.cd -= dt;
+        if (st.cd > 0) continue;
+        const target = this.enemiesInRange(st.x, st.y, D.range, e => e.def.flying)[0];
+        if (!target) { st.cd = 0.1; continue; }
+        st.cd = D.cd;
+        st.yaw = Math.atan2(target.y - st.y, target.x - st.x);
+        st.handle.setYaw(st.yaw); st.handle.play(/^attack/i, false);
+        for (let k = 0; k < D.shots; k++) {
+          const ox = -Math.sin(st.yaw) * (k ? 0.35 : -0.35), oy = Math.cos(st.yaw) * (k ? 0.35 : -0.35);
+          const p = { kind: 'sam', friendly: true, fx: st.x + ox, fy: st.y + oy, fz: 1.6, tx: target.x, ty: target.y, tz: target.z, t: -k * 0.12, dur: 0.4, dmg: D.dmg, target, impact: 'samImpact' };
+          this.projectileModel(p, 'projSam', 'samMissile');
+          this.projectiles.push(p);
+        }
+        BS.audio.play('samFire', { vol: 0.45, gap: 0.2 });
+      }
+    }
+    destroyStructure(st) {
+      st.dead = true;
+      st.handle.release();
+      this.structures.splice(this.structures.indexOf(st), 1);
+      this.corpse(st.kind === 'sam' ? 'missileturretDeath' : 'sensortowerDeath', st.x, st.y, 0, st.yaw, 4, 1, true);
+      BS.audio.play('explosion', { vol: 0.6 });
+      this.toast(st.kind === 'sam' ? 'Missile turret destroyed' : 'Sensor tower destroyed: radar offline');
     }
 
     // ---- Purchases --------------------------------------------------------------------------------
@@ -152,6 +371,7 @@ window.BS = window.BS || {};
     upgradeAvailable(id) {
       if (id === 'medivac' && !this.up.stim) return false;
       if (id === 'vehicle' && !this.tanks.length) return false;
+      if (id === 'rails' && !this.up.hisec) return false;
       return this.upgradeLevel(id) < BS.UPGRADES[id].costs.length;
     }
     buyUpgrade(id) {
@@ -168,6 +388,7 @@ window.BS = window.BS || {};
         case 'plating': this.bunker.maxHp += 150; this.bunker.hp += 150; if (up.plating <= 3) this.bunker.armor += 1; this.toast('Building Armor level ' + up.plating); break;
         case 'hisec': this.toast('Hi-Sec Auto Tracking online'); break;
         case 'medivac': this.toast('Medivac on station'); break;
+        case 'rails': this.toast('Magnetic rails fitted: +2 bunker range'); break;
       }
       return true;
     }
@@ -179,8 +400,9 @@ window.BS = window.BS || {};
       if (this.minerals < d.cost) return this.toast('Not enough minerals');
       this.minerals -= d.cost; this.ab.strikeCd = d.cooldown;
       const lane = this.mode === 'lane';
-      for (let i = 0; i < 2; i++) {
-        const b = { x: lane ? (i ? 2.2 : -2.2) : (i ? 3 : -3), y: lane ? -14 : -34, z: d.fly, yaw: Math.PI / 2, cd: 0.3 + i * 0.25, back: false };
+      for (let i = 0; i < d.count; i++) {
+        const post = this.strikePosts[i % this.strikePosts.length];
+        const b = { post, x: post[0] * 0.5, y: (lane ? -16 : -34) - i * 1.2, z: d.fly + 1.5, yaw: Math.PI / 2, cd: 0.3 + i * 0.2, state: 'in', t: 0, anim: '' };
         b.handle = this.r.spawn('banshee', b.x, b.y, b.z, b.yaw).setTeam(1);
         b.handle.play(/^walk|^fly/i, true);
         this.banshees.push(b);
@@ -191,9 +413,9 @@ window.BS = window.BS || {};
     useStim() {
       if (!this.up.stim) return this.toast('Research Stimpack first');
       if (this.ab.stimCd > 0) return false;
-      let any = false;
-      for (const u of this.bunker.units) if (u.hp > u.def.stimHp + 1) { u.hp -= u.def.stimHp; any = true; }
-      if (!any) return this.toast('Troops too wounded to stim');
+      const troops = this.bunker.units.concat(this.squad.filter(m => !m.dead));
+      if (!troops.length) return this.toast('No troops to stim');
+      for (const u of troops) { if (u.hp <= u.def.stimHp) this.killTrooper(u, 'stim'); else u.hp -= u.def.stimHp; }
       this.ab.stimUntil = this.time + T().stim.duration; this.ab.stimCd = T().stim.cooldown;
       BS.audio.play('stim', { vol: 0.9 });
       this.floater(0, 0, 3, 'STIM!', '#ffd34d');
@@ -323,6 +545,8 @@ window.BS = window.BS || {};
       if (!this.bunker.dead) list.push({ kind: 'bunker', obj: this.bunker, x: 0, y: 0, radius: T().bunker.halfSize, structure: true, armored: true });
       for (const t of this.tanks) if (t.state === 'ready' && !t.dead) list.push({ kind: 'tank', obj: t, x: t.x, y: t.y, radius: t.radius, armored: true });
       for (const s of this.scvs) if (!s.dead) list.push({ kind: 'scv', obj: s, x: s.x, y: s.y, radius: s.radius, light: true });
+      for (const m of this.squad) if (!m.dead) list.push({ kind: 'trooper', obj: m, x: m.x, y: m.y, radius: m.radius, light: m.type !== 'marauder', armored: m.type === 'marauder' });
+      for (const st of this.structures) if (!st.dead) list.push({ kind: 'structure', obj: st, x: st.x, y: st.y, radius: st.radius, structure: true, armored: true });
       return list;
     }
     valid(tg) { return tg && !tg.obj.dead && (tg.kind !== 'tank' || tg.obj.state === 'ready'); }
@@ -344,6 +568,12 @@ window.BS = window.BS || {};
           this.tanks.splice(this.tanks.indexOf(o), 1);
           this.toast('Siege tank destroyed');
         }
+      } else if (tg.kind === 'trooper') {
+        o.hp -= Math.max(0.5, dmg - (o.type === 'marauder' ? 1 : 0)); o.flash = 1;
+        if (o.hp <= 0 && !o.dead) this.killTrooper(o);
+      } else if (tg.kind === 'structure') {
+        o.hp -= Math.max(0.5, dmg - o.armor); o.flash = 1;
+        if (o.hp <= 0 && !o.dead) this.destroyStructure(o);
       } else {
         o.hp -= Math.max(0.5, dmg); o.flash = 1;
         if (o.hp <= 0 && !o.dead) {
@@ -458,6 +688,8 @@ window.BS = window.BS || {};
       this.updateBunker(dt);
       this.updateTanks(dt);
       this.updateScvs(dt);
+      this.updateSquad(dt);
+      this.updateStructures(dt);
       this.updateBanshees(dt);
       this.updateProjectiles(dt);
       this.updateReinforcements(dt);
@@ -536,10 +768,8 @@ window.BS = window.BS || {};
           const gd = Math.hypot(gx - e.x, gy - e.y) || 1;
           const sp = d.speed * (slowed ? 0.5 : 1), nx = (gx - e.x) / gd, ny = (gy - e.y) / gd;
           const mx = nx * sp * dt + e.sx * 0.8, my = ny * sp * dt + e.sy * 0.8;
-          // Cliffs: ground units slide along them instead of walking through.
-          if (d.flying || BS.Terrain.walkable(e.x + mx, e.y + my)) { e.x += mx; e.y += my; }   // flyers ignore the cliffs
-          else if (BS.Terrain.walkable(e.x + mx, e.y)) e.x += mx;
-          else if (BS.Terrain.walkable(e.x, e.y + my)) e.y += my;
+          // Cliffs: ground units steer around them; flyers ignore them.
+          if (d.flying) { e.x += mx; e.y += my; } else this.stepGround(e, mx, my);
           e.x = clamp(e.x, -21, 21);
           if (!d.flying) e.z = BS.Terrain.height(e.x, e.y);
           // Face the way it is heading, not the way the crowd shoves it, and turn at a creature's pace.
@@ -567,7 +797,7 @@ window.BS = window.BS || {};
       const b = this.bunker;
       if (b.dead) return;
       const stim = this.ab.stimUntil > this.time;
-      const bonus = T().bunker.rangeBonus + T().bunker.halfSize + (this.up.hisec ? T().hiSecRange : 0) + (this.hard ? 1 : 0);
+      const bonus = T().bunker.rangeBonus + T().bunker.halfSize + (this.up.hisec ? T().hiSecRange : 0) + (this.up.rails ? T().railsRange : 0) + (this.hard ? 1 : 0);
       if (this.up.medivac) this.updateStation(dt);
       for (const u of b.units) {
         u.cd -= dt * (stim ? 1.5 : 1);
@@ -583,37 +813,44 @@ window.BS = window.BS || {};
           if (u.type === 'firebat') target = list.find(e => e.def.light) || target;
         }
         u.cd += d.cd;
+        const slit = this.bunkerSlit(Math.atan2(target.y, target.x));
+        // A little spread along the slit.
+        const ang = Math.atan2(target.y, target.x), k = rnd(-0.18, 0.18);
+        this.fireInfantry(u, slit[0] - Math.sin(ang) * k, slit[1] + Math.cos(ang) * k, slit[2], target);
+      }
+    }
+    // One shot from a trooper at a muzzle position (a bunker slit, or the rifle of a soldier standing outside).
+    fireInfantry(u, sx, sy, sz, target) {
+        const d = u.def, pred = e => !(d.groundOnly && e.def.flying);
         const miss = BS.Terrain.onHigh(target.x, target.y) && Math.random() < 0.3;   // firing up at the high ground
         const dmg = miss ? 0 : d.dmg + this.up.weapons;
-        const ang = Math.atan2(target.y, target.x);
-        const slit = this.bunkerSlit(ang);
-        const hx = target.x, hy = target.y, hz = target.z + target.def.height * 0.5;
+        const hx = target.x, hy = target.y, hz = target.z + target.def.height * 0.5, ang = Math.atan2(hy - sy, hx - sx);
         if (u.type === 'marine') {
           if (dmg) this.hurtEnemy(target, dmg);
-          // A little spread along the slit; three-round bursts with SC2's muzzle mesh and impact sparks.
-          const k = rnd(-0.18, 0.18), sx = slit[0] - Math.sin(ang) * k, sy = slit[1] + Math.cos(ang) * k, aim = Math.atan2(hy - sy, hx - sx);
+          // Three-round bursts with SC2's muzzle mesh and impact sparks.
+          const aim = ang;
           for (let r = 0; r < 3; r++) {
-            this.fx.play('marineLaunch', sx, sy, slit[2], aim, 1.4, r * 0.08);
+            this.fx.play('marineLaunch', sx, sy, sz, aim, 1.4, r * 0.08);
             this.fx.play('marineImpact', hx + rnd(-0.2, 0.2), hy + rnd(-0.2, 0.2), hz + rnd(-0.15, 0.25), aim + Math.PI, 1, r * 0.08 + 0.03);
-            this.flashes.push({ x: sx, y: sy, z: slit[2], yaw: aim, delay: r * 0.08, life: 0.09 });
+            this.flashes.push({ x: sx, y: sy, z: sz, yaw: aim, delay: r * 0.08, life: 0.09 });
           }
           BS.audio.play('marineFire', { vol: 0.3, gap: 0.09 });
         } else if (u.type === 'firebat') {
           if (dmg) for (const v of this.enemiesInRange(hx, hy, d.splash, pred)) this.hurtEnemy(v, dmg + (v.def.light ? d.dmgLight : 0));
-          this.fx.play('firebatLaunch', slit[0], slit[1], slit[2], ang, 1.2);
+          this.fx.play('firebatLaunch', sx, sy, sz, ang, 1.2);
           BS.audio.play('firebatFire', { vol: 0.45, gap: 0.3 });
         } else {
-          const p = { kind: 'grenade', friendly: true, fx: slit[0], fy: slit[1], fz: slit[2], tx: hx, ty: hy, tz: hz, t: 0, dur: 0.3, arc: 0.6, target, dmg, def: d, impact: 'marauderImpact' };
-          this.fx.play('marauderLaunch', slit[0], slit[1], slit[2], ang);
+          const p = { kind: 'grenade', friendly: true, fx: sx, fy: sy, fz: sz, tx: hx, ty: hy, tz: hz, t: 0, dur: 0.3, arc: 0.6, target, dmg, def: d, impact: 'marauderImpact' };
+          this.fx.play('marauderLaunch', sx, sy, sz, ang);
           this.projectileModel(p, 'projMarauder', 'marauderMissile');
           this.projectiles.push(p);
           BS.audio.play('marauderFire', { vol: 0.4, gap: 0.2 });
         }
-      }
     }
     // Medivac on Station: parked at the bunker's shoulder; heals the troops inside and the most hurt SCV nearby.
     updateStation(dt) {
       for (const u of this.bunker.units) u.hp = Math.min(u.maxHp, u.hp + 9 * dt);
+      for (const m of this.squad) if (!m.dead) m.hp = Math.min(m.maxHp, m.hp + 9 * dt);
       let patient = null;
       for (const s of this.scvs) if (!s.dead && s.hp < s.maxHp - 0.5 && dist(0, 0.5, s.x, s.y) < 6 && (!patient || s.hp / s.maxHp < patient.hp / patient.maxHp)) patient = s;
       if (patient) patient.hp = Math.min(patient.maxHp, patient.hp + 12.6 * dt);
@@ -685,6 +922,7 @@ window.BS = window.BS || {};
       const jobs = [];
       if (!b.dead && b.hp < b.maxHp - 1) jobs.push({ x: 0, y: 0, r: T().bunker.halfSize, cost: 0.25, obj: b, need: frac - 0.2 });
       if (frac > 0.4) for (const t of this.tanks) if (t.state === 'ready' && !t.dead && t.hp < t.maxHp - 1) jobs.push({ x: t.x, y: t.y, r: t.radius, cost: 0.4, obj: t, need: t.hp / t.maxHp });
+      if (frac > 0.4) for (const st of this.structures) if (st.state === 'ready' && !st.dead && st.hp < st.maxHp - 1) jobs.push({ x: st.x, y: st.y, r: st.radius, cost: 0.3, obj: st, need: st.hp / st.maxHp });
       jobs.sort((a, c) => a.need - c.need);
       this.scvs.forEach((s, i) => {
         const job = jobs.length ? jobs[i % jobs.length] : null;
@@ -706,25 +944,42 @@ window.BS = window.BS || {};
       });
     }
 
+    // Air strike: fly in, hover over a post firing missiles at ground zerg passing below, then leave.
     updateBanshees(dt) {
-      const D = T().banshee, lane = this.mode === 'lane', farY = lane ? 30 : 32, homeY = lane ? -16 : -36;
+      const D = T().banshee, homeY = this.mode === 'lane' ? -18 : -36;
       for (let i = this.banshees.length - 1; i >= 0; i--) {
         const b = this.banshees[i];
-        if (!b.back) { b.y += D.speed * dt; if (b.y >= farY) { b.back = true; b.yaw = -Math.PI / 2; } }
-        else { b.y -= D.speed * dt; if (b.y <= homeY) { b.handle.release(); this.banshees.splice(i, 1); continue; } }
-        b.handle.setPos(b.x, b.y, b.z).setYaw(b.yaw);
-        b.cd -= dt;
-        if (b.cd > 0) continue;
-        const list = this.enemiesInRange(b.x, b.y, D.range, e => !e.def.flying);
-        if (!list.length) { b.cd = 0.1; continue; }
-        b.cd = D.cd;
-        for (let k = 0; k < D.shots; k++) {
-          const p = { kind: 'rocket', friendly: true, fx: b.x + (k ? 0.4 : -0.4), fy: b.y, fz: b.z - 0.3, tx: list[0].x, ty: list[0].y, tz: 0.3, t: 0, dur: 0.35, dmg: D.dmg, target: list[0], impact: 'bansheeImpact' };
-          this.projectileModel(p, 'projBanshee', 'bansheeMissile');
-          this.projectiles.push(p);
+        b.t += dt;
+        if (b.state === 'in') {
+          const dx = b.post[0] - b.x, dy = b.post[1] - b.y, dz = D.fly - b.z, dd = Math.hypot(dx, dy, dz);
+          if (dd > 0.2) { const sp = Math.min(dd, D.speed * dt) / dd; b.x += dx * sp; b.y += dy * sp; b.z += dz * sp; b.yaw = Math.atan2(dy, dx); }
+          else { b.state = 'hover'; b.t = 0; b.handle.play(/^stand$/i, true); }
+        } else if (b.state === 'hover') {
+          const bob = 0.15 * Math.sin(this.time * 2.1 + i);
+          const list = this.enemiesInRange(b.x, b.y, D.range, e => !e.def.flying);
+          if (list.length) b.yaw += clamp(angDelta(b.yaw, Math.atan2(list[0].y - b.y, list[0].x - b.x)), -4 * dt, 4 * dt);
+          b.cd -= dt;
+          if (b.cd <= 0 && list.length) {
+            b.cd = D.cd;
+            const tg = list[0];
+            for (let k = 0; k < D.shots; k++) {
+              const ox = -Math.sin(b.yaw) * (k ? 0.4 : -0.4), oy = Math.cos(b.yaw) * (k ? 0.4 : -0.4);
+              const p = { kind: 'rocket', friendly: true, fx: b.x + ox, fy: b.y + oy, fz: b.z - 0.3, tx: tg.x, ty: tg.y, tz: tg.z + 0.3, t: -k * 0.1, dur: 0.35, dmg: D.dmg, target: tg, impact: 'bansheeImpact' };
+              this.projectileModel(p, 'projBanshee', 'bansheeMissile');
+              this.projectiles.push(p);
+            }
+            b.standAt = this.time + (b.handle.play(/^attack/i, false) || 0.5);
+            BS.audio.play('bansheeFire', { vol: 0.5, gap: 0.2 });
+          } else if (b.cd <= 0) b.cd = 0.1;
+          if (b.standAt && this.time > b.standAt) { b.standAt = 0; b.handle.play(/^stand$/i, true); }
+          b.z = D.fly + bob;
+          if (b.t > D.hover) { b.state = 'out'; b.t = 0; b.handle.play(/^walk|^fly/i, true); }
+        } else {
+          b.y -= D.speed * dt; b.z += 1.5 * dt;
+          b.yaw += clamp(angDelta(b.yaw, -Math.PI / 2), -3 * dt, 3 * dt);
+          if (b.y <= homeY) { b.handle.release(); this.banshees.splice(i, 1); continue; }
         }
-        b.handle.play(/^attack/i, false);
-        BS.audio.play('bansheeFire', { vol: 0.5, gap: 0.2 });
+        b.handle.setPos(b.x, b.y, b.z).setYaw(b.yaw);
       }
     }
 
@@ -733,6 +988,7 @@ window.BS = window.BS || {};
       for (let i = P.length - 1; i >= 0; i--) {
         const p = P[i];
         p.t += dt;
+        if (p.t < 0) continue;
         if (p.friendly && p.target && p.target.hp > 0) { p.tx = p.target.x; p.ty = p.target.y; p.tz = p.target.z + p.target.def.height * 0.5; }
         const k = clamp(p.t / p.dur, 0, 1);
         const x = p.fx + (p.tx - p.fx) * k, y = p.fy + (p.ty - p.fy) * k, z = p.fz + (p.tz - p.fz) * k + Math.sin(k * Math.PI) * (p.arc || 0);
@@ -756,6 +1012,8 @@ window.BS = window.BS || {};
             this.shake = Math.min(1, this.shake + 0.1);
           } else if (p.kind === 'grenade') {
             if (p.target && p.target.hp > 0 && p.dmg) { p.target.slowUntil = this.time + p.def.slow; p.target.anim = ''; this.hurtEnemy(p.target, p.dmg + (p.target.def.armored ? p.def.dmgArmored : 0)); }
+          } else if (p.kind === 'sam') {
+            if (p.target && p.target.hp > 0) this.hurtEnemy(p.target, p.dmg);
           } else if (p.kind === 'rocket') {
             if (p.target && p.target.hp > 0) this.hurtEnemy(p.target, p.dmg);
             BS.audio.play('bansheeHit', { vol: 0.35, gap: 0.1 });
@@ -817,6 +1075,8 @@ window.BS = window.BS || {};
       this.bunker.flash = Math.max(0, this.bunker.flash - dt * 4);
       for (const t of this.tanks) t.flash = Math.max(0, t.flash - dt * 4);
       for (const s of this.scvs) s.flash = Math.max(0, s.flash - dt * 4);
+      for (const m of this.squad) m.flash = Math.max(0, m.flash - dt * 4);
+      for (const st of this.structures) st.flash = Math.max(0, st.flash - dt * 4);
     }
 
     focusAt(wx, wy) {
