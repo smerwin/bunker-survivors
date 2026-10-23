@@ -130,7 +130,7 @@ When the bunker is full, new recruits stand behind it, up to 48.
 | SCV (50) | Repairs the bunker, siege tanks and turrets automatically (repairs cost minerals). Up to four. |
 | Missile turret (100) | Anti-air only. Up to three. |
 | Sensor tower (125) | The radar only works while one stands. |
-| Siege tank (300, then +100 each) | Air-dropped; long-range splash against ground. Up to four. A destroyed tank can be replaced. |
+| Siege tank (300 for the first two, then +100 each) | Air-dropped; long-range splash against ground. Up to four. A destroyed tank can be replaced. |
 | Upgrades | Infantry Weapons, Vehicle Weapons and Building Armor (many levels), Stimpack, Neosteel Frame (six slots), Hi-Sec Auto Tracking (+1 range), Magnetic Rails (+2 bunker range; needs Hi-Sec), Medivac on Station (heals soldiers and SCVs; needs Stimpack). |
 
 **High-tech reinforcements.** Max out a tech tree and a surprise card appears at the front of the armoury:

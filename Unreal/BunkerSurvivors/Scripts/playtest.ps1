@@ -1,11 +1,13 @@
 # Builds the editor module, runs an automated playtest window and prints screenshots + key log lines.
 # Usage: powershell -File Scripts\playtest.ps1 -Name lane1 -Mode lane -ResX 540 -ResY 960 -Quit 70 -Every 8 [-Speed 1.5] [-Zoom 0.45] [-NoBuild]
+#        [-UnrealDir "C:\Program Files\Epic Games\UE_5.8"]
 param(
   [string]$Name = "lane1", [string]$Mode = "lane", [int]$ResX = 540, [int]$ResY = 960,
-  [int]$Quit = 70, [double]$Every = 8, [double]$Speed = 1.5, [string]$Zoom = "", [switch]$NoBuild, [string]$Extra = ""
+  [int]$Quit = 70, [double]$Every = 8, [double]$Speed = 1.5, [string]$Zoom = "", [switch]$NoBuild, [string]$Extra = "",
+  [string]$UnrealDir = "C:\Program Files\Epic Games\UE_5.8"
 )
-$proj = "C:\tmp\bunker-survivors\Unreal\BunkerSurvivors"
-$ue = "C:\Program Files\Epic Games\UE_5.8"
+$proj = Split-Path -Parent $PSScriptRoot          # Unreal\BunkerSurvivors
+$ue = $UnrealDir
 if (-not $NoBuild) {
   $out = & "$ue\Engine\Build\BatchFiles\Build.bat" BunkerSurvivorsEditor Win64 Development "-Project=$proj\BunkerSurvivors.uproject" -WaitMutex -NoHotReload 2>&1
   $errs = $out | Select-String -Pattern "error|Result:" | ForEach-Object { $_.Line -replace [regex]::Escape("$proj\Source\BunkerSurvivors\"), '' } | Select-Object -Unique -First 30

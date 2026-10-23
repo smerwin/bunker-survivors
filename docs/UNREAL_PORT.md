@@ -28,24 +28,11 @@ Model conventions Unreal needs to respect:
 
 ## Architecture
 
-```
-Unreal/BunkerSurvivors/
-  Source/BunkerSurvivors/
-    BSGameMode          wave director, economy, upgrades, game over (ports client/js/game.js)
-    BSUnitData          data asset per unit from manifest.json + units.js stats
-    BSZergUnit          skeletal mesh actor, steering, attack timing synced to the animation
-    BSBunker            slots, occupants, repair target, damage states
-    BSSiegeTank         medivac drop sequence, siege splash
-    BSAirStrike         banshee strafing run
-    BSCameraPawn        the zoom-dependent camera described below
-    BSHUD (UMG)         the console UI described below
-  Content/SC2/          imported from SC2Export by an editor Python script (gitignored)
-  Content/Materials/    M_SC2Unit (team colour), MI additive glow, M_Ground, UI materials
-  Content/FX/           Niagara: tracers, flamethrower, tank shell, baneling acid, blood
-```
-
-Imports run through an editor Python script using Interchange (glTF to skeletal mesh plus animation
-sequences), so re-exporting after an SC2 patch is one click.
+One C++ module (`Unreal/BunkerSurvivors/Source/BunkerSurvivors`): `BSGame` holds the whole simulation (a port of
+`client/js/game.js`) and builds the world at runtime, `BSTerrain` the lane chokepoint, `BSCameraPawn` the camera below,
+`SBSHud` the Slate HUD, `BSFx` the StarCraft II particle player, and `BSAssets` finds the imported art under
+`/Game/SC2`. Imports run through an editor Python script (`Scripts/import_sc2.py`) using Interchange (glTF to skeletal
+mesh plus animation sequences), so re-exporting after a StarCraft II patch is one command.
 
 ## Camera: angle changes with zoom
 
@@ -85,26 +72,20 @@ stays cheap on a phone stream.
 Unreal no longer exports to the web (HTML5 support ended with 4.24), so neither the phone nor the
 browser can run an Unreal build directly the way they ran the JS version.
 
-**Recommended: Pixel Streaming.** The game runs on this PC and streams video to any browser, with touch
+**Recommended: Pixel Streaming.** The game runs on the PC and streams video to any browser, with touch
 and mouse input sent back. It keeps the current workflow: one link over Tailscale opens it on the phone,
 and a desktop browser gets the 360 arena. Portrait clients get lane mode and landscape clients get the
 arena, chosen from the resolution the browser reports.
 
-- **Pro:** the SC2 assets never leave this PC, and there is one build for every device.
+- **Pro:** the SC2 assets never leave the PC, and there is one build for every device.
 - **Con:** the PC must be running and online, and there is about 50 to 100 ms of extra input latency.
-- **GPU:** this PC has integrated AMD Radeon graphics. Plan for 720p streaming with Lumen and Nanite off, forward shading and baked lighting. Pixel Streaming supports AMD's hardware encoder.
+- **GPU:** integrated graphics are enough: plan for 720p streaming with Lumen and Nanite off. Pixel Streaming supports AMD, NVIDIA and Intel hardware encoders.
 
 **Alternative: a native Android app.** It plays offline with no stream latency, but needs the Android
 SDK and NDK, copies the converted SC2 assets onto the phone, and has no browser 360 mode. An iPhone
 build would also need a Mac.
 
-## Setup needed on this PC
-
-1. **Epic Games Launcher**: install it, sign in, then install Unreal Engine 5 (the latest 5.x). It needs about 60 GB, and 125 GB is free on C:.
-2. **Visual Studio 2022 Community**: install the "Game development with C++" workload, which includes the Windows SDK.
-3. **Pixel Streaming plugin**: it ships with the engine. Its signalling server needs Node, which is already installed.
-
-Then the build order is:
+## Build order
 
 1. Create the C++ project and import `SC2Export` through the editor script.
 2. Set up the materials (team colour, additive glow, ground).

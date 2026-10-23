@@ -2,18 +2,24 @@
   "name": "bunker-survivors",
   "version": "0.1.0",
   "description": "Terran bunker vs Zerg survival game rendering StarCraft II models streamed from your own install",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/smerwin/bunker-survivors.git"
+  },
+  "license": "Unlicense",
+  "private": true,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node server/index.js",
     "postinstall": "node scripts/patch-viewer.js",
     "patch": "node scripts/patch-viewer.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "Unlicense",
-  "type": "commonjs",
   "dependencies": {
+    "gl-matrix": "^3.3.0",
     "mdx-m3-viewer": "^5.12.0",
     "qrcode": "^1.5.4"
-  },
-  "private": true
+  }
 }
