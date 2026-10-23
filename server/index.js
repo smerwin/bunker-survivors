@@ -8,7 +8,16 @@ const http = require('http');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const zlib = require('zlib');
+const vm = require('vm');
 const { SC2Assets, findInstall } = require('./sc2');
+
+// The game's own data (model and effect lists) lives in client/js/units.js.
+function loadGameData() {
+  const ctx = { window: {} };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'client', 'js', 'units.js'), 'utf8'), ctx);
+  return ctx.window.BS;
+}
 
 const PORT = parseInt(process.env.PORT || '8642', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -65,6 +74,7 @@ function main() {
     return sc2.resolve(decodeURIComponent(reqPath));
   }
 
+  const fxList = loadGameData().fxList();
   const ips = lanAddresses();
   const hostname = os.hostname().toLowerCase();
   // When bound to one address (e.g. a Tailscale IP), only that address is reachable, so advertise just it.
@@ -77,6 +87,14 @@ function main() {
     const send = (code, type, body, extra) => {
       res.writeHead(code, Object.assign({ 'Content-Type': type, 'Access-Control-Allow-Origin': '*' }, extra || {}));
       res.end(body);
+    };
+    // Compressible payloads (models, effect data) are gzipped once and cached: phones on weak wifi load much faster.
+    const gzOk = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
+    const sendGz = (key, type, buf, extra) => {
+      if (!gzOk || buf.length < 1024) return send(200, type, buf, extra);
+      let gz = cache.get('gz:' + key);
+      if (!gz) { gz = zlib.gzipSync(buf, { level: 6 }); cache.set('gz:' + key, gz); }
+      return send(200, type, gz, Object.assign({ 'Content-Encoding': 'gzip', 'Vary': 'Accept-Encoding' }, extra || {}));
     };
     try {
       if (u.pathname.startsWith('/asset/')) {
@@ -91,7 +109,9 @@ function main() {
           if (!pcm) { const adpcm = require('./adpcm'); pcm = adpcm.isAdpcm(buf) ? adpcm.decodeImaAdpcm(buf) : buf; cache.set(key, pcm); }
           buf = pcm;
         }
-        return send(200, MIME[path.extname(full)] || 'application/octet-stream', buf, { 'Cache-Control': 'public, max-age=86400', 'X-SC2-Name': full });
+        const type = MIME[path.extname(full)] || 'application/octet-stream';
+        const extra = { 'Cache-Control': 'public, max-age=86400', 'X-SC2-Name': full };
+        return /\.(m3|dds)$/i.test(full) ? sendGz(full, type, buf, extra) : send(200, type, buf, extra);
       }
       if (u.pathname.startsWith('/gltf/')) {
         // /gltf/assets/units/zerg/zergling/zergling.glb -> converted from the matching .m3
@@ -112,6 +132,37 @@ function main() {
         let png = cache.get(key);
         if (!png) { png = require('./dds').ddsToPng(readCached(full)); cache.set(key, png); }
         return send(200, 'image/png', png, { 'Cache-Control': 'public, max-age=86400' });
+      }
+      if (u.pathname.startsWith('/fx/')) {
+        // /fx/<key>.json -> the SC2 particle effect's emitters, extracted from the M3 (see server/m3fx.js).
+        const key = decodeURIComponent(u.pathname.slice(4)).replace(/\.json$/, '');
+        const def = fxList[key];
+        if (!def) return send(404, 'text/plain', 'no such effect: ' + key);
+        let json = cache.get('fx:' + key);
+        if (!json) {
+          const fx = require('./m3fx').extractFxVariants(sc2, def[0], def[1]);
+          fx.loop = !!def[2];
+          json = Buffer.from(JSON.stringify(fx));
+          cache.set('fx:' + key, json);
+        }
+        return sendGz('fx:' + key, 'application/json', json, { 'Cache-Control': 'public, max-age=3600' });
+      }
+      if (u.pathname.startsWith('/fxtex/')) {
+        // /fxtex/assets/textures/glow_yellow1.png -> that SC2 texture decoded to PNG.
+        const rel = decodeURIComponent(u.pathname.slice(7)).replace(/\.png$/i, '.dds');
+        const full = resolveAsset(rel);
+        if (!full) return send(404, 'text/plain', 'texture not found: ' + rel);
+        let png = cache.get('png:' + full);
+        if (!png) { png = require('./dds').ddsToPng(readCached(full)); cache.set('png:' + full, png); }
+        return send(200, 'image/png', png, { 'Cache-Control': 'public, max-age=86400' });
+      }
+      if (u.pathname.startsWith('/font/')) {
+        // /font/eurostile-bol.otf -> StarCraft II's own UI fonts from the install.
+        const name = path.basename(u.pathname);
+        if (!/^eurostile[\w-]*\.otf$/.test(name)) return send(404, 'text/plain', 'font not found');
+        const full = resolveAsset('mods/core.sc2mod/base.sc2data/ui/fonts/' + name);
+        if (!full) return send(404, 'text/plain', 'font not found');
+        return sendGz(full, 'font/otf', readCached(full), { 'Cache-Control': 'public, max-age=86400' });
       }
       if (u.pathname === '/api/find') {
         const q = (u.searchParams.get('q') || '').toLowerCase();

@@ -22,13 +22,15 @@ window.BS = window.BS || {};
     attach(model) {
       if (this.released) return;
       this.model = model;
-      const inst = this.r.acquireInstance(model);
+      const inst = this.r.acquireInstance(model, this.corpse);
       this.inst = inst;
       inst.setLocation([this.x, this.y, this.z]);
       inst.setRotation(quatZ(this.yaw));
       inst.setUniformScale(this.scale);
       inst.setTeamColor(this.team);
-      if (this.pending) { this.play(this.pending.name, this.pending.loop, this.pending.timeScale); this.pending = null; }
+      inst.bsHide = this.swipe === false ? HIDE_ADDITIVE : null;
+      if (this.corpse) { inst.vertexColor[0] = inst.vertexColor[1] = inst.vertexColor[2] = 0.42; }
+      if (this.pending) { const p = this.pending; this.pending = null; if (p.random) this.playRandom(p.name, p.loop); else this.play(p.name, p.loop, p.timeScale); }
       inst.show();
     }
     setPos(x, y, z) {
@@ -43,6 +45,16 @@ window.BS = window.BS || {};
     }
     setScale(s) { this.scale = s; if (this.inst) this.inst.setUniformScale(s); return this; }
     setTeam(t) { this.team = t; if (this.inst) this.inst.setTeamColor(t); return this; }
+    setRate(r) { this.timeScale = r; if (this.inst) this.inst.timeScale = r; return this; }
+    // Weapon swipe trails are additive layers SC2 only shows mid-swing; hide them otherwise.
+    setSwipe(show) { this.swipe = show; if (this.inst) this.inst.bsHide = show ? null : HIDE_ADDITIVE; return this; }
+    // Plays a random sequence whose name matches (e.g. one of several death animations). Returns its length.
+    playRandom(re, loop) {
+      if (!this.model) { this.pending = { name: re, loop, timeScale: 1, random: true }; return 3; }
+      const seqs = this.model.sequences.map((q, i) => [q, i]).filter(([q]) => re.test(q.name));
+      if (!seqs.length) return 0;
+      return this.play(seqs[Math.floor(Math.random() * seqs.length)][1], loop);
+    }
     // Finds a sequence by name (string or RegExp) and plays it. Returns its length in seconds (0 if unknown).
     play(name, loop, timeScale) {
       this.loop = loop !== false; this.timeScale = timeScale || 1;
@@ -72,16 +84,34 @@ window.BS = window.BS || {};
     release() {
       if (this.released) return;
       this.released = true;
-      if (this.inst) this.r.releaseInstance(this.model, this.inst);
+      if (this.inst) { if (this.corpse) this.inst.vertexColor[0] = this.inst.vertexColor[1] = this.inst.vertexColor[2] = 1; this.inst.bsHide = null; this.r.releaseInstance(this.model, this.inst, this.corpse); }
       this.inst = null;
     }
   }
 
+  const HIDE_ADDITIVE = b => b.material && b.material.blendMode === 2;
+  // Lets an instance skip some of its batches (see Handle.setSwipe) by wrapping the M3 instance's render.
+  function patchM3(inst) {
+    const proto = Object.getPrototypeOf(inst);
+    if (proto.__bsPatched || !proto.renderOpaque) return;
+    proto.__bsPatched = true;
+    const orig = proto.renderOpaque;
+    proto.renderOpaque = function () {
+      if (!this.bsHide || !this.model) return orig.call(this);
+      const model = this.model, all = model.batches;
+      model.batches = all.filter(b => !this.bsHide(b));
+      try { return orig.call(this); } finally { model.batches = all; }
+    };
+  }
+
   class Renderer {
-    constructor(canvas, overlay) {
+    constructor(canvas, overlay, opts) {
       this.canvas = canvas; this.overlay = overlay;
+      this.maxDpr = (opts && opts.maxDpr) || 2;
+      this.animEvery = (opts && opts.animEvery) || 1;
+      this.shake = 0;
       this.ctx2d = overlay.getContext('2d');
-      this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+      this.dpr = Math.min(window.devicePixelRatio || 1, this.maxDpr || 2);
       this.viewer = new MV.viewer.ModelViewer(canvas, { alpha: false, antialias: true, powerPreference: 'high-performance' });
       this.gl = this.viewer.gl;
       this.viewer.on('error', e => console.warn('viewer error', e.error, e.reason || '', e.src || ''));
@@ -90,6 +120,11 @@ window.BS = window.BS || {};
       this.scene = this.viewer.addScene();
       this.scene.alpha = true;              // we clear ourselves (ground is drawn first)
       this.scene.lightPosition = [40, -60, 90];
+      // Corpses live in their own scene, drawn first; the depth buffer is cleared before the living are drawn,
+      // so a corpse can never cover a live unit.
+      this.corpseScene = this.viewer.addScene();
+      this.corpseScene.alpha = true;
+      this.corpseScene.lightPosition = this.scene.lightPosition;
       this.solver = (src) => '/asset/' + String(src).replace(/\\/g, '/');
       this.models = new Map();            // key -> Promise<model>
       this.pools = new Map();             // model -> instance[]
@@ -102,23 +137,26 @@ window.BS = window.BS || {};
       this.noGround = /noground=1/.test(location.search);
       this.resize();
       this.initGround();
+      this.fx = new BS.Effects(this);
       window.addEventListener('resize', () => this.resize());
     }
 
     resize() {
       const w = this.canvas.clientWidth || window.innerWidth, h = this.canvas.clientHeight || window.innerHeight;
-      this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+      this.dpr = Math.min(window.devicePixelRatio || 1, this.maxDpr || 2);
       this.width = w; this.height = h;
       this.canvas.width = Math.round(w * this.dpr); this.canvas.height = Math.round(h * this.dpr);
       this.overlay.width = this.canvas.width; this.overlay.height = this.canvas.height;
       this.scene.viewport = [0, 0, this.canvas.width, this.canvas.height];
+      this.corpseScene.viewport = this.scene.viewport;
       this.updateCamera();
     }
 
     // ---- Models and instances --------------------------------------------------------------
     ensureModel(key) {
       if (this.models.has(key)) return this.models.get(key);
-      const path = BS.MODELS[key];
+      const path = BS.MODELS[key] || BS.EXTRA_MODELS[key];
+      if (!path) return Promise.reject(new Error('unknown model ' + key));
       const p = this.viewer.load(path, this.solver).then(model => {
         if (!model) throw new Error('model failed: ' + key);
         // Particle-only effect models have no mesh; the viewer cannot draw them (and errors trying).
@@ -144,24 +182,26 @@ window.BS = window.BS || {};
       for (let i = 0; i < seqs.length; i++) if (seqs[i].name.toLowerCase().startsWith(lower)) return i;
       return -1;
     }
-    acquireInstance(model) {
-      let pool = this.pools.get(model);
-      if (!pool) { pool = []; this.pools.set(model, pool); }
-      let inst = pool.pop();
-      if (!inst) { inst = model.addInstance(); inst.setScene(this.scene); }
+    acquireInstance(model, corpse) {
+      const key = corpse ? 'c' : 'l';
+      let pools = this.pools.get(model);
+      if (!pools) { pools = { c: [], l: [] }; this.pools.set(model, pools); }
+      let inst = pools[key].pop();
+      if (!inst) { inst = model.addInstance(); inst.setScene(corpse ? this.corpseScene : this.scene); patchM3(inst); }
       inst.setSequence(-1);
       inst.timeScale = 1;
       return inst;
     }
-    releaseInstance(model, inst) {
+    releaseInstance(model, inst, corpse) {
       inst.hide();
       inst.setSequence(-1);
-      const pool = this.pools.get(model);
-      if (pool && pool.length < 64) pool.push(inst);
+      const pools = this.pools.get(model);
+      if (pools && pools[corpse ? 'c' : 'l'].length < 96) pools[corpse ? 'c' : 'l'].push(inst);
     }
     // Spawns a model; the handle works immediately and attaches once the model has streamed in.
-    spawn(key, x, y, z, yaw) {
+    spawn(key, x, y, z, yaw, opts) {
       const h = new Handle(this, key);
+      h.corpse = !!(opts && opts.corpse);
       h.x = x || 0; h.y = y || 0; h.z = z || 0; h.yaw = yaw || 0;
       this.handles.add(h);
       this.ensureModel(key).then(m => h.attach(m)).catch(e => console.warn('spawn failed', key, e));
@@ -181,7 +221,7 @@ window.BS = window.BS || {};
     setCameraMode(mode) {
       const c = this.cam;
       if (mode === 'lane') {
-        Object.assign(c, { tx: 0, ty: 4.5, dist: 22, pitch: 60 * DEG, yaw: 0, minDist: 10, maxDist: 36, bounds: { x0: -5, x1: 5, y0: -4, y1: 20 } });
+        Object.assign(c, { tx: 0, ty: this.height > this.width ? 2.4 : 4.5, dist: 22, pitch: 60 * DEG, yaw: 0, minDist: 10, maxDist: 36, bounds: { x0: -8, x1: 8, y0: -4, y1: 20 } });
         c.fov = (this.height > this.width ? 55 : 42) * DEG;
       } else {
         Object.assign(c, { tx: 0, ty: 0, dist: 30, pitch: 56 * DEG, yaw: 0, minDist: 10, maxDist: 60, bounds: { x0: -18, x1: 18, y0: -18, y1: 18 } });
@@ -195,9 +235,13 @@ window.BS = window.BS || {};
       c.ty = Math.min(c.bounds.y1, Math.max(c.bounds.y0, c.ty));
       c.dist = Math.min(c.maxDist, Math.max(c.minDist, c.dist));
       const cp = Math.cos(c.pitch), sp = Math.sin(c.pitch);
-      const loc = [c.tx - c.dist * cp * Math.sin(c.yaw), c.ty - c.dist * cp * Math.cos(c.yaw), c.dist * sp];
-      cam.perspective(c.fov, this.canvas.width / this.canvas.height, 0.5, 400);
-      cam.moveToAndFace(loc, [c.tx, c.ty, 0], [0, 0, 1]);
+      // Screen shake nudges the look-at point (big hits and the bunker taking damage).
+      const j = this.shake > 0.01 ? this.shake * 0.18 : 0, jx = (Math.random() - 0.5) * j, jy = (Math.random() - 0.5) * j;
+      const loc = [c.tx + jx - c.dist * cp * Math.sin(c.yaw), c.ty + jy - c.dist * cp * Math.cos(c.yaw), c.dist * sp];
+      for (const sc of [this.scene, this.corpseScene]) {
+        sc.camera.perspective(c.fov, this.canvas.width / this.canvas.height, 0.5, 400);
+        sc.camera.moveToAndFace(loc, [c.tx + jx, c.ty + jy, 0], [0, 0, 1]);
+      }
     }
     zoomBy(factor, sx, sy) {
       const c = this.cam;
@@ -321,12 +365,22 @@ window.BS = window.BS || {};
         if (e.t >= e.max) { e.h.release(); this.effects.splice(i, 1); }
       }
       const v = this.viewer;
-      v.update(dt * 1000);
+      // Skeletal animation is the expensive part on phones: there it is advanced every other frame.
+      this.animAcc = (this.animAcc || 0) + dt; this.animFrame = (this.animFrame || 0) + 1;
+      if (this.animEvery <= 1 || this.animFrame % (this.animEvery || 1) === 0 || dt === 0) { v.update(this.animAcc * 1000); this.animAcc = 0; }
+      if (this.fx) this.fx.update(dt);
+      if (this.shake > 0.01) this.updateCamera();
       v.startFrame();
       this.scene.startFrame();
       this.drawGround();
+      this.corpseScene.startFrame();
+      this.corpseScene.renderOpaque();
+      this.corpseScene.renderTranslucent();
+      this.gl.clear(this.gl.DEPTH_BUFFER_BIT);
+      this.scene.startFrame();
       this.scene.renderOpaque();
       this.scene.renderTranslucent();
+      if (this.fx) this.fx.draw(this.scene.camera);
     }
   }
 

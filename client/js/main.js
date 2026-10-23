@@ -1,134 +1,153 @@
-// Bootstrap: mode selection, asset preload, input (tap to focus fire, drag to pan, pinch/wheel to zoom), main loop.
+// Bootstrap: start screen over a staged scene, asset preload, input (tap to focus fire, drag to pan,
+// pinch/wheel to zoom), pause and game-over flow, and the main loop.
 window.BS = window.BS || {};
 (function (BS) {
   'use strict';
 
   const $ = id => document.getElementById(id);
-  let renderer, game, hud, mode = 'lane';
+  let renderer, game = null, hud = null, mode = 'lane', attract = [], last = performance.now();
+  const touch = matchMedia('(pointer: coarse)').matches;
+  // Phones get a smaller cap on live zerg and a lower render resolution, so big swarms stay smooth.
+  BS.perfScale = touch ? 0.65 : 1;
 
-  function isPortrait() { return window.innerHeight > window.innerWidth; }
+  const isPortrait = () => window.innerHeight > window.innerWidth;
 
   async function boot() {
-    const status = $('status');
+    renderer = new BS.Renderer($('gl'), $('fx'), { maxDpr: touch ? 1.5 : 2, animEvery: touch ? 2 : 1 });
     try {
       const st = await fetch('/api/status').then(r => r.json());
-      status.textContent = 'Connected to StarCraft II ' + st.sc2Version + ' on ' + st.hostname;
-      const urls = st.urls || [];
-      $('lan').innerHTML = urls.length ? 'Phone: open <b>' + urls[urls.length - 1] + '</b> on the same Wi-Fi <img class="qr" src="/qr.svg?u=' + encodeURIComponent(urls[urls.length - 1]) + '" alt="QR">' : '';
-    } catch (e) {
-      status.textContent = 'Companion server not reachable. Run: node server/index.js';
-    }
-    renderer = new BS.Renderer($('gl'), $('fx'));
-    const defaultMode = isPortrait() ? 'lane' : 'arena';
-    document.querySelectorAll('[data-mode]').forEach(b => {
-      b.classList.toggle('primary', b.dataset.mode === defaultMode);
-      b.addEventListener('click', () => start(b.dataset.mode));
-    });
-    try { const best = localStorage.getItem('bs.best.lane') || 0, bestA = localStorage.getItem('bs.best.arena') || 0; $('best').textContent = 'Best - Lane: ' + best + '  |  360 Arena: ' + bestA; } catch (e) { /* ignore */ }
-    // Warm the core models while the player reads the start screen.
-    renderer.preload(BS.CORE_MODELS, (d, n) => { $('progress').textContent = 'Loading SC2 art ' + d + '/' + n; }).then(() => { $('progress').textContent = 'Ready'; });
+      $('status').textContent = 'STARCRAFT II ' + st.sc2Version + ' LINKED  ' + st.hostname.toUpperCase();
+    } catch (e) { $('status').textContent = 'COMPANION SERVER NOT REACHABLE'; }
+    try {
+      const bl = localStorage.getItem('bs.best.lane') || 0, ba = localStorage.getItem('bs.best.arena') || 0;
+      $('best').textContent = 'BEST  LANE ' + bl + '   ARENA ' + ba;
+    } catch (e) { /* private mode */ }
+    $(isPortrait() ? 'tagLane' : 'tagArena').textContent = isPortrait() ? 'BEST ON PHONE' : 'BEST ON DESKTOP';
+    document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => start(b.dataset.mode)));
+    setupInput();
+    stageAttract();
+    renderer.fx.preload(BS.CORE_FX);
+    renderer.preload(BS.CORE_MODELS, (d, n) => { $('progress').textContent = 'LOADING SC2 ART ' + d + ' / ' + n; }).then(() => { $('progress').textContent = ''; });
+    requestAnimationFrame(loop);
+    const m = new URLSearchParams(location.search).get('mode');
+    if (m === 'lane' || m === 'arena') start(m);
   }
 
-  async function start(m) {
+  // A dug-in position mid-fight behind the start screen, the camera slowly orbiting.
+  function stageAttract() {
+    renderer.setGroundShape('lane'); renderer.setCameraMode('lane');
+    renderer.cam.dist = 17; renderer.updateCamera();
+    const put = (key, x, y, yaw, anim, team) => { const h = renderer.spawn(key, x, y, 0, yaw).setTeam(team); h.play(anim, true, 0.8 + Math.random() * 0.3); attract.push(h); };
+    put('bunker', 0, 0, Math.PI / 2, /^stand work/i, 1);
+    put('siegetank', -3.4, -0.4, Math.PI / 2, /^stand$/i, 1);
+    put('scv', 2.6, -2.9, 2.4, /^work/i, 1);
+    const zerg = [['zergling', -1.5, 7], ['zergling', 0.8, 7.6], ['zergling', 2.4, 8.4], ['zergling', -3, 8.8], ['hydralisk', -0.4, 10.5], ['roach', 2.8, 11.2], ['ultralisk', -2.2, 14.5], ['baneling', 1.2, 9.6]];
+    for (const [k, x, y] of zerg) put(k, x, y, Math.atan2(-y, -x) + (Math.random() - 0.5) * 0.6, /^stand/i, 3);
+  }
+
+  function start(m) {
+    if (game) return;
     mode = m;
     BS.audio.unlock();
+    for (const h of attract) h.release();
+    attract = [];
     $('start').classList.add('hidden');
     $('hud').classList.remove('hidden');
     renderer.setGroundShape(mode);
     renderer.setCameraMode(mode);
-    await renderer.preload(BS.CORE_MODELS);
     game = new BS.Game(renderer, { mode });
     hud = new BS.Hud(game, renderer);
-    window.game = game; window.renderer = renderer; window.hud = hud;
-    // Stream the rest in the background, roughly in the order they are needed.
+    window.game = game; window.renderer = renderer; window.bsHud = hud;
+    game.beginOpening();
+    game.started = true;
+    // Stream the rest in the background: zerg in unlock order, then variants and projectiles, then effects.
     const rest = Object.keys(BS.MODELS).filter(k => !BS.CORE_MODELS.includes(k));
     rest.sort((a, b) => (BS.ZERG[a] ? BS.ZERG[a].unlock : 5) - (BS.ZERG[b] ? BS.ZERG[b].unlock : 5));
-    (async () => { for (const k of rest) { try { await renderer.ensureModel(k); } catch (e) { /* logged */ } } })();
-    game.started = true;
-    hud.toast(mode === 'lane' ? 'Hold the line. Tap a zerg to focus fire.' : '360 Arena: they come from everywhere. Greater rewards, greater danger.', 4);
-    setupInput();
-    $('pause').addEventListener('click', togglePause);
-    $('mute').addEventListener('click', () => { BS.audio.setMuted(!BS.audio.muted); $('mute').textContent = BS.audio.muted ? 'SND OFF' : 'SND ON'; });
-    $('mute').textContent = BS.audio.muted ? 'SND OFF' : 'SND ON';
-    $('restart').addEventListener('click', () => location.reload());
-    $('resume').addEventListener('click', togglePause);
+    (async () => {
+      for (const k of rest.concat(Object.keys(BS.EXTRA_MODELS))) { try { await renderer.ensureModel(k); } catch (e) { /* logged */ } }
+      renderer.fx.preload(Object.keys(BS.fxList()));
+    })();
+    $('pause').onclick = togglePause;
+    $('resume').onclick = togglePause;
+    $('mute').onclick = () => BS.audio.setMuted(!BS.audio.muted);
+    $('redeploy').onclick = () => { location.search = '?mode=' + mode; };
+    document.querySelectorAll('.menuBtn').forEach(b => { b.onclick = () => { location.search = ''; }; });
     document.addEventListener('visibilitychange', () => { if (document.hidden && game && !game.over) setPaused(true); });
-    requestAnimationFrame(loop);
   }
 
-  function setPaused(p) { if (!game || game.over) return; game.paused = p; $('paused').classList.toggle('hidden', !p); }
-  function togglePause() { setPaused(!game.paused); }
+  function setPaused(p) { if (!game || game.over) return; game.paused = p; $('pausedModal').classList.toggle('hidden', !p); }
+  function togglePause() { if (game) setPaused(!game.paused); }
 
-  let last = performance.now();
   function loop(t) {
     const dt = Math.min(0.1, (t - last) / 1000); last = t;
-    game.update(dt);
-    renderer.frame(game.paused ? 0 : dt);
-    hud.drawOverlay();
-    hud.refresh();
-    if (game.over && !$('gameover').classList.contains('shown')) showGameOver();
+    if (game) {
+      game.update(dt);
+      const vdt = game.paused ? 0 : dt;
+      game.updateVisuals(vdt);
+      renderer.shake = game.shake;
+      renderer.frame(vdt);
+      hud.drawOverlay();
+      hud.refresh();
+      if (game.over && $('overModal').classList.contains('hidden')) showGameOver();
+    } else {
+      renderer.cam.yaw = Math.sin(t / 9000) * 0.35; renderer.updateCamera();
+      renderer.frame(dt);
+    }
     requestAnimationFrame(loop);
   }
 
   function showGameOver() {
-    const el = $('gameover');
-    el.classList.add('shown');
-    $('go-stats').innerHTML = 'Wave <b>' + game.wave + '</b> &middot; Kills <b>' + game.kills + '</b> &middot; Score <b>' + game.finalScore + '</b>' + (game.newBest ? '<br><span class="best">NEW BEST!</span>' : '<br>Best: ' + game.best);
+    $('overModal').classList.remove('hidden');
+    $('overStats').innerHTML = [['WAVE', game.wave], ['KILLS', game.kills], ['SCORE', game.finalScore]].map(([k, v]) => '<div><small>' + k + '</small><b>' + v + '</b></div>').join('');
+    const b = $('overBest');
+    b.textContent = game.newBest ? 'NEW BEST' : 'BEST ' + game.best;
+    b.classList.toggle('new', !!game.newBest);
   }
 
-  // ---- Input ------------------------------------------------------------------------------------
+  // ---- Input ------------------------------------------------------------------------------------------
   function setupInput() {
-    const el = $('fx');
-    const pointers = new Map();
-    let dragging = false, moved = 0, pinchDist = 0, downT = 0, lastTap = 0;
+    const el = $('fx'), pointers = new Map();
+    let dragging = false, moved = 0, pinch = 0, downT = 0, lastTap = 0;
     el.addEventListener('pointerdown', ev => {
       BS.audio.unlock();
       el.setPointerCapture(ev.pointerId);
-      pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, sx: ev.clientX, sy: ev.clientY });
+      pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
       if (pointers.size === 1) { dragging = true; moved = 0; downT = performance.now(); }
-      if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinchDist = Math.hypot(a.x - b.x, a.y - b.y); }
+      if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); }
     });
     el.addEventListener('pointermove', ev => {
-      const p = pointers.get(ev.pointerId); if (!p) return;
+      const p = pointers.get(ev.pointerId); if (!p || !game) return;
       const dx = ev.clientX - p.x, dy = ev.clientY - p.y;
       p.x = ev.clientX; p.y = ev.clientY;
       if (pointers.size === 1 && dragging) { moved += Math.abs(dx) + Math.abs(dy); if (moved > 6) renderer.panBy(dx, dy); }
       else if (pointers.size === 2) {
-        const [a, b] = [...pointers.values()];
-        const d = Math.hypot(a.x - b.x, a.y - b.y);
-        if (pinchDist > 0 && d > 0) renderer.zoomBy(pinchDist / d, (a.x + b.x) / 2, (a.y + b.y) / 2);
-        pinchDist = d; moved = 100;
+        const [a, b] = [...pointers.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (pinch > 0 && d > 0) renderer.zoomBy(pinch / d, (a.x + b.x) / 2, (a.y + b.y) / 2);
+        pinch = d; moved = 100;
       }
     });
     const up = ev => {
-      const p = pointers.get(ev.pointerId);
-      pointers.delete(ev.pointerId);
-      if (!p) return;
-      if (pointers.size === 0) {
-        const quick = performance.now() - downT < 350;
-        if (dragging && moved <= 6 && quick) {
-          const now = performance.now();
-          if (now - lastTap < 300) { renderer.setCameraMode(mode); lastTap = 0; }
-          else { lastTap = now; const w = renderer.screenToGround(ev.clientX, ev.clientY); if (w && game.focusAt(w[0], w[1])) hud.toast('Focus fire!', 1); }
-        }
-        dragging = false; pinchDist = 0;
+      const had = pointers.delete(ev.pointerId);
+      if (!had || pointers.size || !game) { if (!pointers.size) { dragging = false; pinch = 0; } return; }
+      if (dragging && moved <= 6 && performance.now() - downT < 350) {
+        const now = performance.now();
+        if (now - lastTap < 300) { renderer.setCameraMode(mode); lastTap = 0; }
+        else { lastTap = now; const w = renderer.screenToGround(ev.clientX, ev.clientY); if (w && game.focusAt(w[0], w[1])) game.toast('Focus fire!'); }
       }
+      dragging = false; pinch = 0;
     };
     el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
-    el.addEventListener('wheel', ev => { ev.preventDefault(); renderer.zoomBy(ev.deltaY > 0 ? 1.12 : 0.89, ev.clientX, ev.clientY); }, { passive: false });
+    el.addEventListener('wheel', ev => { ev.preventDefault(); if (game) renderer.zoomBy(ev.deltaY > 0 ? 1.12 : 0.89, ev.clientX, ev.clientY); }, { passive: false });
     window.addEventListener('keydown', ev => {
-      if (ev.key === 'p' || ev.key === 'Escape') togglePause();
-      if (ev.key === 's') game.useStim();
-      if (ev.key === 'a') game.callAirStrike();
-      if (ev.key === 'r') game.emergencyRepair();
-      if (ev.key === '+' || ev.key === '=') renderer.zoomBy(0.85);
-      if (ev.key === '-') renderer.zoomBy(1.18);
-      if (ev.key === 'ArrowUp') renderer.panBy(0, 40); if (ev.key === 'ArrowDown') renderer.panBy(0, -40);
-      if (ev.key === 'ArrowLeft') renderer.panBy(40, 0); if (ev.key === 'ArrowRight') renderer.panBy(-40, 0);
-      if (ev.key === 'q' && mode === 'arena') { renderer.cam.yaw -= 0.2; renderer.updateCamera(); }
-      if (ev.key === 'e' && mode === 'arena') { renderer.cam.yaw += 0.2; renderer.updateCamera(); }
+      if (!game) { if (ev.key === '1') start('lane'); if (ev.key === '2') start('arena'); return; }
+      const k = ev.key.toLowerCase();
+      if (k === 'p' || k === 'escape') togglePause();
+      else if (k === 's') game.useStim(); else if (k === 'a') game.callAirStrike(); else if (k === 'r') game.emergencyRepair(); else if (k === 'y') game.useYamato();
+      else if (k === '+' || k === '=') renderer.zoomBy(0.85); else if (k === '-') renderer.zoomBy(1.18);
+      else if (k === 'q' && mode === 'arena') { renderer.cam.yaw -= 0.2; renderer.updateCamera(); }
+      else if (k === 'e' && mode === 'arena') { renderer.cam.yaw += 0.2; renderer.updateCamera(); }
     });
-    window.addEventListener('resize', () => { if (renderer) { renderer.resize(); } });
+    window.addEventListener('resize', () => renderer.resize());
   }
 
   window.addEventListener('DOMContentLoaded', boot);

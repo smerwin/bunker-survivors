@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#0b0d12">
+<meta name="theme-color" content="#0b0f16">
 <title>Bunker Survivors</title>
 <link rel="stylesheet" href="style.css">
 </head>
@@ -15,46 +15,50 @@
   <canvas id="fx"></canvas>
 
   <div id="hud" class="hidden">
-    <div id="top">
-      <div class="stat"><span class="ico mineral"></span><b id="minerals">0</b></div>
-      <div class="stat">WAVE <b id="wave">0</b> <span id="wave-timer" class="dim">0s</span></div>
-      <div class="stat">KILLS <b id="kills">0</b></div>
-      <div class="stat dim">SCORE <b id="score">0</b></div>
-      <button id="mute" class="tiny">SND ON</button>
-      <button id="pause" class="tiny">II</button>
+    <div id="topbar" class="glass">
+      <div class="stat"><i class="crystal"></i><div><small>MINERALS</small><b id="minerals">0</b></div></div>
+      <div class="sep"></div>
+      <div class="stat"><div><small>WAVE</small><b id="wave" class="amber">00</b></div><svg id="wavering" viewBox="0 0 36 36"><circle class="track" cx="18" cy="18" r="15"/><circle id="waveArc" class="arc" cx="18" cy="18" r="15"/><text id="waveSecs" x="18" y="22">0</text></svg></div>
+      <div class="sep"></div>
+      <div class="stat"><div><small>KILLS</small><b id="kills">0</b></div></div>
     </div>
-    <div id="bunkerbar">
-      <div id="hp"><div id="hp-fill"></div><span id="hp-text"></span></div>
-      <div id="slots"></div>
+    <div id="sysbtns">
+      <button id="mute" class="glass sys" aria-label="Sound"></button>
+      <button id="pause" class="glass sys" aria-label="Pause"></button>
     </div>
+    <div id="squad" class="glass">
+      <img class="portrait" src="/icon/btn-building-terran-bunker.png" alt="">
+      <div class="squadbody">
+        <div class="row"><small id="bunkerLabel">BUNKER</small><small id="stimTag" class="amber"></small><span id="hpText">400 / 400</span></div>
+        <div id="segments"></div>
+        <div id="slots"></div>
+      </div>
+    </div>
+    <canvas id="radar"></canvas>
+    <div id="toast"></div>
+    <div id="banner"></div>
     <div id="bottom">
       <div id="abilities"></div>
-      <div id="shop"></div>
+      <div id="armouryHead"><small>ARMOURY</small><span class="rule"></span><button id="armouryToggle" aria-label="Toggle armoury">&#8964;</button></div>
+      <div id="armoury"></div>
     </div>
-    <div id="toast"></div>
-    <div id="paused" class="modal hidden"><div><h2>PAUSED</h2><button id="resume" class="big">Resume</button></div></div>
-    <div id="gameover" class="modal"><div><h2>BUNKER LOST</h2><p id="go-stats"></p><button id="restart" class="big">Play again</button></div></div>
+    <div id="pausedModal" class="modal hidden"><div class="card glass"><h2>PAUSED</h2><div class="btns"><button id="resume" class="primary">RESUME</button><button class="menuBtn">MAIN MENU</button></div></div></div>
+    <div id="overModal" class="modal hidden"><div class="card glass over"><h2>BUNKER LOST</h2><div id="overStats" class="stats"></div><div id="overBest" class="pill"></div><div class="btns"><button id="redeploy" class="primary">REDEPLOY</button><button class="menuBtn">MAIN MENU</button></div></div></div>
   </div>
 
   <div id="start">
-    <div class="panel">
-      <h1>BUNKER<br>SURVIVORS</h1>
-      <p class="sub">A Terran fireteam, one bunker, and the Swarm.</p>
-      <div class="modes">
-        <button data-mode="lane" class="big"><b>Lane Defense</b><small>Portrait. Zerg come from the top.</small></button>
-        <button data-mode="arena" class="big"><b>360 Arena</b><small>They come from everywhere. Harder, bigger waves.</small></button>
-      </div>
-      <p id="best" class="dim"></p>
-      <p id="progress" class="dim">Loading...</p>
-      <p id="status" class="dim"></p>
-      <p id="lan" class="dim"></p>
-      <p class="tiny-note">Tap a zerg to focus fire. Drag to pan, pinch or scroll to zoom, double-tap to reset.<br>Keys: S stim, A air strike, R repair, P pause.</p>
+    <div class="title"><h1>BUNKER<br><span>SURVIVORS</span></h1><div class="bar"></div><p>ONE FIRETEAM. &nbsp;ONE BUNKER. &nbsp;THE SWARM.</p></div>
+    <div class="modes">
+      <button class="mode glass" data-mode="lane"><img src="/icon/btn-unit-terran-marine.png" alt=""><span><b>LANE DEFENCE</b><small>Hold the lane as the Swarm pours down from the north.</small></span><em id="tagLane"></em></button>
+      <button class="mode glass arena" data-mode="arena"><img src="/icon/btn-unit-zerg-ultralisk.png" alt=""><span><b>360 ARENA</b><small>Waves from every side. Bigger, faster, deadlier.</small></span><em id="tagArena"></em></button>
     </div>
+    <div class="foot"><p id="best"></p><p id="status">CONNECTING TO STARCRAFT II...</p><p id="progress"></p></div>
   </div>
 </div>
 <script src="lib/viewer.min.js"></script>
 <script src="js/units.js"></script>
 <script src="js/audio.js"></script>
+<script src="js/fx.js"></script>
 <script src="js/render.js"></script>
 <script src="js/game.js"></script>
 <script src="js/hud.js"></script>
