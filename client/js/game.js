@@ -631,7 +631,7 @@ window.BS = window.BS || {};
       const h = this.r.spawn(key, x, y, z, yaw, { corpse: true }).setTeam(terran ? 1 : 3);
       if (scale) h.setScale(scale);
       const c = { h, t: 0, x, y, z, yaw, sink: !/^bunker/.test(key), hold: hold || 3.5 };
-      const len = h.playRandom(/^death/i, false);
+      const len = h.playDeath(false);
       c.hold = c.sink ? clamp(Math.min(len || 3, 4), 2.5, 4) : Math.max(hold, Math.min(len || 8, 8));
       if (z > 0.5) c.hold = Math.max(c.hold, 2);
       // Baneling chunks fade out in SC2 through visibility tracks the viewer does not apply; drop them after the burst.

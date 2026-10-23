@@ -89,10 +89,11 @@ window.BS = window.BS || {};
   ultraliskImpact: [E + 'zerg/ultraliskweaponimpact/ultraliskweaponimpact.m3'],
   samMissile: [E + 'terran/missileturretmissile/missileturretmissile.m3', null, true], samImpact: [E + 'terran/missileturretmissileimpact/missileturretmissileimpact.m3'],
   };
-  // Every death model also carries its blood/acid burst.
+  // Every death model also carries its blood/acid burst: the plain "Death" one (the numbered sequences are SC2's
+  // damage-type variants, which blow body parts up; m3fx falls back to them only when there is no plain one).
   BS.fxList = () => {
     const out = Object.assign({}, FX);
-    for (const [key, m3] of Object.entries(Object.assign({}, BS.MODELS, BS.EXTRA_MODELS))) if (/Death$/.test(key)) out[key] = [m3, '^death'];
+    for (const [key, m3] of Object.entries(Object.assign({}, BS.MODELS, BS.EXTRA_MODELS))) if (/Death$/.test(key)) out[key] = [m3, '^death$'];
     return out;
   };
 

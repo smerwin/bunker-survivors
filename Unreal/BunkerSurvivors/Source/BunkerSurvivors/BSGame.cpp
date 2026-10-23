@@ -1469,7 +1469,10 @@ void ABSGame::Corpse(const FString& Key, float X, float Y, float Z, float Yaw, f
 	A->SetSim(X, Y, FMath::Min(Z, Gz), Yaw);
 	A->Mesh->CastShadow = false;
 	A->Mesh->MarkRenderStateDirty();
-	const float Len = A->PlayRandomWithPrefix(TEXT("death"), false);
+	// The plain "Death" sequence: the numbered ones are special variants SC2 picks by damage type (fire, acid, blasts)
+	// that blow up or stretch body parts; only fall back to them if there is no plain one.
+	float Len = A->Play(TEXT("death"), false);
+	if (Len <= 0) Len = A->PlayRandomWithPrefix(TEXT("death"), false);
 	FBSCorpse Cp;
 	Cp.Actor = A; Cp.X = X; Cp.Y = Y; Cp.Z = FMath::Min(Z, Gz); Cp.Yaw = Yaw;
 	Cp.bSink = !Key.StartsWith(TEXT("bunker"));

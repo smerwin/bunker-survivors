@@ -34,7 +34,7 @@ window.BS = window.BS || {};
       if (this.turretBone) hookTurret(inst, this.turretBone);
       if (this.corpse) { inst.vertexColor[0] = inst.vertexColor[1] = inst.vertexColor[2] = 0.42; }
       else if (this.tint) { inst.vertexColor[0] = this.tint[0]; inst.vertexColor[1] = this.tint[1]; inst.vertexColor[2] = this.tint[2]; }
-      if (this.pending) { const p = this.pending; this.pending = null; if (p.random) this.playRandom(p.name, p.loop); else this.play(p.name, p.loop, p.timeScale); }
+      if (this.pending) { const p = this.pending; this.pending = null; if (p.death) this.playDeath(p.loop); else if (p.random) this.playRandom(p.name, p.loop); else this.play(p.name, p.loop, p.timeScale); }
       inst.show();
     }
     setPos(x, y, z) {
@@ -59,6 +59,12 @@ window.BS = window.BS || {};
     // Weapon swipe trails are additive layers SC2 only shows mid-swing; hide them otherwise.
     setSwipe(show) { this.swipe = show; if (this.inst) this.inst.bsHide = show ? null : HIDE_ADDITIVE; return this; }
     // Plays a random sequence whose name matches (e.g. one of several death animations). Returns its length.
+    // A corpse's death: the plain "Death" sequence. The numbered ones (Death 01, 02...) are special variants SC2 picks by
+    // damage type (fire, acid, blasts) that blow up or stretch body parts; only fall back to them if there is no plain one.
+    playDeath(loop) {
+      if (!this.model) { this.pending = { name: /^death/i, loop, timeScale: 1, death: true }; return 3; }
+      return this.hasSeq(/^death$/i) ? this.play(/^death$/i, loop) : this.playRandom(/^death/i, loop);
+    }
     playRandom(re, loop) {
       if (!this.model) { this.pending = { name: re, loop, timeScale: 1, random: true }; return 3; }
       const seqs = this.model.sequences.map((q, i) => [q, i]).filter(([q]) => re.test(q.name));

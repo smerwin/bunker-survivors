@@ -140,6 +140,8 @@ function extractFxVariants(sc2, m3Path, seqFilter) {
     fx.textures.forEach(t => textures.add(t));
     variants.push({ sequence: fx.sequence, duration: fx.duration, emitters: fx.emitters });
   }
+  // An exact filter ("^death$") that finds nothing that emits falls back to the looser one ("^death").
+  if (!variants.length && seqFilter && seqFilter.endsWith('$')) return extractFxVariants(sc2, m3Path, seqFilter.slice(0, -1));
   return { source: m3Path, variants, textures: [...textures] };
 }
 
