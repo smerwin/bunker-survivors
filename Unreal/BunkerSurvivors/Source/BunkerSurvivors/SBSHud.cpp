@@ -933,7 +933,6 @@ TSharedRef<SWidget> SBSHud::BuildStartScreen()
 		}
 		const float MaxTitleW = bPortrait ? S.X - 48 : S.X * 0.5f;
 		const FSlateFontInfo Tf0 = D::Fit(TEXT("SURVIVORS"), [](float Sz) { return D::Title(Sz); }, bPortrait ? 56.f : 60.f, 24.f, MaxTitleW);
-		const float Big = (float)Tf0.Size;
 		const FVector2f Tp = bPortrait ? FVector2f(S.X * 0.5f, S.Y * 0.07f) : FVector2f(56, S.Y * 0.12f);
 		const float Al = bPortrait ? 0.5f : 0.f;
 		const float LineH = D::Measure(TEXT("SURVIVORS"), Tf0).Y * 0.86f;
@@ -944,7 +943,6 @@ TSharedRef<SWidget> SBSHud::BuildStartScreen()
 		const float Ty = Tp.Y + LineH * 2.f + 18;
 		D::Rect(Out, L + 1, G, FVector2f(Tp.X - (bPortrait ? 24 : 0), Ty - 9), FVector2f(48, 2), C::Amber);
 		D::Text(Out, L + 1, G, Tag, Tf, FVector2f(Tp.X, Ty), C::Muted, Al);
-		(void)Big;
 		// Footer.
 		int32 BL = 0, BA = 0;
 		GConfig->GetInt(TEXT("BunkerSurvivors"), TEXT("Best.Lane"), BL, GGameUserSettingsIni);
@@ -952,10 +950,10 @@ TSharedRef<SWidget> SBSHud::BuildStartScreen()
 		const FVector2f Fp = bPortrait ? FVector2f(S.X * 0.5f, S.Y - 46) : FVector2f(56, S.Y - 46);
 		D::Text(Out, L + 1, G, FString::Printf(TEXT("BEST  LANE %d   ARENA %d"), BL, BA), D::Label(8.5f), Fp, C::Muted, Al);
 		if (GM.IsValid() && GM->GetAssets())
-			{
-				const FString Line = TEXT("STARCRAFT II ART LINKED  ") + GM->GetAssets()->Summary.ToUpper();
-				D::Text(Out, L + 1, G, Line, D::Fit(Line, [](float Sz) { return D::Label(Sz); }, 7.5f, 5.f, G.GetLocalSize().X - 28), Fp + FVector2f(0, 16), C::A(C::Green, 0.7f), Al);
-			}
+		{
+			const FString Line = TEXT("STARCRAFT II ART LINKED  ") + GM->GetAssets()->Summary.ToUpper();
+			D::Text(Out, L + 1, G, Line, D::Fit(Line, [](float Sz) { return D::Label(Sz); }, 7.5f, 5.f, G.GetLocalSize().X - 28), Fp + FVector2f(0, 16), C::A(C::Green, 0.7f), Al);
+		}
 		return L + 4;
 	});
 

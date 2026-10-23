@@ -40,7 +40,7 @@ private:
 	float Yaw = 0, TargetYaw = 0;
 	FVector2D Pan = FVector2D::ZeroVector, TargetPan = FVector2D::ZeroVector;    // metres, in view-aligned axes
 	float ShakeT = 0;
-	float SquadBack = 0;
+	float SquadBack = 0;                          // eases the lane view back to show troopers standing behind the bunker
 	bool bBunkerView = false;
-	float FpYaw = 0, FpPitch = 10, FpFov = 70;   // degrees: heading (0 = up the lane), look-down angle, vertical FOV                // eases the lane view back to show troopers standing behind the bunker
+	float FpYaw = 0, FpPitch = 10, FpFov = 70;   // degrees: heading (0 = up the lane), look-down angle, vertical FOV
 };

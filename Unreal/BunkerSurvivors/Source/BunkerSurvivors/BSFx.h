@@ -39,7 +39,7 @@ struct FBSFxEmitter
 	FBSFxCurve Col[3], Col2[3];
 	bool bRandSpeed = false, bRandLife = false, bSize2 = false, bRot2 = false, bCol2 = false;
 	TArray<FVector2f> Bursts;        // (seconds, count)
-	int32 Batch = -1;                // render batch, resolved when first played
+	mutable int32 Batch = -1;        // render batch, resolved the first time the emitter plays
 };
 
 struct FBSFxVariant { float Duration = 1; TArray<FBSFxEmitter> Emitters; };

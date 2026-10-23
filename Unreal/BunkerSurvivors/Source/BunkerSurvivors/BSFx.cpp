@@ -168,7 +168,7 @@ void ABSGame::StopFx(int32 H)
 void ABSGame::SpawnSprite(int32 H, FBSFxInstance& I, int32 Ei, const FBSFxEmitter& E, float T)
 {
 	if (FxSprites.Num() >= 8000 || I.Alive[Ei] >= E.MaxParticles) return;
-	if (E.Batch < 0) const_cast<FBSFxEmitter&>(E).Batch = FxBatch(E.Texture, E.Blend);
+	if (E.Batch < 0) E.Batch = FxBatch(E.Texture, E.Blend);
 	// Emitter frame in model space: local Z is the emission axis.
 	const FVector Ax(E.Axis.Get(T, 3), E.Axis.Get(T, 4), E.Axis.Get(T, 5));
 	const FVector Az(E.Axis.Get(T, 0), E.Axis.Get(T, 1), E.Axis.Get(T, 2));

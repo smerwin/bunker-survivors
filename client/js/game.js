@@ -26,7 +26,7 @@ window.BS = window.BS || {};
       this.wave = 0; this.waveTimer = 8; this.waveLen = 30; this.spawnQueue = []; this.spawnTimer = 0;
       this.enemies = []; this.corpses = []; this.projectiles = []; this.floaters = []; this.walkers = []; this.drops = []; this.flashes = [];
       this.focus = null; this.focusUntil = 0; this.shake = 0;
-      this.toasts = []; this.waveBanner = null; this.events = [];
+      this.toasts = []; this.waveBanner = null;
       this.bunker = { x: 0, y: 0, yaw: Math.PI / 2, hp: T().bunker.hp, maxHp: T().bunker.hp, armor: T().bunker.armor, slots: T().bunker.slots, units: [], handle: null, dead: false, flash: 0 };
       this.tanks = []; this.scvs = []; this.banshees = []; this.squad = []; this.structures = []; this.squadDeaths = []; this.boundTeam = 0; this.boundT = 0; this.nextTeam = 0;
       this.up = { stim: 0, weapons: 0, vehicle: 0, neosteel: 0, plating: 0, hisec: 0, medivac: 0, rails: 0 };
@@ -1178,31 +1178,31 @@ window.BS = window.BS || {};
     }
     // One shot from a trooper at a muzzle position (a bunker slit, or the rifle of a soldier standing outside).
     fireInfantry(u, sx, sy, sz, target) {
-        const d = u.def, pred = e => !(d.groundOnly && e.def.flying);
-        const miss = BS.Terrain.onHigh(target.x, target.y) && Math.random() < 0.3;   // firing up at the high ground
-        const dmg = miss ? 0 : d.dmg + this.up.weapons;
-        const hx = target.x, hy = target.y, hz = target.z + target.def.height * 0.5, ang = Math.atan2(hy - sy, hx - sx);
-        if (u.type === 'marine') {
-          if (dmg) this.hurtEnemy(target, dmg);
-          // Three-round bursts with SC2's muzzle mesh and impact sparks.
-          const aim = ang;
-          for (let r = 0; r < 3; r++) {
-            this.fx.play('marineLaunch', sx, sy, sz, aim, 1.4, r * 0.08);
-            this.fx.play('marineImpact', hx + rnd(-0.2, 0.2), hy + rnd(-0.2, 0.2), hz + rnd(-0.15, 0.25), aim + Math.PI, 1, r * 0.08 + 0.03);
-            this.flashes.push({ x: sx, y: sy, z: sz, yaw: aim, delay: r * 0.08, life: 0.09 });
-          }
-          BS.audio.play('marineFire', { vol: 0.3, gap: 0.09 });
-        } else if (u.type === 'firebat') {
-          if (dmg) for (const v of this.enemiesInRange(hx, hy, d.splash, pred)) this.hurtEnemy(v, dmg + (v.def.light ? d.dmgLight : 0));
-          this.fx.play('firebatLaunch', sx, sy, sz, ang, 1.2);
-          BS.audio.play('firebatFire', { vol: 0.45, gap: 0.3 });
-        } else {
-          const p = { kind: 'grenade', friendly: true, fx: sx, fy: sy, fz: sz, tx: hx, ty: hy, tz: hz, t: 0, dur: 0.3, arc: 0.6, target, dmg, def: d, impact: 'marauderImpact' };
-          this.fx.play('marauderLaunch', sx, sy, sz, ang);
-          this.projectileModel(p, 'projMarauder', 'marauderMissile');
-          this.projectiles.push(p);
-          BS.audio.play('marauderFire', { vol: 0.4, gap: 0.2 });
+      const d = u.def, pred = e => !(d.groundOnly && e.def.flying);
+      const miss = BS.Terrain.onHigh(target.x, target.y) && Math.random() < 0.3;   // firing up at the high ground
+      const dmg = miss ? 0 : d.dmg + this.up.weapons;
+      const hx = target.x, hy = target.y, hz = target.z + target.def.height * 0.5, ang = Math.atan2(hy - sy, hx - sx);
+      if (u.type === 'marine') {
+        if (dmg) this.hurtEnemy(target, dmg);
+        // Three-round bursts with SC2's muzzle mesh and impact sparks.
+        const aim = ang;
+        for (let r = 0; r < 3; r++) {
+          this.fx.play('marineLaunch', sx, sy, sz, aim, 1.4, r * 0.08);
+          this.fx.play('marineImpact', hx + rnd(-0.2, 0.2), hy + rnd(-0.2, 0.2), hz + rnd(-0.15, 0.25), aim + Math.PI, 1, r * 0.08 + 0.03);
+          this.flashes.push({ x: sx, y: sy, z: sz, yaw: aim, delay: r * 0.08, life: 0.09 });
         }
+        BS.audio.play('marineFire', { vol: 0.3, gap: 0.09 });
+      } else if (u.type === 'firebat') {
+        if (dmg) for (const v of this.enemiesInRange(hx, hy, d.splash, pred)) this.hurtEnemy(v, dmg + (v.def.light ? d.dmgLight : 0));
+        this.fx.play('firebatLaunch', sx, sy, sz, ang, 1.2);
+        BS.audio.play('firebatFire', { vol: 0.45, gap: 0.3 });
+      } else {
+        const p = { kind: 'grenade', friendly: true, fx: sx, fy: sy, fz: sz, tx: hx, ty: hy, tz: hz, t: 0, dur: 0.3, arc: 0.6, target, dmg, def: d, impact: 'marauderImpact' };
+        this.fx.play('marauderLaunch', sx, sy, sz, ang);
+        this.projectileModel(p, 'projMarauder', 'marauderMissile');
+        this.projectiles.push(p);
+        BS.audio.play('marauderFire', { vol: 0.4, gap: 0.2 });
+      }
     }
     // Medivac on Station: parked at the bunker's shoulder; heals the troops inside and the most hurt SCV nearby.
     updateStation(dt) {
