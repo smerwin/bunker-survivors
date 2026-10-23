@@ -489,11 +489,18 @@ TSharedRef<SWidget> SBSHud::BuildCommandStrip()
 // Squad card: bunker badge, 10-segment armour bar, fireteam portraits
 // =====================================================================================================
 // Troops standing outside: a row of small portraits under the fireteam (tap one to send it back in).
+// Past 24 troopers the portraits shrink so the card stays compact.
 namespace SquadRow
 {
-	constexpr float X0 = 70, Top = 70, Size = 15, Gap = 3;
-	int32 PerRow(float CardW) { return FMath::Max(1, FMath::FloorToInt((CardW - X0 - 12 + Gap) / (Size + Gap))); }
-	FVector2f At(int32 i, float CardW) { const int32 N = PerRow(CardW); return FVector2f(X0 + (i % N) * (Size + Gap), Top + (i / N) * (Size + Gap + 1)); }
+	constexpr float X0 = 70, Top = 70;
+	float Size(int32 Count) { return Count > 24 ? 11.f : 15.f; }
+	float Gap(int32 Count) { return Count > 24 ? 2.f : 3.f; }
+	int32 PerRow(float CardW, int32 Count) { return FMath::Max(1, FMath::FloorToInt((CardW - X0 - 12 + Gap(Count)) / (Size(Count) + Gap(Count)))); }
+	FVector2f At(int32 i, float CardW, int32 Count)
+	{
+		const int32 N = PerRow(CardW, Count);
+		return FVector2f(X0 + (i % N) * (Size(Count) + Gap(Count)), Top + (i / N) * (Size(Count) + Gap(Count) + 1));
+	}
 }
 
 TSharedRef<SWidget> SBSHud::BuildSquadCard()
@@ -504,8 +511,8 @@ TSharedRef<SWidget> SBSHud::BuildSquadCard()
 			const float Wd = Portrait() ? FMath::Max(200.f, (float)LocalSize.X - 20 - 104) : 400.f;
 			const ABSGame* Gm = Game();
 			const int32 N = Gm ? Gm->Squad.Num() : 0;
-			const int32 Rows = N ? (N + SquadRow::PerRow(Wd) - 1) / SquadRow::PerRow(Wd) : 0;
-			return FVector2D(Wd, 70 + (Rows ? Rows * (SquadRow::Size + SquadRow::Gap + 1) + 4 : 0));
+			const int32 Rows = N ? (N + SquadRow::PerRow(Wd, N) - 1) / SquadRow::PerRow(Wd, N) : 0;
+			return FVector2D(Wd, 70 + (Rows ? Rows * (SquadRow::Size(N) + SquadRow::Gap(N) + 1) + 4 : 0));
 		})
 		.Paint([this](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
 		{
@@ -564,11 +571,13 @@ TSharedRef<SWidget> SBSHud::BuildSquadCard()
 			for (int32 i = 0; i < Gm->Squad.Num(); i++)
 			{
 				const FBSTrooper& M = *Gm->Squad[i];
-				const FVector2f P = SquadRow::At(i, S.X), Sz(SquadRow::Size, SquadRow::Size);
+				const int32 N = Gm->Squad.Num();
+				const float Ps1 = SquadRow::Size(N);
+				const FVector2f P = SquadRow::At(i, S.X, N), Sz(Ps1, Ps1);
 				D::Image(Out, L + 2, G, As->IconBrush(M.Def->Icon), P, Sz, FLinearColor(1, 1, 1, 0.85f));
 				D::RLine(Out, L + 3, G, P - FVector2f(1, 1), Sz + FVector2f(2, 2), 4, M.bBoarding ? C::Green : bStim ? C::A(C::Amber, 0.7f) : C::A(C::Cyan, 0.45f), 1.f);
 				const float Hp = FMath::Clamp(M.Hp / FMath::Max(1.f, M.MaxHp), 0.f, 1.f);
-				D::Rect(Out, L + 4, G, P + FVector2f(0, SquadRow::Size - 2), FVector2f(SquadRow::Size * Hp, 2), Hp > 0.5f ? C::Green : Hp > 0.25f ? C::Amber : C::Red);
+				D::Rect(Out, L + 4, G, P + FVector2f(0, Ps1 - 2), FVector2f(Ps1 * Hp, 2), Hp > 0.5f ? C::Green : Hp > 0.25f ? C::Amber : C::Red);
 			}
 			return L + 8;
 		});
@@ -1251,7 +1260,7 @@ bool SBSHud::TapSquadCard(const FVector2D& ScreenPos)
 	for (int32 i = 0; i < Gm->Bunker.Units.Num(); i++)
 		if (In(FVector2f(SquadRow::X0 + i * 27.f, 41), 22)) { Gm->Eject(i); return true; }
 	for (int32 i = 0; i < Gm->Squad.Num(); i++)
-		if (In(SquadRow::At(i, S.X), SquadRow::Size)) { Gm->Board(i); return true; }
+		if (In(SquadRow::At(i, S.X, Gm->Squad.Num()), SquadRow::Size(Gm->Squad.Num()))) { Gm->Board(i); return true; }
 	return true;                                      // taps on the card never focus-fire
 }
 

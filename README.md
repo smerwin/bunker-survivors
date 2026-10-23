@@ -108,7 +108,7 @@ your bunker's shots at them miss. Flyers ignore the cliffs.
 
 **Troops.** The bunker holds four (six with Neosteel Frame). Buy marines (anti-everything), firebats (anti-swarm,
 ground only) or marauders (slow and shred armoured targets, ground only); a medivac drops them off and they walk in.
-When the bunker is full, new recruits stand behind it, up to 24.
+When the bunker is full, new recruits stand behind it, up to 48.
 - Tap a soldier's portrait on the squad card to send them out of the bunker; tap one in the row underneath to bring
   them back in.
 - Soldiers outside shoot from where they stand (without the bunker's range bonus) and advance on any zerg that is

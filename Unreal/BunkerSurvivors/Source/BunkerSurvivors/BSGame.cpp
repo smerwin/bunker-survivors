@@ -214,8 +214,15 @@ void ABSGame::Init(UBSAssets* InAssets, EBSMode InMode)
 		SensorSlot = FVector2D(-4.2f, -4.2f);
 		for (const float A : { 45.f, 135.f, 225.f, 315.f }) StrikePosts.Add(FVector2D(FMath::Cos(FMath::DegreesToRadians(A)) * 7, FMath::Sin(FMath::DegreesToRadians(A)) * 7));
 	}
-	// Four ranks of six behind the bunker (the side away from the lane).
-	for (const float Y : { -2.3f, -3.1f, -3.9f, -4.7f }) for (const float X : { -2.f, -1.2f, -0.4f, 0.4f, 1.2f, 2.f }) SquadSpots.Add(FVector2D(X, Y));
+	// Ranks of eight behind the bunker (the side away from the lane), stepping round the tanks, SCVs, turrets and sensor
+	// tower, as deep as it takes to fit the whole squad.
+	TArray<FVector2D> Taken = TankSlots; Taken.Append(ScvIdle); Taken.Append(SamSlots); Taken.Add(SensorSlot);
+	for (float Y = -2.3f; SquadSpots.Num() < BSDefs::SquadMax; Y -= 0.7f)
+		for (int32 i = 0; i < 8 && SquadSpots.Num() < BSDefs::SquadMax; i++)
+		{
+			const FVector2D P(-2.625f + i * 0.75f, Y);
+			if (!Taken.ContainsByPredicate([&P](const FVector2D& T) { return FVector2D::Distance(T, P) < 1.0f; })) SquadSpots.Add(P);
+		}
 	BuildWorld(Mode);
 	Bunker.Actor = AcquireModel(TEXT("bunker"));
 	if (Bunker.Actor) { Bunker.Actor->SetSim(0, 0, 0, PI / 2); Bunker.Actor->SetTeamColor(TerranColor); }
@@ -707,11 +714,14 @@ void ABSGame::UpdateSquad(float Dt)
 {
 	const float Hs = BSDefs::BunkerHalfSize;
 	const bool bStim = Ab.StimUntil > Time;
-	// Keep a little elbow room so troopers converging on one spot do not stack.
+	// Keep a little elbow room so troopers converging on one spot do not stack. Anyone standing on their own spot is
+	// already spaced out and lets others through the ranks.
+	auto Home = [](const FBSTrooper& M) { return FMath::Abs(M.X - M.Spot.X) + FMath::Abs(M.Y - M.Spot.Y) < 0.3f; };
 	for (int32 i = 0; i < Squad.Num(); i++)
 		for (int32 j = i + 1; j < Squad.Num(); j++)
 		{
 			FBSTrooper& A = *Squad[i]; FBSTrooper& B = *Squad[j];
+			if (Home(A) || Home(B)) continue;
 			const float Dx = B.X - A.X, Dy = B.Y - A.Y, D2 = Dx * Dx + Dy * Dy;
 			if (D2 < 0.49f && D2 > 1e-6f) { const float D = FMath::Sqrt(D2), Push = (0.7f - D) / D * 0.25f; A.X -= Dx * Push; A.Y -= Dy * Push; B.X += Dx * Push; B.Y += Dy * Push; }
 		}

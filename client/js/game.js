@@ -55,9 +55,15 @@ window.BS = window.BS || {};
         this.sensorSlot = [-4.2, -4.2];
         this.strikePosts = [45, 135, 225, 315].map(a => [Math.cos(a * Math.PI / 180) * 7, Math.sin(a * Math.PI / 180) * 7]);
       }
-      // Four ranks of six behind the bunker (the side away from the lane).
+      // Ranks of eight behind the bunker (the side away from the lane), stepping round the tanks, SCVs, turrets and
+      // sensor tower, as deep as it takes to fit the whole squad.
+      const taken = this.tankSlots.concat(this.scvIdle, this.samSlots, [this.sensorSlot]);
       this.squadSpots = [];
-      for (const y of [-2.3, -3.1, -3.9, -4.7]) for (const x of [-2, -1.2, -0.4, 0.4, 1.2, 2]) this.squadSpots.push([x, y]);
+      for (let y = -2.3; this.squadSpots.length < T().squad.max; y -= 0.7)
+        for (let i = 0; i < 8 && this.squadSpots.length < T().squad.max; i++) {
+          const x = -2.625 + i * 0.75;
+          if (!taken.some(([tx, ty]) => Math.hypot(tx - x, ty - y) < 1.0)) this.squadSpots.push([x, y]);
+        }
     }
 
     // ---- Opening and reinforcements -------------------------------------------------------------
@@ -206,9 +212,12 @@ window.BS = window.BS || {};
     }
     updateSquad(dt) {
       const hs = T().bunker.halfSize, stim = this.ab.stimUntil > this.time, Q = this.squad;
-      // Keep a little elbow room so troopers converging on one spot do not stack.
+      // Keep a little elbow room so troopers converging on one spot do not stack. Anyone standing on their own spot is
+      // already spaced out and lets others through the ranks.
+      const home = m => Math.abs(m.x - m.spot[0]) + Math.abs(m.y - m.spot[1]) < 0.3;
       for (let i = 0; i < Q.length; i++) for (let j = i + 1; j < Q.length; j++) {
         const p = Q[i], q = Q[j], dx = q.x - p.x, dy = q.y - p.y, d2 = dx * dx + dy * dy;
+        if (d2 >= 0.49 || home(p) || home(q)) continue;
         if (d2 < 0.49 && d2 > 1e-6) { const d = Math.sqrt(d2), push = (0.7 - d) / d * 0.25; p.x -= dx * push; p.y -= dy * push; q.x += dx * push; q.y += dy * push; }
       }
       // Fire and movement: when the squad advances, its two fire teams take turns - one bounds forward while the

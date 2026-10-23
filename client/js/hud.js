@@ -116,6 +116,7 @@ window.BS = window.BS || {};
       const outKey = g.squad.map(m => m.type + Math.round(m.hp / m.maxHp * 10) + low(m) + (m.boarding ? 'b' : '')).join(',');
       if (this.cache.outside !== outKey) {
         this.cache.outside = outKey;
+        $('outside').classList.toggle('dense', g.squad.length > 24);   // past 24 the portraits shrink
         $('outside').innerHTML = g.squad.map((m, i) => '<div class="slot' + low(m) + (m.boarding ? ' boarding' : '') + '" data-o="' + i + '"><img src="' + icon(m.def.icon) + '" alt=""><i style="width:' + Math.round(m.hp / m.maxHp * 100) + '%"></i></div>').join('');
       }
       // Abilities.

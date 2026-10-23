@@ -72,7 +72,8 @@ void ABSCameraPawn::Tick(float Dt)
 	Pan += (TargetPan - Pan) * K;
 	Yaw += (TargetYaw - Yaw) * K;
 	const bool bSquadOut = !bArena && !bAttract && Game.IsValid() && Game->Squad.Num() > 0;
-	SquadBack += ((bSquadOut ? 2.f : 0.f) - SquadBack) * (1 - FMath::Exp(-Dt * 2.f));
+	const float Want = bSquadOut ? 2.f + 1.5f * FMath::Clamp((Game->Squad.Num() - 24) / 24.f, 0.f, 1.f) : 0.f;   // deeper ranks, further back
+	SquadBack += (Want - SquadBack) * (1 - FMath::Exp(-Dt * 2.f));
 
 	const float Z = Zoom, E = EaseInOut(Z);
 	const float Arm = ArmLength(Z, bArena);

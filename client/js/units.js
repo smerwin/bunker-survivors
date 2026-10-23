@@ -172,7 +172,7 @@ window.BS = window.BS || {};
     // Air strike: four banshees hover over the lane (and its ledges) and fire missiles at passing zerg.
     banshee: { count: 4, dmg: 12, shots: 2, cd: 1.1, range: 6, speed: 9, fly: 2.4, hover: 14, cost: 200, cooldown: 32 },
     // Troops standing behind the bunker (ejected, or recruited while it is full).
-    squad: { max: 24 },
+    squad: { max: 48 },
     // Missile turrets: anti-air only, like SC2 (12 x2, range 7).
     sam: { hp: 250, armor: 0, dmg: 12, shots: 2, cd: 0.86, range: 7, radius: 1.0, cost: 100, max: 3, build: 3 },
     // Sensor tower: the radar only works while one stands.
