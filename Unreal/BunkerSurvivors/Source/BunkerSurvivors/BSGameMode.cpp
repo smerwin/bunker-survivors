@@ -181,7 +181,7 @@ void ABSGameMode::Tick(float Dt)
 		if (APlayerController* P0 = GetWorld()->GetFirstPlayerController())
 			if (ABSCameraPawn* Cv = Cast<ABSCameraPawn>(P0->GetPawn()))
 			{
-				if (!Cv->IsBunkerView()) { Cv->SetBunkerView(true); if (Game->Bunker.Actor) Game->Bunker.Actor->SetActorHiddenInGame(true); }
+				if (!Cv->IsBunkerView()) { Cv->SetBunkerView(true); Game->bBunkerView = true; if (Game->Bunker.Actor) Game->Bunker.Actor->SetActorHiddenInGame(true); }
 				Cv->PanPixels(-Dt * 140.f, 0, 960);
 			}
 	// -BSTestSquad: exercise the outside squad, turrets, sensor tower, magnetic rails, lethal stim and the hovering air strike.

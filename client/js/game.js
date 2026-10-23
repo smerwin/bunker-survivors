@@ -291,7 +291,7 @@ window.BS = window.BS || {};
             m.yaw = Math.atan2(target.y - m.y, target.x - m.x);
             const cs = Math.cos(m.yaw), sn = Math.sin(m.yaw);
             this.fireInfantry(m, m.x + cs * 0.45, m.y + sn * 0.45, BS.Terrain.height(m.x, m.y) + 0.85, target);
-            m.anim = 'attack'; m.standAt = this.time + Math.min(m.def.cd, m.handle.play(/^attack/i, false, 1.4) || 0.5);
+            m.anim = 'attack'; m.standAt = this.time + Math.min(m.def.cd / (stim ? 1.5 : 1), m.handle.play(/^attack/i, false, stim ? 2.1 : 1.4) || 0.5);
           } else m.cd = 0.1;
         }
         if (m.anim === 'walk' || (m.anim === 'attack' && this.time > m.standAt)) { m.anim = 'stand'; m.handle.play(/^stand$/i, true); }
@@ -454,6 +454,8 @@ window.BS = window.BS || {};
       this.ab.stimUntil = this.time + T().stim.duration; this.ab.stimCd = T().stim.cooldown;
       BS.audio.play('stim', { vol: 0.9 });
       this.floater(0, 0, 3, 'STIM!', '#ffd34d');
+      const out = this.squad.filter(m => !m.dead);
+      if (out.length) this.floater(out.reduce((s, m) => s + m.x, 0) / out.length, out.reduce((s, m) => s + m.y, 0) / out.length, 2.4, 'STIM!', '#ffd34d');
       return true;
     }
     emergencyRepair() {
@@ -621,6 +623,7 @@ window.BS = window.BS || {};
       }
     }
     corpse(key, x, y, z, yaw, hold, scale, terran) {
+      if (this.r.nearEye(x, y, z) && !/^bunker/.test(key)) return null;   // bunker view: no corpse (or gore burst) against the eye
       this.fx.play(key, x, y, Math.max(z, BS.Terrain.height(x, y)), yaw, scale || 1);
       // Corpses render in their own pass behind the living (see Renderer.frame), so they never cover live zerg.
       const gz = BS.Terrain.height(x, y);
@@ -1118,7 +1121,13 @@ window.BS = window.BS || {};
         }
       }
       for (const s of this.scvs) s.flash = Math.max(0, s.flash - dt * 4);
-      for (const m of this.squad) m.flash = Math.max(0, m.flash - dt * 4);
+      // Stimmed troopers outside glow red-orange and pulse, as in StarCraft II.
+      const stimmed = this.ab.stimUntil > this.time, pulse = 0.5 + 0.5 * Math.sin(this.time * 9);
+      for (const m of this.squad) {
+        m.flash = Math.max(0, m.flash - dt * 4);
+        if (stimmed) m.handle.setTint(1.15, 0.62 + 0.12 * pulse, 0.5 + 0.1 * pulse);
+        else if (m.handle.tint) { m.handle.setTint(1, 1, 1); m.handle.tint = null; }
+      }
       for (const st of this.structures) st.flash = Math.max(0, st.flash - dt * 4);
     }
 

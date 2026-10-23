@@ -69,6 +69,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #outside .slot img { width: 100%; height: 100%; display: block; opacity: 0.85; }
 #outside .slot i { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--green); }
 #outside .slot.boarding { border-style: solid; border-color: var(--green); }
+#outside .slot.stim { border-style: solid; border-color: var(--amber); }
 #outside.dense { gap: 2px; }
 #outside.dense .slot { width: 12px; height: 12px; border-radius: 3px; }
 #radar.offline { display: none; }

@@ -818,8 +818,8 @@ void ABSGame::UpdateSquad(float Dt)
 				M.Cd += D->Cd;
 				M.Yaw = FMath::Atan2(Target->Y - M.Y, Target->X - M.X);
 				FireInfantry(D, FVector(M.X + FMath::Cos(M.Yaw) * 0.45f, M.Y + FMath::Sin(M.Yaw) * 0.45f, BSTerrain::Height(M.X, M.Y) + 0.85f), Target);
-				const float Len = M.Actor ? M.Actor->Play(TEXT("attack"), false, 1.4f) : 0.f;
-				M.Anim = TEXT("attack"); M.StandAt = Time + FMath::Min(D->Cd, Len > 0 ? Len : 0.5f);
+				const float Len = M.Actor ? M.Actor->Play(TEXT("attack"), false, bStim ? 2.1f : 1.4f) : 0.f;
+				M.Anim = TEXT("attack"); M.StandAt = Time + FMath::Min(D->Cd / (bStim ? 1.5f : 1.f), Len > 0 ? Len : 0.5f);
 			}
 			else M.Cd = 0.1f;
 		}
@@ -1084,6 +1084,13 @@ bool ABSGame::UseStim()
 	Ab.StimUntil = Time + BSDefs::StimDuration; Ab.StimCd = BSDefs::StimCooldown;
 	PlaySound(BSSounds::Stim, 0.9f);
 	Floater(0, 0, 3, TEXT("STIM!"), FLinearColor(1, 0.83f, 0.3f));
+	if (Squad.Num())
+	{
+		FVector2D Mid = FVector2D::ZeroVector;
+		for (const TSharedPtr<FBSTrooper>& M : Squad) Mid += FVector2D(M->X, M->Y);
+		Mid /= Squad.Num();
+		Floater(Mid.X, Mid.Y, 2.4f, TEXT("STIM!"), FLinearColor(1, 0.83f, 0.3f));
+	}
 	return true;
 }
 
@@ -1449,6 +1456,7 @@ TArray<TSharedPtr<FBSEnemy>> ABSGame::EnemiesInRange(float X, float Y, float Ran
 
 void ABSGame::Corpse(const FString& Key, float X, float Y, float Z, float Yaw, float Hold, float Scale, bool bTerran)
 {
+	if (NearEye(FVector(X, Y, Z)) && !Key.StartsWith(TEXT("bunker"))) return;   // bunker view: no corpse (or gore burst) against the eye
 	const float Gz = BSTerrain::Height(X, Y);
 	PlayFx(Key, FVector(X, Y, FMath::Max(Z, Gz)), Yaw, Scale);
 	ABSModelActor* A = AcquireModel(Key);
@@ -2141,7 +2149,16 @@ void ABSGame::UpdateVisuals(float Dt)
 	if (Bunker.Actor) Bunker.Actor->SetHitFlash(Bunker.Flash * 0.22f);   // a hint of white: constant zergling hits used to white it out
 	for (auto& K : Tanks) { K->Flash = FMath::Max(0.f, K->Flash - Dt * 4); if (K->Actor) K->Actor->SetHitFlash(K->Flash * 0.3f); }
 	for (auto& S : Scvs) { S->Flash = FMath::Max(0.f, S->Flash - Dt * 4); if (S->Actor) S->Actor->SetHitFlash(S->Flash * 0.3f); }
-	for (auto& M : Squad) { M->Flash = FMath::Max(0.f, M->Flash - Dt * 4); if (M->Actor) M->Actor->SetHitFlash(M->Flash * 0.3f); }
+	// Stimmed troopers outside glow red-orange and pulse, as in StarCraft II.
+	const bool bStimmed = Ab.StimUntil > Time;
+	const FLinearColor StimColor = FMath::Lerp(TerranColor, FLinearColor(1.f, 0.22f, 0.06f), 0.55f + 0.3f * FMath::Sin(Time * 9.f));
+	for (auto& M : Squad)
+	{
+		M->Flash = FMath::Max(0.f, M->Flash - Dt * 4);
+		if (!M->Actor) continue;
+		M->Actor->SetHitFlash(M->Flash * 0.3f + (bStimmed ? 0.06f : 0.f));
+		if (bStimmed || M->bStimLook) { M->Actor->SetTeamColor(bStimmed ? StimColor : TerranColor); M->bStimLook = bStimmed; }
+	}
 	for (auto& St : Structures) { St->Flash = FMath::Max(0.f, St->Flash - Dt * 4); if (St->Actor) St->Actor->SetHitFlash(St->Flash * 0.3f); }
 
 	UpdateParticles(Dt);

@@ -113,11 +113,11 @@ window.BS = window.BS || {};
         }
         $('slots').innerHTML = html;
       }
-      const outKey = g.squad.map(m => m.type + Math.round(m.hp / m.maxHp * 10) + low(m) + (m.boarding ? 'b' : '')).join(',');
+      const outKey = g.squad.map(m => m.type + Math.round(m.hp / m.maxHp * 10) + low(m) + (m.boarding ? 'b' : '')).join(',') + (stim ? 's' : '');
       if (this.cache.outside !== outKey) {
         this.cache.outside = outKey;
         $('outside').classList.toggle('dense', g.squad.length > 24);   // past 24 the portraits shrink
-        $('outside').innerHTML = g.squad.map((m, i) => '<div class="slot' + low(m) + (m.boarding ? ' boarding' : '') + '" data-o="' + i + '"><img src="' + icon(m.def.icon) + '" alt=""><i style="width:' + Math.round(m.hp / m.maxHp * 100) + '%"></i></div>').join('');
+        $('outside').innerHTML = g.squad.map((m, i) => '<div class="slot' + low(m) + (m.boarding ? ' boarding' : '') + (stim ? ' stim' : '') + '" data-o="' + i + '"><img src="' + icon(m.def.icon) + '" alt=""><i style="width:' + Math.round(m.hp / m.maxHp * 100) + '%"></i></div>').join('');
       }
       // Abilities.
       for (const x of this.abEls) {

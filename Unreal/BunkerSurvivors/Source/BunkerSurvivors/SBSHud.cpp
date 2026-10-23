@@ -1243,6 +1243,7 @@ void SBSHud::ToggleBunkerView()
 	if (!Gm || !Cv) return;
 	const bool bOn = !Cv->IsBunkerView();
 	Cv->SetBunkerView(bOn);
+	Gm->bBunkerView = bOn;
 	// Looking out from inside it: hide the bunker itself.
 	if (Gm->Bunker.Actor && !Gm->Bunker.bDead) Gm->Bunker.Actor->SetActorHiddenInGame(bOn);
 }

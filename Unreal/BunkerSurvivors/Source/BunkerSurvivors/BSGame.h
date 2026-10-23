@@ -59,7 +59,7 @@ struct FBSTrooper
 	float RetreatUntil = 0;                   // falling back level with the bunker after heavy losses
 	FString Anim;
 	ABSModelActor* Actor = nullptr;
-	bool bBoarding = false, bDead = false;
+	bool bBoarding = false, bDead = false, bStimLook = false;
 };
 
 // Missile turret (anti-air) or sensor tower (radar).
@@ -214,6 +214,8 @@ public:
 	// State read by the HUD and camera.
 	EBSMode Mode = EBSMode::Lane;
 	bool bStarted = false, bPaused = false, bOver = false, bHard = false;
+	bool bBunkerView = false;            // the camera is inside the bunker: skip corpses on top of the eye
+	bool NearEye(const FVector& P) const { return bBunkerView && P.X * P.X + P.Y * P.Y < 2.4f * 2.4f && P.Z < 3.f; }
 	float Time = 0, Minerals = 150, Income = 2, Score = 0, Shake = 0;
 	int32 Kills = 0, Wave = 0;
 	float WaveTimer = 8, WaveLen = 30;

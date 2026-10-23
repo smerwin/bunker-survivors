@@ -33,6 +33,7 @@ window.BS = window.BS || {};
       inst.bsTurret = this.turret || 0;
       if (this.turretBone) hookTurret(inst, this.turretBone);
       if (this.corpse) { inst.vertexColor[0] = inst.vertexColor[1] = inst.vertexColor[2] = 0.42; }
+      else if (this.tint) { inst.vertexColor[0] = this.tint[0]; inst.vertexColor[1] = this.tint[1]; inst.vertexColor[2] = this.tint[2]; }
       if (this.pending) { const p = this.pending; this.pending = null; if (p.random) this.playRandom(p.name, p.loop); else this.play(p.name, p.loop, p.timeScale); }
       inst.show();
     }
@@ -47,6 +48,12 @@ window.BS = window.BS || {};
       return this;
     }
     setScale(s) { this.scale = s; if (this.inst) this.inst.setUniformScale(s); return this; }
+    // Multiplies the model's colours (1, 1, 1 = untouched); used for the stimpack glow.
+    setTint(r, g, b) {
+      this.tint = [r, g, b];
+      if (this.inst && !this.corpse) { this.inst.vertexColor[0] = r; this.inst.vertexColor[1] = g; this.inst.vertexColor[2] = b; }
+      return this;
+    }
     setTeam(t) { this.team = t; if (this.inst) this.inst.setTeamColor(t); return this; }
     setRate(r) { this.timeScale = r; if (this.inst) this.inst.timeScale = r; return this; }
     // Weapon swipe trails are additive layers SC2 only shows mid-swing; hide them otherwise.
@@ -95,6 +102,7 @@ window.BS = window.BS || {};
       if (this.released) return;
       this.released = true;
       if (this.inst) this.inst.bsTurret = 0;
+      if (this.inst && this.tint) this.inst.vertexColor[0] = this.inst.vertexColor[1] = this.inst.vertexColor[2] = 1;
       if (this.inst) { if (this.corpse) this.inst.vertexColor[0] = this.inst.vertexColor[1] = this.inst.vertexColor[2] = 1; this.inst.bsHide = null; this.r.releaseInstance(this.model, this.inst, this.corpse); }
       this.inst = null;
     }
@@ -281,6 +289,9 @@ window.BS = window.BS || {};
       if (c.fp) { c.fpYaw = 0; c.fpPitch = 10 * DEG; c.fpFov = (this.height > this.width ? 70 : 60) * DEG; }
       this.updateCamera();
     }
+    // In bunker view, is a point right next to the eye (against the bunker's own walls)? Corpses there would fill the
+    // screen, so they are skipped.
+    nearEye(x, y, z) { return !!this.cam.fp && Math.hypot(x, y) < 2.4 && (z || 0) < 3; }
     // Is a world point in front of the camera (worldToScreen mirrors points behind it)?
     inFront(x, y, z) {
       const c = this.cam;
