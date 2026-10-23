@@ -1,8 +1,9 @@
 # Runs one headless test game (no rendering, no sound) and appends telemetry to a JSON-lines file.
-# Usage: simgame.ps1 -Mode lane -Bot balanced -Seed 1 -Out results.jsonl [-Speed 20] [-MaxTime 900]
-param([string]$Mode = "lane", [string]$Bot = "balanced", [int]$Seed = 1, [string]$Out, [double]$Speed = 20, [int]$MaxTime = 900)
-$proj = "C:\tmp\bunker-survivors\Unreal\BunkerSurvivors"
-$ue = "C:\Program Files\Epic Games\UE_5.8\Engine\Binaries\Win64\UnrealEditor.exe"
+# Usage: simgame.ps1 -Mode lane -Bot balanced -Seed 1 -Out results.jsonl [-Speed 20] [-MaxTime 900] [-UnrealDir <engine folder>]
+param([string]$Mode = "lane", [string]$Bot = "balanced", [int]$Seed = 1, [string]$Out, [double]$Speed = 20, [int]$MaxTime = 900,
+  [string]$UnrealDir = "C:\Program Files\Epic Games\UE_5.8")
+$proj = Split-Path -Parent $PSScriptRoot          # Unreal\BunkerSurvivors
+$ue = Join-Path $UnrealDir "Engine\Binaries\Win64\UnrealEditor.exe"
 $tmp = "$proj\Saved\Sim\$Mode-$Bot-$Seed.jsonl"
 New-Item -ItemType Directory -Force (Split-Path $tmp) | Out-Null
 if (Test-Path $tmp) { [IO.File]::Delete($tmp) }
