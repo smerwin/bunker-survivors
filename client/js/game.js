@@ -536,8 +536,8 @@ window.BS = window.BS || {};
           const gd = Math.hypot(gx - e.x, gy - e.y) || 1;
           const sp = d.speed * (slowed ? 0.5 : 1), nx = (gx - e.x) / gd, ny = (gy - e.y) / gd;
           const mx = nx * sp * dt + e.sx * 0.8, my = ny * sp * dt + e.sy * 0.8;
-          // Cliffs: slide along them instead of walking through.
-          if (BS.Terrain.walkable(e.x + mx, e.y + my)) { e.x += mx; e.y += my; }
+          // Cliffs: ground units slide along them instead of walking through.
+          if (d.flying || BS.Terrain.walkable(e.x + mx, e.y + my)) { e.x += mx; e.y += my; }   // flyers ignore the cliffs
           else if (BS.Terrain.walkable(e.x + mx, e.y)) e.x += mx;
           else if (BS.Terrain.walkable(e.x, e.y + my)) e.y += my;
           e.x = clamp(e.x, -21, 21);
