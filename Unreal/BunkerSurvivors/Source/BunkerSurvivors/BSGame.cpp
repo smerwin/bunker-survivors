@@ -642,6 +642,7 @@ TSharedPtr<FBSTrooper> ABSGame::JoinSquad(const FBSInfantryDef* Def, float Hp, f
 	if (!Spot) { ReleaseModel(Actor); return nullptr; }
 	TSharedPtr<FBSTrooper> M = MakeShared<FBSTrooper>();
 	M->Def = Def; M->Hp = Hp; M->MaxHp = Def->Hp; M->Cd = Rnd(0, 0.3f); M->X = X; M->Y = Y; M->Spot = *Spot;
+	M->Team = NextTeam; NextTeam ^= 1;        // alternate fire teams
 	M->Actor = Actor ? Actor : AcquireModel(Def->Key);
 	if (M->Actor) { M->Actor->SetTeamColor(TerranColor); M->Actor->SetSim(X, Y, 0, M->Yaw); }
 	Squad.Add(M);
@@ -714,6 +715,15 @@ void ABSGame::UpdateSquad(float Dt)
 			const float Dx = B.X - A.X, Dy = B.Y - A.Y, D2 = Dx * Dx + Dy * Dy;
 			if (D2 < 0.49f && D2 > 1e-6f) { const float D = FMath::Sqrt(D2), Push = (0.7f - D) / D * 0.25f; A.X -= Dx * Push; A.Y -= Dy * Push; B.X += Dx * Push; B.Y += Dy * Push; }
 		}
+	// Fire and movement: when the squad advances, its two fire teams take turns - one bounds forward while the other
+	// holds and gives covering fire.
+	BoundT += Dt;
+	if (BoundT > 1.4f) { BoundT = 0; BoundTeam ^= 1; }
+	const bool bBothTeams = Squad.ContainsByPredicate([](const TSharedPtr<FBSTrooper>& M) { return M->Team == 0; })
+		&& Squad.ContainsByPredicate([](const TSharedPtr<FBSTrooper>& M) { return M->Team == 1; });
+	SquadDeaths.RemoveAll([this](const FVector& K) { return Time - K.Z > 6; });
+	const bool bLane = Mode == EBSMode::Lane;
+	auto Forward = [bLane](const FBSTrooper& M) { return bLane ? M.Y > 0.6f : FMath::Sqrt(M.X * M.X + M.Y * M.Y) > 3.2f; };   // ahead of the bunker's line
 	TArray<TSharedPtr<FBSTrooper>> Snapshot = Squad;
 	for (const TSharedPtr<FBSTrooper>& MP : Snapshot)
 	{
@@ -721,8 +731,26 @@ void ABSGame::UpdateSquad(float Dt)
 		if (M.bDead) continue;
 		const FBSInfantryDef* D = M.Def;
 		auto Pred = [D](const FBSEnemy& E) { return !(D->bGroundOnly && E.Def->bFlying); };
+		// Morale: when a third of the group around it has just been killed, the group falls back level with the bunker.
+		if (!M.bBoarding && M.RetreatUntil <= Time && Forward(M))
+		{
+			int32 Lost = 0, Near = 0;
+			for (const FVector& K : SquadDeaths) Lost += Dist2(K.X, K.Y, M.X, M.Y) < 3.5f * 3.5f;
+			for (const TSharedPtr<FBSTrooper>& O : Squad) Near += !O->bDead && Dist2(O->X, O->Y, M.X, M.Y) < 3.5f * 3.5f;
+			if (Lost >= 2 && Lost * 3 >= Lost + Near)
+			{
+				for (const TSharedPtr<FBSTrooper>& O : Squad) if (!O->bDead && Dist2(O->X, O->Y, M.X, M.Y) < 3.5f * 3.5f) O->RetreatUntil = Time + 8;
+				Toast(TEXT("Squad falling back"));
+			}
+		}
 		float Gx = M.Spot.X, Gy = M.Spot.Y;
 		if (M.bBoarding) { Gx = (M.X < 0 ? -1 : 1) * (Hs + 0.3f); Gy = 0.4f; }
+		else if (M.RetreatUntil > Time)
+		{
+			if (!Forward(M)) { Gx = M.X; Gy = M.Y; }                                   // back on the line: hold and fire
+			else if (bLane) { Gx = FMath::Clamp(M.X, -6.f, 6.f); Gx = (Gx < 0 ? -1 : 1) * FMath::Max(FMath::Abs(Gx), Hs + 0.8f); Gy = 0.4f; }
+			else { const float A = FMath::Atan2(M.Y, M.X); Gx = FMath::Cos(A) * 2.8f; Gy = FMath::Sin(A) * 2.8f; }
+		}
 		else if (EnemiesInRange(M.X, M.Y, D->Range, Pred).Num()) { Gx = M.X; Gy = M.Y; }   // hold and fire
 		else
 		{
@@ -734,7 +762,8 @@ void ABSGame::UpdateSquad(float Dt)
 				const float Dd = Dist2(M.X, M.Y, E->X, E->Y);
 				if (Dd < Nearest) { Nearest = Dd; Th = E.Get(); }
 			}
-			if (Th)
+			if (Th && bBothTeams && M.Team != BoundTeam) { Gx = M.X; Gy = M.Y; }        // covering while the other team bounds
+			else if (Th)
 			{
 				const float A = FMath::Atan2(M.Y - Th->Y, M.X - Th->X), R = D->Range * 0.8f + Th->Radius;
 				Gx = Th->X + FMath::Cos(A) * R; Gy = Th->Y + FMath::Sin(A) * R;
@@ -792,6 +821,7 @@ void ABSGame::UpdateSquad(float Dt)
 // A trooper dies: outside, it falls with SC2's death animation; inside, it is carried out. The caller removes it.
 void ABSGame::KillTrooper(const FBSInfantryDef* Def, float X, float Y, float Yaw, ABSModelActor* Actor, bool bStim)
 {
+	if (Actor) SquadDeaths.Add(FVector(X, Y, Time));
 	if (Actor) { ReleaseModel(Actor); Corpse(Def->Death, X, Y, BSTerrain::Height(X, Y), Yaw, 3.5f, 1, true); }
 	Toast(Def->Name + (bStim ? TEXT(" overdosed on stim") : TEXT(" down")));
 	Floater(X, Y, 2.5f, bStim ? TEXT("OVERDOSE") : TEXT("KIA"), FLinearColor(1, 0.42f, 0.35f));

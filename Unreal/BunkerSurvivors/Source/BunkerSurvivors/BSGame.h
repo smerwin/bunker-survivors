@@ -55,6 +55,8 @@ struct FBSTrooper
 	const FBSInfantryDef* Def = nullptr;
 	float X = 0, Y = 0, Yaw = -PI / 2, Hp = 0, MaxHp = 0, Cd = 0, Flash = 0, StandAt = 0;
 	FVector2D Spot = FVector2D::ZeroVector;
+	int32 Team = 0;                           // fire team (0 / 1): the teams take turns to bound forward
+	float RetreatUntil = 0;                   // falling back level with the bunker after heavy losses
 	FString Anim;
 	ABSModelActor* Actor = nullptr;
 	bool bBoarding = false, bDead = false;
@@ -344,6 +346,8 @@ private:
 	float SpawnTimer = 0, Acc = 0, MuzzleFlash = 0, AutoT = 0;
 	int32 NextId = 1;
 	TArray<FVector2D> TankSlots, ScvIdle, SquadSpots, SamSlots, StrikePosts;
+	TArray<FVector> SquadDeaths;              // where (x, y) and when (z) outside troopers fell, for morale
+	int32 BoundTeam = 0, NextTeam = 0; float BoundT = 0;
 	FVector2D SensorSlot = FVector2D::ZeroVector;
 	TMap<FString, float> LastSound;
 	FLinearColor TerranColor = FLinearColor(0.08f, 0.32f, 1.0f), ZergColor = FLinearColor(0.55f, 0.08f, 0.7f);

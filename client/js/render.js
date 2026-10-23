@@ -30,6 +30,8 @@ window.BS = window.BS || {};
       inst.setUniformScale(this.scale);
       inst.setTeamColor(this.team);
       inst.bsHide = this.swipe === false ? HIDE_ADDITIVE : null;
+      inst.bsTurret = this.turret || 0;
+      if (this.turretBone) hookTurret(inst, this.turretBone);
       if (this.corpse) { inst.vertexColor[0] = inst.vertexColor[1] = inst.vertexColor[2] = 0.42; }
       if (this.pending) { const p = this.pending; this.pending = null; if (p.random) this.playRandom(p.name, p.loop); else this.play(p.name, p.loop, p.timeScale); }
       inst.show();
@@ -82,12 +84,54 @@ window.BS = window.BS || {};
     hasSeq(name) { return this.model ? this.r.findSequence(this.model, name) >= 0 : false; }
     get elapsed() { return (this.r.time - this.seqStart) * this.timeScale; }
     get ended() { return !this.loop && this.seqLen > 0 && this.elapsed >= this.seqLen; }
+    // Turn one bone (a siege tank's turret) about the vertical by an angle relative to the hull, on top of the
+    // animation, as the Unreal build does with a poseable mesh.
+    setTurret(bone, rel) {
+      this.turretBone = bone; this.turret = rel;
+      if (this.inst) { hookTurret(this.inst, bone); this.inst.bsTurret = rel; }
+      return this;
+    }
     release() {
       if (this.released) return;
       this.released = true;
+      if (this.inst) this.inst.bsTurret = 0;
       if (this.inst) { if (this.corpse) this.inst.vertexColor[0] = this.inst.vertexColor[1] = this.inst.vertexColor[2] = 1; this.inst.bsHide = null; this.r.releaseInstance(this.model, this.inst, this.corpse); }
       this.inst = null;
     }
+  }
+
+  // Replaces an M3 instance's skeleton update with the viewer's own loop plus one extra step: right after the named
+  // bone takes its animated rotation, twist it about the model's up axis by inst.bsTurret radians. With P the parent's
+  // world rotation, local' = P^-1 * Rz(a) * P * local, which turns the bone (and everything parented to it) in place.
+  function hookTurret(inst, boneName) {
+    const sk = inst.skeleton;
+    if (!sk || inst.bsTurretHooked) return;
+    const re = new RegExp('^' + boneName + '$', 'i'), idx = inst.model.bones.findIndex(b => re.test(b.name));
+    if (idx < 0) return;
+    inst.bsTurretHooked = true;
+    const nodes = sk.nodes, modelNodes = sk.modelNodes, q = [0, 0, 0, 1], t = [0, 0, 0, 1];
+    const mul = (o, a, b) => {
+      const ax = a[0], ay = a[1], az = a[2], aw = a[3], bx = b[0], by = b[1], bz = b[2], bw = b[3];
+      o[0] = aw * bx + ax * bw + ay * bz - az * by; o[1] = aw * by - ax * bz + ay * bw + az * bx;
+      o[2] = aw * bz + ax * by - ay * bx + az * bw; o[3] = aw * bw - ax * bx - ay * by - az * bz; return o;
+    };
+    sk.update = function (dt) {
+      for (let i = 0, l = nodes.length; i < l; i++) {
+        const node = nodes[i], mn = modelNodes[i];
+        this.getValue4(node.localRotation, mn.rotation, inst);
+        this.getValue3(node.localLocation, mn.location, inst);
+        this.getValue3(node.localScale, mn.scale, inst);
+        if (i === idx && inst.bsTurret) {
+          const p = node.parent.worldRotation, a = inst.bsTurret * 0.5;
+          q[0] = 0; q[1] = 0; q[2] = Math.sin(a); q[3] = Math.cos(a);
+          mul(t, q, p);                                   // Rz * P
+          mul(t, [-p[0], -p[1], -p[2], p[3]], t);         // P^-1 * Rz * P
+          mul(node.localRotation, t, node.localRotation);
+        }
+        node.recalculateTransformation(inst);
+        for (const child of node.children) { child.recalculateTransformation(); child.update(dt); }
+      }
+    };
   }
 
   const HIDE_ADDITIVE = b => b.material && b.material.blendMode === 2;

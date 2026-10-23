@@ -28,7 +28,7 @@ window.BS = window.BS || {};
       this.focus = null; this.focusUntil = 0; this.shake = 0;
       this.toasts = []; this.waveBanner = null; this.events = [];
       this.bunker = { x: 0, y: 0, yaw: Math.PI / 2, hp: T().bunker.hp, maxHp: T().bunker.hp, armor: T().bunker.armor, slots: T().bunker.slots, units: [], handle: null, dead: false, flash: 0 };
-      this.tanks = []; this.scvs = []; this.banshees = []; this.squad = []; this.structures = [];
+      this.tanks = []; this.scvs = []; this.banshees = []; this.squad = []; this.structures = []; this.squadDeaths = []; this.boundTeam = 0; this.boundT = 0; this.nextTeam = 0;
       this.up = { stim: 0, weapons: 0, vehicle: 0, neosteel: 0, plating: 0, hisec: 0, medivac: 0, rails: 0 };
       this.ab = { stimUntil: 0, stimCd: 0, strikeCd: 0, repairCd: 0, yamatoCd: 0 };
       this.station = null;
@@ -178,7 +178,9 @@ window.BS = window.BS || {};
     joinSquad(type, hp, x, y, handle) {
       const def = BS.INFANTRY[type], spot = this.freeSquadSpot();
       if (!spot) { if (handle) handle.release(); return null; }
-      const m = { type, def, hp, maxHp: def.hp, cd: Math.random() * 0.3, x, y, yaw: -Math.PI / 2, spot, boarding: false, anim: '', dead: false, flash: 0, radius: 0.375 };
+      const m = { type, def, hp, maxHp: def.hp, cd: Math.random() * 0.3, x, y, yaw: -Math.PI / 2, spot, boarding: false, anim: '', dead: false, flash: 0, radius: 0.375,
+        team: this.nextTeam, retreatUntil: 0 };
+      this.nextTeam ^= 1;                       // alternate fire teams
       m.handle = handle || this.r.spawn(type, x, y, 0, m.yaw).setTeam(1);
       this.squad.push(m);
       return m;
@@ -209,11 +211,33 @@ window.BS = window.BS || {};
         const p = Q[i], q = Q[j], dx = q.x - p.x, dy = q.y - p.y, d2 = dx * dx + dy * dy;
         if (d2 < 0.49 && d2 > 1e-6) { const d = Math.sqrt(d2), push = (0.7 - d) / d * 0.25; p.x -= dx * push; p.y -= dy * push; q.x += dx * push; q.y += dy * push; }
       }
+      // Fire and movement: when the squad advances, its two fire teams take turns - one bounds forward while the
+      // other holds and gives covering fire.
+      this.boundT += dt;
+      if (this.boundT > 1.4) { this.boundT = 0; this.boundTeam ^= 1; }
+      const bothTeams = Q.some(m => m.team === 0) && Q.some(m => m.team === 1);
+      this.squadDeaths = this.squadDeaths.filter(k => this.time - k.t < 6);
+      const lane = this.mode === 'lane';
+      const forward = m => lane ? m.y > 0.6 : Math.hypot(m.x, m.y) > 3.2;     // ahead of the bunker's line
       for (const m of Q.slice()) {
         if (m.dead) continue;
         const d = m.def, pred = e => !(d.groundOnly && e.def.flying);
+        // Morale: when too many of its neighbours have just been killed, the group falls back level with the bunker.
+        if (!m.boarding && m.retreatUntil <= this.time && forward(m)) {
+          const lost = this.squadDeaths.filter(k => dist(k.x, k.y, m.x, m.y) < 3.5).length;
+          const near = Q.filter(o => !o.dead && dist(o.x, o.y, m.x, m.y) < 3.5);
+          if (lost >= 2 && lost >= (lost + near.length) / 3) {      // a third of the group gone
+            for (const o of near) o.retreatUntil = this.time + 8;
+            this.toast('Squad falling back');
+          }
+        }
         let gx = m.spot[0], gy = m.spot[1];
         if (m.boarding) { gx = (m.x < 0 ? -1 : 1) * (hs + 0.3); gy = 0.4; }
+        else if (m.retreatUntil > this.time) {
+          if (!forward(m)) { gx = m.x; gy = m.y; }                                    // back on the line: hold and fire
+          else if (lane) { gx = clamp(m.x, -6, 6); gx = (gx < 0 ? -1 : 1) * Math.max(Math.abs(gx), hs + 0.8); gy = 0.4; }
+          else { const a = Math.atan2(m.y, m.x); gx = Math.cos(a) * 2.8; gy = Math.sin(a) * 2.8; }
+        }
         else if (this.enemiesInRange(m.x, m.y, d.range, pred).length) { gx = m.x; gy = m.y; }   // hold and fire
         else {
           // Advance on the nearest zerg that is attacking our position from beyond our reach.
@@ -223,7 +247,8 @@ window.BS = window.BS || {};
             const dd = dist(m.x, m.y, e.x, e.y);
             if (dd < best) { best = dd; th = e; }
           }
-          if (th) { const a = Math.atan2(m.y - th.y, m.x - th.x), r = d.range * 0.8 + th.radius; gx = th.x + Math.cos(a) * r; gy = th.y + Math.sin(a) * r; }
+          if (th && bothTeams && m.team !== this.boundTeam) { gx = m.x; gy = m.y; }   // covering while the other team bounds
+          else if (th) { const a = Math.atan2(m.y - th.y, m.x - th.x), r = d.range * 0.8 + th.radius; gx = th.x + Math.cos(a) * r; gy = th.y + Math.sin(a) * r; }
         }
         const far = Math.hypot(gx - m.x, gy - m.y);
         [gx, gy] = this.roundBunker(m, gx, gy);
@@ -271,6 +296,7 @@ window.BS = window.BS || {};
       else {
         u.dead = true;
         this.squad.splice(this.squad.indexOf(u), 1);
+        this.squadDeaths.push({ x: u.x, y: u.y, t: this.time });
         u.handle.release();
         this.corpse(u.def.death, u.x, u.y, BS.Terrain.height(u.x, u.y), u.yaw, 3.5, 1, true);
       }
@@ -904,7 +930,7 @@ window.BS = window.BS || {};
           }
           t.cd = D.cd;
           const ang = Math.atan2(target.y - t.y, target.x - t.x);
-          t.handle.setYaw(ang); t.handle.play(/^attack/i, false);
+          t.aim = ang; t.handle.play(/^attack/i, false);           // the hull stays put; the turret traverses (updateVisuals)
           const fx = t.x + Math.cos(ang) * 1.4, fy = t.y + Math.sin(ang) * 1.4;
           // SC2 siege shells are not drawn: launch flash, then the impact.
           this.fx.play('tankLaunch', fx, fy, 1.3, ang);
@@ -1073,7 +1099,15 @@ window.BS = window.BS || {};
       }
       for (let i = this.floaters.length - 1; i >= 0; i--) { const f = this.floaters[i]; f.t += dt; if (f.t > 1.3) this.floaters.splice(i, 1); }
       this.bunker.flash = Math.max(0, this.bunker.flash - dt * 4);
-      for (const t of this.tanks) t.flash = Math.max(0, t.flash - dt * 4);
+      for (const t of this.tanks) {
+        t.flash = Math.max(0, t.flash - dt * 4);
+        // Turret traverse at 360 deg/s toward the last target, relative to the hull (which faces up the lane).
+        if (t.state === 'ready' && t.handle && t.aim !== undefined) {
+          const want = angDelta(Math.PI / 2, t.aim);
+          t.turret = (t.turret || 0) + clamp(angDelta(t.turret || 0, want), -Math.PI * 2 * dt, Math.PI * 2 * dt);
+          t.handle.setTurret('Ref_TurretZ', t.turret);
+        }
+      }
       for (const s of this.scvs) s.flash = Math.max(0, s.flash - dt * 4);
       for (const m of this.squad) m.flash = Math.max(0, m.flash - dt * 4);
       for (const st of this.structures) st.flash = Math.max(0, st.flash - dt * 4);

@@ -9,7 +9,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "MIT",
+  "license": "Unlicense",
   "type": "commonjs",
   "dependencies": {
     "mdx-m3-viewer": "^5.12.0",

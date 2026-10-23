@@ -172,10 +172,16 @@ look all the way round and pinch to zoom. Tap it again for the overhead view.
 - `scripts/export-assets.js` converts the same assets into files for the Unreal version (see its README). Those
   exports are derived from your copy of the game: they are gitignored and must not be shared.
 
+## License
+
+Public domain ([Unlicense](LICENSE)). The code was written by AI coding tools under human direction, so there may
+be no copyright in it at all; whatever there is has been given away. Third-party code bundled here keeps its own
+license: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 ## Credits
 
-- CascLib by Ladislav Zezula (MIT), for the MNDX format reference.
-- mdx-m3-viewer by Chananya Freiman (MIT).
+- CascLib by Ladislav Zezula (MIT): `server/mndx.js` is a port of its MNDX root parser.
+- mdx-m3-viewer by Chananya Freiman (MIT), bundled as `client/lib/viewer.min.js`.
 - M3 structure definitions from the m3addon project (GPL-2.0), downloaded at run time and not redistributed here.
 - StarCraft II and its assets are trademarks and property of Blizzard Entertainment. This is an unofficial fan
   project that only works with your own copy of the game.
