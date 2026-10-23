@@ -1,7 +1,7 @@
 # Bunker Survivors: Unreal Engine port plan
 
-Status (2026-10-20): the engine-independent asset pipeline is done and verified. The Unreal project
-itself is blocked until Unreal Engine 5 and Visual Studio 2022 are installed on this PC (see "Setup").
+> **Historical design notes.** This is the original plan from 2026-10-20, kept for its design reasoning (camera,
+> UI, delivery). The port is done: for how to build and run it today, see [Unreal/README.md](../Unreal/README.md).
 
 Decision (2026-10-20): delivery is **Pixel Streaming over Tailscale**. The native Android option is dropped.
 

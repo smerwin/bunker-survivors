@@ -703,7 +703,7 @@ window.BS = window.BS || {};
         const a = E[i];
         for (let j = i + 1; j < N; j++) {
           const b = E[j];
-          if (!!a.def.flying !== !!b.def.flying) continue;
+          if (!!a.def.flying !== !!b.def.flying || a.burrowed || b.burrowed) continue;   // burrowed lurkers are underground: walk over them
           const dx = b.x - a.x, dy = b.y - a.y, min = a.radius + b.radius + 0.1, d2 = dx * dx + dy * dy;
           if (d2 < min * min && d2 > 1e-6) { const d = Math.sqrt(d2), push = (min - d) / d * 0.5; a.sx -= dx * push; a.sy -= dy * push; b.sx += dx * push; b.sy += dy * push; }
         }

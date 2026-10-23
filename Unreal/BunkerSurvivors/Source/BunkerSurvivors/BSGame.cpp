@@ -1500,7 +1500,7 @@ void ABSGame::UpdateEnemies(float Dt)
 		for (int32 j = i + 1; j < N; j++)
 		{
 			FBSEnemy& B = *Enemies[j];
-			if (A.Def->bFlying != B.Def->bFlying) continue;
+			if (A.Def->bFlying != B.Def->bFlying || A.bBurrowed || B.bBurrowed) continue;   // burrowed lurkers are underground: walk over them
 			const float Dx = B.X - A.X, Dy = B.Y - A.Y, Min = A.Radius + B.Radius + 0.1f, D2 = Dx * Dx + Dy * Dy;
 			if (D2 < Min * Min && D2 > 1e-6f)
 			{

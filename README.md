@@ -1,61 +1,181 @@
 # Bunker Survivors
 
-A Terran fireteam, one bunker, and the Swarm. Hold the line against ever-growing Zerg waves with
-marines, firebats, marauders, stimpacks, SCV repairs, air-dropped siege tanks, Banshee strikes and
-weapon upgrades. Plays in portrait on a phone (lane defense) and unlocks a harder 360-degree arena in
-a desktop browser.
+One bunker, a Terran fireteam, and the Swarm. Hold a chokepoint against ever-growing Zerg waves with marines,
+firebats, marauders, SCVs, air-dropped siege tanks, missile turrets, banshee strikes and a Yamato cannon in orbit.
+Plays in portrait on a phone (lane defence) and in a desktop browser (a harder 360-degree arena too).
 
-The game renders **real StarCraft II models, textures, icons and sounds**, streamed on demand from
-**your own StarCraft II install** by a small companion server. Nothing from the game is copied,
-extracted or redistributed; the repository contains no Blizzard assets.
+The game renders **real StarCraft II models, animations, effects, icons, sounds and fonts**, read on demand from
+**your own StarCraft II install** by a small companion server. The repository contains no Blizzard assets and
+nothing is extracted to disk for the browser version: you need your own copy of StarCraft II (the free Starter
+Edition is enough).
 
-## Requirements
+There are two versions:
 
-- Windows PC with StarCraft II installed (any recent 5.x build; the Starter Edition is enough).
-- Node.js 18 or newer.
-- A browser with WebGL. Phones connect over Wi-Fi to the PC.
+| | Browser version | Unreal Engine version |
+| --- | --- | --- |
+| Runs on | Windows or macOS (the PC/Mac with StarCraft II), played in any WebGL browser on it or on a phone | Windows only (built with Unreal Engine 5.8), streamed to phones and browsers with Pixel Streaming |
+| Setup | Node.js, then one command | Unreal Engine, Visual Studio and a build; see [Unreal/README.md](Unreal/README.md) |
+| Where | `client/` + `server/` | `Unreal/` |
 
-## Run
+Both play the same game: they share unit stats, waves, terrain and rules, and features land in both.
+
+## Quick start: browser version
+
+### 1. Install StarCraft II and Node.js
+
+- **StarCraft II** from Battle.net (any recent 5.x build; the free Starter Edition is fine). Let it finish
+  installing; you do not need to launch it.
+- **Node.js 18 or newer** from <https://nodejs.org> (on a Mac, `brew install node` also works).
+
+### 2. Get this repository
+
+Download it as a ZIP from GitHub and unzip it, or clone it:
+
+```bash
+git clone <this repository's URL> bunker-survivors
+```
+
+### 3. Start it
+
+**Windows:** double-click `start.cmd`.
+
+**macOS:** double-click `start.command`. The first time, macOS may say it is from an unidentified developer:
+right-click it, choose **Open**, then **Open** again. If Finder opens it in a text editor instead, run it from
+Terminal:
+
+```bash
+cd bunker-survivors
+./start.command
+```
+
+Either launcher installs the dependencies on first run, starts the companion server and opens
+`http://localhost:8642/` in your browser. Leave its window open while you play; close it (or press `Ctrl+C`) to stop.
+
+You can also do the same by hand on either system:
 
 ```bash
 npm install
-node scripts/patch-viewer.js
-node server/index.js
+npm start
 ```
 
-Or double-click `start.cmd`. The server prints the addresses to open:
+### 4. Play on your phone (optional)
 
-- On the PC: `http://localhost:8642/`
-- On a phone (same Wi-Fi): the `http://<pc-name>.local:8642/` or `http://192.168.x.x:8642/` line, also shown
-  as a QR code on the start screen.
+Keep the phone on the same Wi-Fi as the computer and open one of the addresses the server prints, such as
+`http://your-pc.local:8642/` or `http://192.168.1.20:8642/`. For a QR code to scan instead, open
+`http://localhost:8642/qr.svg` on the computer.
 
-If Windows Firewall asks, allow Node.js on private networks. If the install is somewhere unusual, set
-`SC2_DIR` to the StarCraft II folder (the one containing `.build.info`).
+- **Windows:** when Windows Firewall asks about Node.js, allow it on **private** networks.
+- **macOS:** when asked whether `node` may accept incoming connections, click **Allow**.
+
+Anyone who can reach that address can play, so only run it on networks you trust. To play away from home, use a
+private network such as [Tailscale](https://tailscale.com) and run `HOST=<your tailscale IP> npm start` (on
+Windows: `set HOST=100.x.y.z` then `npm start`) so the game only listens there.
+
+### If StarCraft II is somewhere else
+
+The server looks in the usual places (`C:\Program Files (x86)\StarCraft II`, `C:\Program Files\StarCraft II`,
+`StarCraft II` / `Games\StarCraft II` on drives C to F, `/Applications/StarCraft II` and `~/Applications/StarCraft II`).
+If yours is elsewhere, point `SC2_DIR` at the folder that contains `.build.info` and `SC2Data`:
+
+```bash
+# macOS
+SC2_DIR="/Volumes/Games/StarCraft II" npm start
+```
+
+```bat
+rem Windows
+set SC2_DIR=E:\Blizzard\StarCraft II
+npm start
+```
+
+### First run
+
+- Loading takes a few seconds while the server opens StarCraft II's storage; models stream in as the first wave
+  arrives.
+- The first time an effect is needed, the server downloads the M3 file layout description from the
+  [m3addon](https://github.com/SC2Mapster/m3addon) project into `server/vendor/` (one small XML file; internet
+  needed once).
+- Port 8642 in use? Run with `PORT=8700 npm start` (Windows: `set PORT=8700`).
+
+## How to play
+
+Zerg pour down the lane toward your bunker. Every kill pays minerals; spend them between and during waves. Every
+fifth wave is a heavy assault. When the bunker falls, the run is over.
+
+**The lane** is a Y-shaped chokepoint: zerg come down from the north and along the north-east and north-west arms.
+Ranged zerg sometimes climb the ramps to the ledges overlooking the bunker, where they get extra reach and a third of
+your bunker's shots at them miss. Flyers ignore the cliffs.
+
+**Troops.** The bunker holds four (six with Neosteel Frame). Buy marines (anti-everything), firebats (anti-swarm,
+ground only) or marauders (slow and shred armoured targets, ground only); a medivac drops them off and they walk in.
+When the bunker is full, new recruits stand behind it, up to 24.
+- Tap a soldier's portrait on the squad card to send them out of the bunker; tap one in the row underneath to bring
+  them back in.
+- Soldiers outside shoot from where they stand (without the bunker's range bonus) and advance on any zerg that is
+  attacking you from beyond their reach. They are exposed, so they die more easily, but they cost little and buy time.
+
+**Abilities**
+
+| Ability | Cost | What it does |
+| --- | --- | --- |
+| Stim | free (HP) | +50% fire rate for 11 s. Costs every soldier 10 HP (marauders 20); anyone with that little left dies. Research Stimpack first. |
+| Air strike | 200 | Four banshees hover over the ledges and the lane for 14 s, firing missiles at ground zerg. |
+| Repair | 75 | Restores 150 bunker HP at once. |
+| Yamato | 300 | A battlecruiser in orbit fires on the densest pack of zerg. |
+
+**Armoury**
+
+| Item | Notes |
+| --- | --- |
+| SCV (50) | Repairs the bunker, siege tanks and turrets automatically (repairs cost minerals). Up to four. |
+| Missile turret (100) | Anti-air only. Up to three. |
+| Sensor tower (125) | The radar only works while one stands. |
+| Siege tank (300, then +100 each) | Air-dropped; long-range splash against ground. Up to four. A destroyed tank can be replaced. |
+| Upgrades | Infantry Weapons, Vehicle Weapons and Building Armor (many levels), Stimpack, Neosteel Frame (six slots), Hi-Sec Auto Tracking (+1 range), Magnetic Rails (+2 bunker range; needs Hi-Sec), Medivac on Station (heals soldiers and SCVs; needs Stimpack). |
+
+**Bunker view.** Tap the bunker picture on the squad card (or press `V`) to look out from inside the bunker; drag to
+look all the way round and pinch to zoom. Tap it again for the overhead view.
 
 ## Controls
 
 | Action | Phone | Desktop |
 | --- | --- | --- |
 | Focus fire | tap a zerg | click a zerg |
-| Pan | drag | drag or arrow keys |
+| Pan (turn, in bunker view) | drag | drag or arrow keys |
 | Zoom | pinch | mouse wheel or `+` / `-` |
-| Reset camera | double-tap | double-click |
-| Stim / Air strike / Repair | buttons | `S` / `A` / `R` |
-| Pause | II button | `P` or `Esc` |
-| Rotate camera (arena) | - | `Q` / `E` |
+| Reset camera | double-tap | double-click or `Home` |
+| Bunker view on / off | tap the bunker picture | `V` |
+| Stim / Air strike / Repair / Yamato | ability buttons | `S` / `A` / `R` / `Y` |
+| Pause | pause button | `P` or `Esc` |
+| Rotate camera (arena) | two-finger twist (Unreal) | `Q` / `E` |
+| Start lane / arena | mode buttons | `1` / `2` |
+
+## Troubleshooting
+
+| Problem | Fix |
+| --- | --- |
+| "Could not find a StarCraft II install" | Set `SC2_DIR` (see above). The folder must contain `.build.info`. |
+| Phone cannot connect | Same Wi-Fi as the computer? Allow Node.js through the firewall (Windows) or accept incoming connections (macOS). Some guest and office networks block devices from seeing each other. |
+| Units are missing or invisible | Let the first wave stream in; refresh if a model failed to load. Check the server window for errors. |
+| Choppy on a phone | Lane mode in portrait is lighter. The game already lowers its resolution and zerg cap on phones. |
 
 ## How it works
 
-- `server/casc.js` reads the local CASC storage (`.idx` indices, encoding table, BLTE decoding) in pure Node.
-- `server/mndx.js` is a JavaScript port of CascLib's MNDX root parser (the compressed file-name trie SC2 uses).
-- `server/index.js` serves the client and `/asset/<path>` (decoded files), `/icon/<name>.png` (DDS button icons
-  decoded to PNG) and converts IMA-ADPCM `.wav` sounds to PCM so browsers can play them.
-- `client/` is a plain JavaScript game on top of `mdx-m3-viewer` (WebGL M3 model renderer). The M3 parser is
-  patched by `scripts/patch-viewer.js` for newer SC2 material/layer structure versions.
+- `server/casc.js` reads StarCraft II's local CASC storage (`.idx` indices, encoding table, BLTE decoding) in plain
+  Node.js; `server/mndx.js` is a JavaScript port of CascLib's MNDX root parser (the file-name trie StarCraft II uses).
+- `server/index.js` serves the game and `/asset/<path>` (decoded files), `/icon/<name>.png` (button icons decoded
+  from DDS), `/fx/<effect>.json` (particle emitters extracted from M3 effect models by `server/m3fx.js`) and converts
+  IMA-ADPCM sounds to PCM so browsers can play them. Models, textures and effects are gzipped on the wire.
+- `client/` is a plain JavaScript game on top of [mdx-m3-viewer](https://github.com/flowtsohg/mdx-m3-viewer)
+  (WebGL M3 renderer, patched by `scripts/patch-viewer.js` for newer StarCraft II material versions) with its own
+  particle player, terrain (`client/js/terrain.js`) and HUD.
+- `scripts/export-assets.js` converts the same assets into files for the Unreal version (see its README). Those
+  exports are derived from your copy of the game: they are gitignored and must not be shared.
 
 ## Credits
 
-- CascLib by Ladislav Zezula (MIT) for the MNDX format reference.
+- CascLib by Ladislav Zezula (MIT), for the MNDX format reference.
 - mdx-m3-viewer by Chananya Freiman (MIT).
-- M3 structure definitions from the m3addon project.
-- StarCraft II is a trademark of Blizzard Entertainment; this is an unofficial fan project that requires your own copy.
+- M3 structure definitions from the m3addon project (GPL-2.0), downloaded at run time and not redistributed here.
+- StarCraft II and its assets are trademarks and property of Blizzard Entertainment. This is an unofficial fan
+  project that only works with your own copy of the game.

@@ -6,12 +6,14 @@ const path = require('path');
 const { CascStorage } = require('./casc');
 const { parseMndxRoot } = require('./mndx');
 
+// Where Battle.net puts StarCraft II by default on Windows and macOS, plus a few common custom spots.
+// Anything else: set SC2_DIR to the folder that contains .build.info and SC2Data.
 const DEFAULT_INSTALL_CANDIDATES = [
   'C:/Program Files (x86)/StarCraft II',
   'C:/Program Files/StarCraft II',
-  'D:/StarCraft II',
-  'D:/Games/StarCraft II',
+  ...['C', 'D', 'E', 'F'].flatMap(d => [d + ':/StarCraft II', d + ':/Games/StarCraft II', d + ':/Battle.net/StarCraft II']),
   '/Applications/StarCraft II',
+  path.join(require('os').homedir(), 'Applications', 'StarCraft II'),
 ];
 
 function findInstall(explicit) {

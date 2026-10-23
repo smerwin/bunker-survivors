@@ -45,7 +45,12 @@ function lanAddresses() {
 function main() {
   const install = findInstall(process.env.SC2_DIR);
   if (!install) {
-    console.error('Could not find a StarCraft II install. Set SC2_DIR=<path to the StarCraft II folder> and retry.');
+    console.error([
+      'Could not find a StarCraft II install (the folder with .build.info and SC2Data in it).',
+      'Point SC2_DIR at it and retry, for example:',
+      '  Windows:  set SC2_DIR=E:\\Games\\StarCraft II  then  npm start',
+      '  macOS:    SC2_DIR="/Volumes/Games/StarCraft II" npm start',
+    ].join('\n'));
     process.exit(1);
   }
   console.log('Opening StarCraft II storage at ' + install + ' ...');

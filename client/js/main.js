@@ -146,6 +146,9 @@ window.BS = window.BS || {};
       else if (k === 'v') hud.toggleView();
       else if (k === 's') game.useStim(); else if (k === 'a') game.callAirStrike(); else if (k === 'r') game.emergencyRepair(); else if (k === 'y') game.useYamato();
       else if (k === '+' || k === '=') renderer.zoomBy(0.85); else if (k === '-') renderer.zoomBy(1.18);
+      else if (k === 'arrowup') renderer.panBy(0, 40); else if (k === 'arrowdown') renderer.panBy(0, -40);
+      else if (k === 'arrowleft') renderer.panBy(40, 0); else if (k === 'arrowright') renderer.panBy(-40, 0);
+      else if (k === 'home') { if (renderer.cam.fp) renderer.setBunkerView(true); else renderer.setCameraMode(mode); }
       else if (k === 'q' && mode === 'arena') { renderer.cam.yaw -= 0.2; renderer.updateCamera(); }
       else if (k === 'e' && mode === 'arena') { renderer.cam.yaw += 0.2; renderer.updateCamera(); }
     });
