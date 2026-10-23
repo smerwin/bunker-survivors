@@ -23,7 +23,7 @@ function refAll(ref) {
   if (v === undefined || v === null) return [];
   return Array.isArray(v) ? v : (ArrayBuffer.isView(v) ? Array.from(v) : [v]);
 }
-function refFirst(ref) { try { return ref && ref.entries !== undefined ? ref.first() : (ref ? ref.first() : null); } catch (e) { return null; } }
+function refFirst(ref) { try { return ref ? ref.first() : null; } catch (e) { return null; } }
 
 // ---- GLB builder --------------------------------------------------------------------------------
 class GlbBuilder {

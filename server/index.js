@@ -9,15 +9,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const zlib = require('zlib');
-const vm = require('vm');
 const { SC2Assets, findInstall } = require('./sc2');
-
-// The game's own data (model and effect lists) lives in client/js/units.js.
-function loadGameData() {
-  const ctx = { window: {} };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'client', 'js', 'units.js'), 'utf8'), ctx);
-  return ctx.window.BS;
-}
+const { loadGameData } = require('./gamedata');
+const { ensureStructures } = require('./m3struct');
 
 const PORT = parseInt(process.env.PORT || '8642', 10);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -42,7 +36,7 @@ function lanAddresses() {
   return out;
 }
 
-function main() {
+async function main() {
   const install = findInstall(process.env.SC2_DIR);
   if (!install) {
     console.error([
@@ -56,27 +50,40 @@ function main() {
   console.log('Opening StarCraft II storage at ' + install + ' ...');
   const sc2 = new SC2Assets(install);
   console.log('SC2 ' + sc2.version + ': ' + sc2.files.size + ' files indexed in ' + sc2.loadMs + 'ms');
+  // Particle effects need the M3 structure description (downloaded once); without it only /fx/ fails.
+  try { await ensureStructures(); } catch (e) { console.warn('Particle effects unavailable: ' + e.message); }
 
-  const cache = new Map();            // full name -> Buffer
+  // One bounded cache for decoded files and everything derived from them (gzip, PNG, PCM, glTF, effect JSON),
+  // evicted oldest first.
+  const cache = new Map();            // key -> Buffer
   let cacheBytes = 0;
   const CACHE_LIMIT = 400 * 1024 * 1024;
-  function readCached(full) {
-    let buf = cache.get(full);
-    if (buf) return buf;
-    buf = sc2.storage.readByCKey(sc2.files.get(full).ckey);
-    if (buf) {
-      cache.set(full, buf);
-      cacheBytes += buf.length;
-      while (cacheBytes > CACHE_LIMIT && cache.size) {
-        const [k, v] = cache.entries().next().value;
-        cache.delete(k); cacheBytes -= v.length;
-      }
+  function cachePut(key, buf) {
+    cache.set(key, buf);
+    cacheBytes += buf.length;
+    while (cacheBytes > CACHE_LIMIT && cache.size > 1) {
+      const [k, v] = cache.entries().next().value;
+      cache.delete(k); cacheBytes -= v.length;
     }
     return buf;
   }
+  function cached(key, make) {
+    const hit = cache.get(key);
+    if (hit) return hit;
+    const made = make();
+    return made ? cachePut(key, made) : made;      // a missing file (null) is not cached
+  }
+  function readCached(full) {
+    return cached(full, () => sc2.storage.readByCKey(sc2.files.get(full).ckey));
+  }
 
+  // A request path is a client error, not a crash, when it is not valid percent-encoding.
+  class BadRequest extends Error {}
+  function decodePath(reqPath) {
+    try { return decodeURIComponent(reqPath); } catch (e) { throw new BadRequest('bad URL encoding'); }
+  }
   function resolveAsset(reqPath) {
-    return sc2.resolve(decodeURIComponent(reqPath));
+    return sc2.resolve(decodePath(reqPath));
   }
 
   const fxList = loadGameData().fxList();
@@ -89,16 +96,17 @@ function main() {
 
   const server = http.createServer((req, res) => {
     const u = new URL(req.url, 'http://x');
+    // Same-origin only: no CORS header, so a page on another site cannot read the player's game files through
+    // this server.
     const send = (code, type, body, extra) => {
-      res.writeHead(code, Object.assign({ 'Content-Type': type, 'Access-Control-Allow-Origin': '*' }, extra || {}));
+      res.writeHead(code, Object.assign({ 'Content-Type': type }, extra || {}));
       res.end(body);
     };
     // Compressible payloads (models, effect data) are gzipped once and cached: phones on weak wifi load much faster.
     const gzOk = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
     const sendGz = (key, type, buf, extra) => {
       if (!gzOk || buf.length < 1024) return send(200, type, buf, extra);
-      let gz = cache.get('gz:' + key);
-      if (!gz) { gz = zlib.gzipSync(buf, { level: 6 }); cache.set('gz:' + key, gz); }
+      const gz = cached('gz:' + key, () => zlib.gzipSync(buf, { level: 6 }));
       return send(200, type, gz, Object.assign({ 'Content-Encoding': 'gzip', 'Vary': 'Accept-Encoding' }, extra || {}));
     };
     try {
@@ -109,10 +117,7 @@ function main() {
         if (!buf) return send(404, 'text/plain', 'asset data missing: ' + full);
         if (full.endsWith('.wav')) {
           // Many SC2 wavs are IMA ADPCM, which browsers cannot decode: convert to PCM once.
-          const key = 'pcm:' + full;
-          let pcm = cache.get(key);
-          if (!pcm) { const adpcm = require('./adpcm'); pcm = adpcm.isAdpcm(buf) ? adpcm.decodeImaAdpcm(buf) : buf; cache.set(key, pcm); }
-          buf = pcm;
+          buf = cached('pcm:' + full, () => { const adpcm = require('./adpcm'); return adpcm.isAdpcm(buf) ? adpcm.decodeImaAdpcm(buf) : buf; });
         }
         const type = MIME[path.extname(full)] || 'application/octet-stream';
         const extra = { 'Cache-Control': 'public, max-age=86400', 'X-SC2-Name': full };
@@ -120,12 +125,10 @@ function main() {
       }
       if (u.pathname.startsWith('/gltf/')) {
         // /gltf/assets/units/zerg/zergling/zergling.glb -> converted from the matching .m3
-        const rel = decodeURIComponent(u.pathname.slice(6)).replace(/\.glb$/i, '.m3');
+        const rel = decodePath(u.pathname.slice(6)).replace(/\.glb$/i, '.m3');
         const full = resolveAsset(rel);
         if (!full) return send(404, 'text/plain', 'model not found: ' + rel);
-        const key = 'glb:' + full;
-        let glb = cache.get(key);
-        if (!glb) { glb = require('./m3gltf').convertM3(sc2, full).glb; cache.set(key, glb); }
+        const glb = cached('glb:' + full, () => require('./m3gltf').convertM3(sc2, full).glb);
         return send(200, 'model/gltf-binary', glb, { 'Cache-Control': 'no-cache' });
       }
       if (u.pathname.startsWith('/icon/')) {
@@ -133,32 +136,27 @@ function main() {
         const base = u.pathname.slice(6).replace(/\.png$/i, '');
         const full = resolveAsset('assets/textures/' + base + '.dds');
         if (!full) return send(404, 'text/plain', 'icon not found');
-        const key = 'png:' + full;
-        let png = cache.get(key);
-        if (!png) { png = require('./dds').ddsToPng(readCached(full)); cache.set(key, png); }
+        const png = cached('png:' + full, () => require('./dds').ddsToPng(readCached(full)));
         return send(200, 'image/png', png, { 'Cache-Control': 'public, max-age=86400' });
       }
       if (u.pathname.startsWith('/fx/')) {
         // /fx/<key>.json -> the SC2 particle effect's emitters, extracted from the M3 (see server/m3fx.js).
-        const key = decodeURIComponent(u.pathname.slice(4)).replace(/\.json$/, '');
+        const key = decodePath(u.pathname.slice(4)).replace(/\.json$/, '');
         const def = fxList[key];
         if (!def) return send(404, 'text/plain', 'no such effect: ' + key);
-        let json = cache.get('fx:' + key);
-        if (!json) {
+        const json = cached('fx:' + key, () => {
           const fx = require('./m3fx').extractFxVariants(sc2, def[0], def[1]);
           fx.loop = !!def[2];
-          json = Buffer.from(JSON.stringify(fx));
-          cache.set('fx:' + key, json);
-        }
+          return Buffer.from(JSON.stringify(fx));
+        });
         return sendGz('fx:' + key, 'application/json', json, { 'Cache-Control': 'public, max-age=3600' });
       }
       if (u.pathname.startsWith('/fxtex/')) {
         // /fxtex/assets/textures/glow_yellow1.png -> that SC2 texture decoded to PNG.
-        const rel = decodeURIComponent(u.pathname.slice(7)).replace(/\.png$/i, '.dds');
+        const rel = decodePath(u.pathname.slice(7)).replace(/\.png$/i, '.dds');
         const full = resolveAsset(rel);
         if (!full) return send(404, 'text/plain', 'texture not found: ' + rel);
-        let png = cache.get('png:' + full);
-        if (!png) { png = require('./dds').ddsToPng(readCached(full)); cache.set('png:' + full, png); }
+        const png = cached('png:' + full, () => require('./dds').ddsToPng(readCached(full)));
         return send(200, 'image/png', png, { 'Cache-Control': 'public, max-age=86400' });
       }
       if (u.pathname.startsWith('/font/')) {
@@ -171,7 +169,7 @@ function main() {
       }
       if (u.pathname === '/api/find') {
         const q = (u.searchParams.get('q') || '').toLowerCase();
-        const limit = Math.min(500, parseInt(u.searchParams.get('limit') || '100', 10));
+        const limit = Math.min(500, parseInt(u.searchParams.get('limit'), 10) || 100);
         let re = null;
         try { if (u.searchParams.get('re') === '1') re = new RegExp(q, 'i'); } catch (e) { return send(400, 'text/plain', 'bad regex'); }
         const hits = q ? sc2.find(re || q, limit) : [];
@@ -186,12 +184,13 @@ function main() {
         return QRCode.toString(target, { type: 'svg', margin: 1 }, (err, svg) => err ? send(500, 'text/plain', String(err)) : send(200, 'image/svg+xml', svg));
       }
       // Static client files.
-      let file = u.pathname === '/' ? '/index.html' : u.pathname;
+      let file = u.pathname === '/' ? '/index.html' : decodePath(u.pathname);
       file = path.normalize(path.join(CLIENT_DIR, file));
-      if (!file.startsWith(CLIENT_DIR)) return send(403, 'text/plain', 'forbidden');
+      if (!file.startsWith(CLIENT_DIR + path.sep)) return send(403, 'text/plain', 'forbidden');
       if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) return send(404, 'text/plain', 'not found');
       return send(200, MIME[path.extname(file).toLowerCase()] || 'application/octet-stream', fs.readFileSync(file), { 'Cache-Control': 'no-cache' });
     } catch (err) {
+      if (err instanceof BadRequest) return send(400, 'text/plain', err.message);
       console.error(err);
       return send(500, 'text/plain', String(err && err.stack || err));
     }
@@ -209,4 +208,4 @@ function main() {
   });
 }
 
-main();
+main().catch(err => { console.error(err); process.exit(1); });
