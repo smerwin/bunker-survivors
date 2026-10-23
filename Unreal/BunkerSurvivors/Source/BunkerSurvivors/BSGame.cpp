@@ -30,7 +30,7 @@ namespace
 	FVector W(const FVector& Sim) { return BSSpace::ToWorld(Sim.X, Sim.Y, Sim.Z); }
 	const TArray<FString> WalkNames = { TEXT("walk"), TEXT("walk 01"), TEXT("fly") };
 	const TArray<FString> StandNames = { TEXT("stand"), TEXT("stand 01") };
-	// The sieged tank's turret rests facing backwards relative to the hull in SC2's model.
+	// Extra yaw applied to the sieged tank's turret bone on top of its aim (SC2's model rests it in line with the hull).
 	constexpr float TankTurretOffsetDeg = 0.f;
 }
 
@@ -1560,8 +1560,6 @@ void ABSGame::UpdateNukes(float Dt)
 		Shake = 1;
 	}
 }
-
-
 
 bool ABSGame::FocusAt(float SimX, float SimY)
 {

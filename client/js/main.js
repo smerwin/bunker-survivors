@@ -14,7 +14,7 @@ window.BS = window.BS || {};
 
   async function boot() {
     renderer = new BS.Renderer($('gl'), $('fx'), { maxDpr: touch ? 1.5 : 2, animEvery: touch ? 2 : 1 });
-    window.renderer = renderer;
+    window.renderer = renderer;              // for poking at from the browser console
     try {
       const st = await fetch('/api/status').then(r => r.json());
       $('status').textContent = 'STARCRAFT II ' + st.sc2Version + ' LINKED  ' + st.hostname.toUpperCase();
@@ -58,7 +58,7 @@ window.BS = window.BS || {};
     renderer.setCameraMode(mode);
     game = new BS.Game(renderer, { mode });
     hud = new BS.Hud(game, renderer);
-    window.game = game; window.renderer = renderer; window.bsHud = hud;
+    window.game = game;                     // for poking at from the browser console
     game.beginOpening();
     game.started = true;
     // Playtesting: ?tech=max researches everything (unlocking the high-tech cards) and banks minerals.
