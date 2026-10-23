@@ -31,6 +31,8 @@ window.BS = window.BS || {};
       this.tanks = []; this.scvs = []; this.banshees = []; this.squad = []; this.structures = []; this.squadDeaths = []; this.boundTeam = 0; this.boundT = 0; this.nextTeam = 0;
       this.up = { stim: 0, weapons: 0, vehicle: 0, neosteel: 0, plating: 0, hisec: 0, medivac: 0, rails: 0 };
       this.ab = { stimUntil: 0, stimCd: 0, strikeCd: 0, repairCd: 0, yamatoCd: 0 };
+      this.techUnlocked = {}; this.techCd = { nuke: 0, vikings: 0 };
+      this.mechs = []; this.bc = null; this.vikingWing = []; this.nukes = [];
       this.station = null;
       BS.Terrain.setMode(this.mode);
       this.layout();
@@ -47,6 +49,8 @@ window.BS = window.BS || {};
         this.samSlots = [[-5.6, 1.2], [5.6, 1.2], [-3.6, -4.6]];
         this.sensorSlot = [3.6, -4.6];
         this.strikePosts = [[-3.4, 3.6], [3.4, 3.6], [-1.4, 6.4], [1.4, 6.4]];   // in view: covering both ledges and the stem
+        // High-tech walkers hold the ground in front of the bunker: goliaths at its shoulders, thors and the odin up the stem.
+        this.mechSlots = { goliath: [[-3.9, 1.6], [3.9, 1.6], [-2.3, 2.3], [2.3, 2.3]], thor: [[-1.6, 3.6], [1.6, 3.6]], odin: [[0, 5.6]] };
       } else {
         this.tankSlots = [[-3.0, -2.6], [3.0, -2.6], [-3.0, 2.6], [3.0, 2.6]];
         this.scvIdle = [[-2.6, -2.6], [2.6, 2.6], [-2.6, 2.6], [2.6, -2.6]];
@@ -54,10 +58,11 @@ window.BS = window.BS || {};
         this.samSlots = [[0, 4.0], [-4.0, 0], [4.0, 0]];
         this.sensorSlot = [-4.2, -4.2];
         this.strikePosts = [45, 135, 225, 315].map(a => [Math.cos(a * Math.PI / 180) * 7, Math.sin(a * Math.PI / 180) * 7]);
+        this.mechSlots = { goliath: [[0, 2.7], [2.7, 0], [-2.7, 0], [0, -2.7]], thor: [[-4.6, -3.6], [4.6, 3.6]], odin: [[-5.2, 3.2]] };
       }
       // Ranks of eight behind the bunker (the side away from the lane), stepping round the tanks, SCVs, turrets and
       // sensor tower, as deep as it takes to fit the whole squad.
-      const taken = this.tankSlots.concat(this.scvIdle, this.samSlots, [this.sensorSlot]);
+      const taken = this.tankSlots.concat(this.scvIdle, this.samSlots, [this.sensorSlot], ...Object.values(this.mechSlots));
       this.squadSpots = [];
       for (let y = -2.3; this.squadSpots.length < T().squad.max; y -= 0.7)
         for (let i = 0; i < 8 && this.squadSpots.length < T().squad.max; i++) {
@@ -425,7 +430,299 @@ window.BS = window.BS || {};
         case 'medivac': this.toast('Medivac on station'); break;
         case 'rails': this.toast('Magnetic rails fitted: +2 bunker range'); break;
       }
+      this.checkTech();
       return true;
+    }
+
+    // ---- High-tech reinforcements -------------------------------------------------------------------------
+    // Surprise cards: each appears once its tech tree is maxed out (see BS.TECH).
+    treeMaxed(tree) {
+      const maxed = id => this.upgradeLevel(id) >= BS.UPGRADES[id].costs.length;
+      if (tree === 'systems') return ['stim', 'neosteel', 'hisec', 'rails', 'medivac'].every(maxed);
+      if (tree === 'all') return ['weapons', 'vehicle', 'plating', 'systems'].every(t => this.treeMaxed(t));
+      if (tree === 'bc') return !!this.bc;
+      return maxed(tree);
+    }
+    checkTech() {
+      for (const c of BS.TECH) {
+        if (this.techUnlocked[c.id] || !this.treeMaxed(c.unlock)) continue;
+        this.techUnlocked[c.id] = true;
+        this.waveBanner = { text: 'NEW TECH  //  ' + c.banner, t: this.time };
+        this.toast(c.name + ' unlocked');
+      }
+    }
+    // For the armoury: '' (buyable), 'max' (all out) or 'wait' (cooling down), plus the price.
+    techCount(kind) { return this.mechs.filter(m => m.kind === kind).length; }
+    techState(id) {
+      if (id === 'nuke' || id === 'vikings') return { state: this.techCd[id] > 0 ? 'wait' : '', cost: T()[id].cost, wait: this.techCd[id] };
+      if (id === 'bc') return { state: this.bc ? 'max' : '', cost: T().bc.cost };
+      return { state: this.techCount(id) >= T()[id].max ? 'max' : '', cost: T()[id].cost };
+    }
+    buyTech(id) {
+      if (!this.techUnlocked[id]) return false;
+      if (id === 'nuke') return this.launchNuke();
+      if (id === 'vikings') return this.callVikings();
+      if (id === 'bc') return this.callBattlecruiser();
+      return this.addMech(id);
+    }
+    // Test helper (?tech=max): research every upgrade (with a tank on the field so Vehicle Weapons can be bought).
+    grantAllTech() {
+      this.minerals += 1e6;
+      if (!this.tanks.length) this.dropTank();
+      for (const id of Object.keys(BS.UPGRADES)) for (let guard = 0; guard < 20 && this.upgradeAvailable(id); guard++) this.buyUpgrade(id);
+      this.minerals += 20000;
+    }
+
+    // Goliaths, thors and the odin walk in from the south to their posts, then fight with separate anti-ground and
+    // anti-air weapons.
+    addMech(kind) {
+      const D = T()[kind];
+      if (this.techCount(kind) >= D.max) return this.toast('No room for more');
+      const slot = this.mechSlots[kind].find(sl => !this.mechs.some(m => m.slot === sl));
+      if (!slot) return this.toast('No room for more');
+      if (this.minerals < D.cost) return this.toast('Not enough minerals');
+      this.minerals -= D.cost;
+      const m = { kind, def: D, slot, x: slot[0], y: this.mode === 'lane' ? -9 : -14, yaw: Math.PI / 2, hp: D.hp, maxHp: D.hp, armor: D.armor, radius: D.radius,
+        state: 'walking', cdG: 0.5, cdA: 0.5, dead: false, flash: 0, anim: '', aim: Math.PI / 2 };
+      m.handle = this.r.spawn(kind, m.x, m.y, BS.Terrain.height(m.x, m.y), m.yaw).setTeam(1);
+      this.mechs.push(m);
+      this.toast(BS.TECH.find(c => c.id === kind).name + ' inbound');
+      return true;
+    }
+    updateMechs(dt) {
+      for (const m of this.mechs.slice()) {
+        if (m.dead) continue;
+        const D = m.def;
+        if (m.state === 'walking') {
+          const [gx, gy] = this.roundBunker(m, m.slot[0], m.slot[1]);
+          const far = Math.hypot(m.slot[0] - m.x, m.slot[1] - m.y), dx = gx - m.x, dy = gy - m.y, dd = Math.hypot(dx, dy) || 1;
+          if (far > 0.15) {
+            const sp = Math.min(dd, D.speed * dt);
+            this.stepGround(m, dx / dd * sp, dy / dd * sp);
+            m.yaw += clamp(angDelta(m.yaw, Math.atan2(dy, dx)), -3 * dt, 3 * dt);
+            if (m.anim !== 'walk') { m.anim = 'walk'; m.handle.play(/^walk/i, true); }
+          } else { m.state = 'ready'; m.anim = 'stand'; m.handle.play(/^stand$/i, true); this.toast(BS.TECH.find(c => c.id === m.kind).name + ' in position'); }
+          m.handle.setPos(m.x, m.y, BS.Terrain.height(m.x, m.y)).setYaw(m.yaw);
+          continue;
+        }
+        const bonus = this.up.vehicle * 2;
+        m.cdG -= dt; m.cdA -= dt;
+        for (const air of [false, true]) {
+          if ((air ? m.cdA : m.cdG) > 0) continue;
+          const range = air ? D.aRange : D.gRange, pred = e => !!e.def.flying === air;
+          let target = this.focus && this.focus.hp > 0 && pred(this.focus) && dist(m.x, m.y, this.focus.x, this.focus.y) - this.focus.radius <= range ? this.focus : null;
+          if (!target) target = this.enemiesInRange(m.x, m.y, range, pred)[0];
+          if (!target) { if (air) m.cdA = 0.15; else m.cdG = 0.15; continue; }
+          if (air) m.cdA = D.aCd; else m.cdG = D.gCd;
+          m.aim = Math.atan2(target.y - m.y, target.x - m.x);
+          this.mechFire(m, target, air, (air ? D.aDmg : D.gDmg) + bonus);
+        }
+        m.yaw += clamp(angDelta(m.yaw, m.aim), -4 * dt, 4 * dt);
+        m.handle.setPos(m.x, m.y, BS.Terrain.height(m.x, m.y)).setYaw(m.yaw);
+      }
+    }
+    // One volley: goliath autocannons and hellfire missiles, thor arm cannons and javelin barrage, odin heavy cannons
+    // and missile salvos.
+    mechFire(m, target, air, dmg) {
+      const D = m.def, h = BS.Terrain.height(m.x, m.y), ang = m.aim, cs = Math.cos(ang), sn = Math.sin(ang);
+      const mz = h + (m.kind === 'odin' ? 4 : m.kind === 'thor' ? 3 : 1.4), shots = air ? D.aShots : D.gShots;
+      const hx = target.x, hy = target.y, hz = target.z + target.def.height * 0.5;
+      m.handle.play(/^attack/i, false); m.anim = 'attack';
+      if (m.kind === 'goliath' && !air) {
+        for (let k = 0; k < shots; k++) {
+          const off = k ? 0.35 : -0.35, sx = m.x + cs * 0.7 - sn * off, sy = m.y + sn * 0.7 + cs * off;
+          this.fx.play('marineLaunch', sx, sy, mz, ang, 2, k * 0.12);
+          this.fx.play('marineImpact', hx + rnd(-0.2, 0.2), hy + rnd(-0.2, 0.2), hz, ang + Math.PI, 1.6, k * 0.12 + 0.04);
+          this.hurtEnemy(target, dmg);
+        }
+        BS.audio.play('goliathFire', { vol: 0.45, gap: 0.15 });
+        return;
+      }
+      const look = {
+        goliath: { trail: 'goliathAirMissile', impact: 'goliathAirImpact', launch: null, splash: 0 },
+        thor: air ? { trail: 'thorShoulderMissile', impact: 'thorShoulderImpact', launch: 'thorShoulderLaunch', splash: D.aSplash }
+                  : { trail: 'thorArmMissile', impact: 'thorArmImpact', launch: 'thorArmLaunch', splash: 0 },
+        odin: air ? { trail: 'thorShoulderMissile', impact: 'odinShoulderImpact', launch: 'thorShoulderLaunch', splash: D.aSplash }
+                  : { trail: null, impact: 'tankImpact', launch: 'tankLaunch', splash: D.gSplash, scale: 1.6, arc: 3 },
+      }[m.kind];
+      const pred = e => !!e.def.flying === air;
+      for (let k = 0; k < shots; k++) {
+        const off = (k - (shots - 1) / 2) * 0.45, sx = m.x + cs * 0.6 - sn * off, sy = m.y + sn * 0.6 + cs * off;
+        if (look.launch) this.fx.play(look.launch, sx, sy, mz, ang, look.scale || 1, k * 0.08);
+        const p = { kind: 'missile', friendly: true, fx: sx, fy: sy, fz: mz, tx: hx, ty: hy, tz: hz, t: -k * 0.08, dur: 0.45 + (look.arc ? 0.15 : 0), arc: look.arc || (air ? 0.8 : 0.4),
+          dmg, target, impact: look.impact, impactScale: look.scale || 1, splash: look.splash, pred };
+        if (look.trail) this.projectileModel(p, null, look.trail);
+        this.projectiles.push(p);
+      }
+      BS.audio.play(m.kind === 'goliath' ? 'goliathFire' : 'thorFire', { vol: m.kind === 'odin' ? 0.8 : 0.5, gap: 0.15 });
+      if (m.kind === 'odin' && !air) this.shake = Math.min(1, this.shake + 0.2);
+    }
+    killMech(m) {
+      m.dead = true;
+      this.mechs.splice(this.mechs.indexOf(m), 1);
+      m.handle.release();
+      this.corpse(m.kind + 'Death', m.x, m.y, BS.Terrain.height(m.x, m.y), m.yaw, 6, 1, true);
+      BS.audio.play('explosion', { vol: 0.8 });
+      this.toast(BS.TECH.find(c => c.id === m.kind).name + ' destroyed');
+    }
+
+    // Battlecruiser on station: flies in over the lane and stays, out of reach.
+    callBattlecruiser() {
+      const D = T().bc;
+      if (this.bc) return this.toast('The battlecruiser is already on station');
+      if (this.minerals < D.cost) return this.toast('Not enough minerals');
+      this.minerals -= D.cost;
+      const lane = this.mode === 'lane';
+      this.bc = { x: 0, y: lane ? -24 : -34, z: 10, sx: 0, sy: lane ? 4.5 : 0, sz: 6.5, yaw: Math.PI / 2, state: 'in', cdL: 0, cdM: 3, cdY: 5, t: 0 };
+      this.bc.handle = this.r.spawn('battlecruiser', this.bc.x, this.bc.y, this.bc.z, this.bc.yaw).setTeam(1);
+      this.bc.handle.play(/^walk|^fly|^stand/i, true);
+      this.toast('Battlecruiser inbound');
+      this.checkTech();
+      return true;
+    }
+    updateBc(dt) {
+      const b = this.bc, D = T().bc;
+      if (!b) return;
+      b.t += dt;
+      if (b.state === 'in') {
+        const dx = b.sx - b.x, dy = b.sy - b.y, dz = b.sz - b.z, dd = Math.hypot(dx, dy, dz);
+        if (dd > 0.2) { const s = Math.min(dd, 7 * dt) / dd; b.x += dx * s; b.y += dy * s; b.z += dz * s; }
+        else { b.state = 'station'; b.handle.play(/^stand$/i, true); this.toast('Battlecruiser on station'); }
+        b.handle.setPos(b.x, b.y, b.z).setYaw(b.yaw);
+        return;
+      }
+      b.handle.setPos(b.x, b.y, b.sz + 0.25 * Math.sin(b.t * 0.7)).setYaw(b.yaw);
+      // Laser batteries: rapid fire spread over whatever is in reach, air and ground alike.
+      b.cdL -= dt;
+      if (b.cdL <= 0) {
+        b.cdL = D.laserCd;
+        const list = this.enemiesInRange(b.x, b.y, D.range);
+        if (list.length) {
+          const e = list[Math.floor(Math.random() * Math.min(6, list.length))];
+          this.hurtEnemy(e, e.def.flying ? D.laserA : D.laserG);
+          const sx = b.x + rnd(-1.5, 1.5), sy = b.y + rnd(-2.5, 2.5), sz = b.sz - 0.6, ang = Math.atan2(e.y - sy, e.x - sx);
+          this.fx.play('marineLaunch', sx, sy, sz, ang, 2.2);
+          this.fx.play('marineImpact', e.x + rnd(-0.2, 0.2), e.y + rnd(-0.2, 0.2), e.z + e.def.height * 0.5, ang + Math.PI, 1.8);
+          BS.audio.play('bcFire', { vol: 0.4, gap: 0.22 });
+        }
+      }
+      // Missile pods every few seconds at a spread of targets.
+      b.cdM -= dt;
+      if (b.cdM <= 0) {
+        const list = this.enemiesInRange(b.x, b.y, D.range + 2);
+        b.cdM = list.length ? D.missileCd : 0.5;
+        list.slice(0, D.missiles).forEach((e, k) => {
+          const p = { kind: 'missile', friendly: true, fx: b.x + rnd(-2, 2), fy: b.y + rnd(-1, 1), fz: b.sz - 0.4, tx: e.x, ty: e.y, tz: e.z + 0.4, t: -k * 0.1, dur: 0.6, arc: 1.2,
+            dmg: D.missileDmg, target: e, impact: 'bcMissileImpact' };
+          this.projectileModel(p, null, 'bcMissile');
+          this.projectiles.push(p);
+        });
+        if (list.length) BS.audio.play('bcMissiles', { vol: 0.5 });
+      }
+      // Yamato cannon on its own, at the toughest zerg in reach.
+      b.cdY -= dt;
+      if (b.cdY <= 0) {
+        let pickE = null;
+        for (const e of this.enemiesInRange(b.x, b.y, D.range + 4)) if (!pickE || e.hp > pickE.hp) pickE = e;
+        b.cdY = pickE ? D.yamatoCd : 1;
+        if (pickE) {
+          const p = { kind: 'yamato', friendly: true, fx: b.x, fy: b.y + 2.5, fz: b.sz, tx: pickE.x, ty: pickE.y, tz: 0.6, t: 0, dur: 0.5, dmg: D.yamato, target: pickE };
+          this.projectileModel(p, 'projYamato', 'yamatoMissile');
+          this.projectiles.push(p);
+          BS.audio.play('bcYamato', { vol: 0.8 });
+          this.floater(b.x, b.y, b.sz + 1, 'YAMATO', '#bd6bff');
+        }
+      }
+    }
+
+    // Viking wing: four fighters take up posts high over the lane and shoot down air for a while.
+    callVikings() {
+      const D = T().vikings;
+      if (this.techCd.vikings > 0) return this.toast('Vikings are rearming');
+      if (this.minerals < D.cost) return this.toast('Not enough minerals');
+      this.minerals -= D.cost; this.techCd.vikings = D.cooldown;
+      for (let i = 0; i < D.count; i++) {
+        const post = this.strikePosts[i % this.strikePosts.length];
+        const v = { post: [post[0] * 1.2, post[1] + 2], x: post[0] * 0.6, y: (this.mode === 'lane' ? -18 : -34) - i * 1.2, z: D.fly + 1.5, yaw: Math.PI / 2, cd: 0.4 + i * 0.2, state: 'in', t: 0 };
+        v.handle = this.r.spawn('vikingfighter', v.x, v.y, v.z, v.yaw).setTeam(1);
+        v.handle.play(/^walk|^fly|^stand/i, true);
+        this.vikingWing.push(v);
+      }
+      this.toast('Viking wing inbound');
+      return true;
+    }
+    updateVikings(dt) {
+      const D = T().vikings, homeY = this.mode === 'lane' ? -20 : -36;
+      for (let i = this.vikingWing.length - 1; i >= 0; i--) {
+        const v = this.vikingWing[i];
+        v.t += dt;
+        if (v.state === 'in') {
+          const dx = v.post[0] - v.x, dy = v.post[1] - v.y, dz = D.fly - v.z, dd = Math.hypot(dx, dy, dz);
+          if (dd > 0.2) { const s = Math.min(dd, D.speed * dt) / dd; v.x += dx * s; v.y += dy * s; v.z += dz * s; v.yaw = Math.atan2(dy, dx); }
+          else { v.state = 'patrol'; v.t = 0; }
+        } else if (v.state === 'patrol') {
+          // A lazy figure-of-eight round the post, turning to engage.
+          v.x = v.post[0] + Math.sin(v.t * 0.8 + i) * 1.2; v.y = v.post[1] + Math.sin(v.t * 1.6 + i) * 0.6; v.z = D.fly + 0.2 * Math.sin(v.t * 2 + i);
+          const list = this.enemiesInRange(v.x, v.y, D.range, e => e.def.flying);
+          if (list.length) v.yaw += clamp(angDelta(v.yaw, Math.atan2(list[0].y - v.y, list[0].x - v.x)), -4 * dt, 4 * dt);
+          v.cd -= dt;
+          if (v.cd <= 0 && list.length) {
+            v.cd = D.cd;
+            for (let k = 0; k < D.shots; k++) {
+              const off = k ? 0.4 : -0.4;
+              const p = { kind: 'missile', friendly: true, fx: v.x - Math.sin(v.yaw) * off, fy: v.y + Math.cos(v.yaw) * off, fz: v.z - 0.2, tx: list[0].x, ty: list[0].y, tz: list[0].z,
+                t: -k * 0.1, dur: 0.4, dmg: D.dmg, target: list[0], impact: 'vikingImpact' };
+              this.projectileModel(p, null, 'vikingMissile');
+              this.projectiles.push(p);
+            }
+            this.fx.play('vikingLaunch', v.x, v.y, v.z, v.yaw);
+            BS.audio.play('vikingFire', { vol: 0.45, gap: 0.2 });
+          } else if (v.cd <= 0) v.cd = 0.1;
+          if (v.t > D.hover) { v.state = 'out'; v.t = 0; }
+        } else {
+          v.y -= D.speed * dt; v.z += 2 * dt;
+          v.yaw += clamp(angDelta(v.yaw, -Math.PI / 2), -3 * dt, 3 * dt);
+          if (v.y <= homeY) { v.handle.release(); this.vikingWing.splice(i, 1); continue; }
+        }
+        v.handle.setPos(v.x, v.y, v.z).setYaw(v.yaw);
+      }
+    }
+
+    // Tactical nuke: a ghost paints the densest pack well away from the bunker; the warhead falls, then everything
+    // in the blast takes 300 (half at the edge).
+    launchNuke() {
+      const D = T().nuke;
+      if (this.techCd.nuke > 0) return this.toast('Nuke silo reloading');
+      if (this.minerals < D.cost) return this.toast('Not enough minerals');
+      let best = null, bestN = 0;
+      for (const e of this.enemies) {
+        if (e.hp <= 0 || Math.hypot(e.x, e.y) < D.minDist) continue;
+        const n = this.enemiesInRange(e.x, e.y, D.radius * 0.6).length;
+        if (n > bestN) { bestN = n; best = e; }
+      }
+      if (!best) return this.toast('No target clear of the bunker');
+      this.minerals -= D.cost; this.techCd.nuke = D.cooldown;
+      const n = { x: best.x, y: best.y, t: 0 };
+      n.fall = this.fx.play('nukeFalling', n.x, n.y, 14, 0, 1.4);
+      this.nukes.push(n);
+      BS.audio.play('nukeLaunch', { vol: 0.9 });
+      this.toast('Nuclear launch detected');
+      this.floater(n.x, n.y, 1, 'NUKE', '#ff6a5a');
+      return true;
+    }
+    updateNukes(dt) {
+      const D = T().nuke;
+      for (let i = this.nukes.length - 1; i >= 0; i--) {
+        const n = this.nukes[i];
+        n.t += dt;
+        if (n.t < D.delay) { this.fx.move(n.fall, n.x, n.y, 14 * (1 - n.t / D.delay), 0); continue; }
+        this.nukes.splice(i, 1);
+        this.fx.stop(n.fall);
+        this.fx.play('nuke', n.x, n.y, BS.Terrain.height(n.x, n.y), 0, 1.6);
+        for (const e of this.enemiesInRange(n.x, n.y, D.radius)) this.hurtEnemy(e, dist(n.x, n.y, e.x, e.y) < D.radius * 0.5 ? D.dmg : D.dmg * 0.5);
+        BS.audio.play('explosion', { vol: 1 }); BS.audio.play('tankHit', { vol: 0.9 });
+        this.shake = 1;
+      }
     }
 
     // ---- Abilities ----------------------------------------------------------------------------------
@@ -584,6 +881,7 @@ window.BS = window.BS || {};
       for (const s of this.scvs) if (!s.dead) list.push({ kind: 'scv', obj: s, x: s.x, y: s.y, radius: s.radius, light: true });
       for (const m of this.squad) if (!m.dead) list.push({ kind: 'trooper', obj: m, x: m.x, y: m.y, radius: m.radius, light: m.type !== 'marauder', armored: m.type === 'marauder' });
       for (const st of this.structures) if (!st.dead) list.push({ kind: 'structure', obj: st, x: st.x, y: st.y, radius: st.radius, structure: true, armored: true });
+      for (const m of this.mechs) if (!m.dead) list.push({ kind: 'mech', obj: m, x: m.x, y: m.y, radius: m.radius, armored: true });
       return list;
     }
     valid(tg) { return tg && !tg.obj.dead && (tg.kind !== 'tank' || tg.obj.state === 'ready'); }
@@ -608,6 +906,9 @@ window.BS = window.BS || {};
       } else if (tg.kind === 'trooper') {
         o.hp -= Math.max(0.5, dmg - (o.type === 'marauder' ? 1 : 0)); o.flash = 1;
         if (o.hp <= 0 && !o.dead) this.killTrooper(o);
+      } else if (tg.kind === 'mech') {
+        o.hp -= Math.max(0.5, dmg - o.armor); o.flash = 1;
+        if (o.hp <= 0 && !o.dead) this.killMech(o);
       } else if (tg.kind === 'structure') {
         o.hp -= Math.max(0.5, dmg - o.armor); o.flash = 1;
         if (o.hp <= 0 && !o.dead) this.destroyStructure(o);
@@ -710,6 +1011,7 @@ window.BS = window.BS || {};
       this.score += dt * 0.5;
       this.shake = Math.max(0, this.shake - dt * 2);
       for (const k of ['stimCd', 'strikeCd', 'repairCd', 'yamatoCd']) this.ab[k] = Math.max(0, this.ab[k] - dt);
+      for (const k of ['nuke', 'vikings']) this.techCd[k] = Math.max(0, this.techCd[k] - dt);
       this.waveTimer -= dt;
       if (this.waveTimer <= 0 || (!this.spawnQueue.length && !this.enemies.length && this.wave > 0 && this.waveTimer < this.waveLen - 6)) {
         if (this.wave > 0 && !this.enemies.length) { this.minerals += 10 + 5 * this.wave; this.score += 100 * this.wave; }
@@ -729,6 +1031,10 @@ window.BS = window.BS || {};
       this.updateSquad(dt);
       this.updateStructures(dt);
       this.updateBanshees(dt);
+      this.updateMechs(dt);
+      this.updateBc(dt);
+      this.updateVikings(dt);
+      this.updateNukes(dt);
       this.updateProjectiles(dt);
       this.updateReinforcements(dt);
       if (this.focus && (this.focus.hp <= 0 || this.time > this.focusUntil)) this.focus = null;
@@ -961,6 +1267,7 @@ window.BS = window.BS || {};
       if (!b.dead && b.hp < b.maxHp - 1) jobs.push({ x: 0, y: 0, r: T().bunker.halfSize, cost: 0.25, obj: b, need: frac - 0.2 });
       if (frac > 0.4) for (const t of this.tanks) if (t.state === 'ready' && !t.dead && t.hp < t.maxHp - 1) jobs.push({ x: t.x, y: t.y, r: t.radius, cost: 0.4, obj: t, need: t.hp / t.maxHp });
       if (frac > 0.4) for (const st of this.structures) if (st.state === 'ready' && !st.dead && st.hp < st.maxHp - 1) jobs.push({ x: st.x, y: st.y, r: st.radius, cost: 0.3, obj: st, need: st.hp / st.maxHp });
+      if (frac > 0.4) for (const m of this.mechs) if (m.state === 'ready' && !m.dead && m.hp < m.maxHp - 1) jobs.push({ x: m.x, y: m.y, r: m.radius, cost: 0.4, obj: m, need: m.hp / m.maxHp });
       jobs.sort((a, c) => a.need - c.need);
       this.scvs.forEach((s, i) => {
         const job = jobs.length ? jobs[i % jobs.length] : null;
@@ -1037,7 +1344,7 @@ window.BS = window.BS || {};
         P.splice(i, 1);
         if (p.model) p.model.release();
         if (p.trail) this.fx.stop(p.trail);
-        if (p.impact) this.fx.play(p.impact, p.tx, p.ty, p.tz, Math.atan2(p.fy - p.ty, p.fx - p.tx));
+        if (p.impact) this.fx.play(p.impact, p.tx, p.ty, p.tz, Math.atan2(p.fy - p.ty, p.fx - p.tx), p.impactScale || 1);
         if (p.friendly) {
           if (p.kind === 'shell') {
             const [r1, r2, r3] = T().tank.splash;
@@ -1050,6 +1357,9 @@ window.BS = window.BS || {};
             this.shake = Math.min(1, this.shake + 0.1);
           } else if (p.kind === 'grenade') {
             if (p.target && p.target.hp > 0 && p.dmg) { p.target.slowUntil = this.time + p.def.slow; p.target.anim = ''; this.hurtEnemy(p.target, p.dmg + (p.target.def.armored ? p.def.dmgArmored : 0)); }
+          } else if (p.kind === 'missile') {
+            if (p.splash) { for (const v of this.enemiesInRange(p.tx, p.ty, p.splash, p.pred)) this.hurtEnemy(v, p.dmg); }
+            else if (p.target && p.target.hp > 0) this.hurtEnemy(p.target, p.dmg);
           } else if (p.kind === 'sam') {
             if (p.target && p.target.hp > 0) this.hurtEnemy(p.target, p.dmg);
           } else if (p.kind === 'rocket') {
@@ -1129,6 +1439,7 @@ window.BS = window.BS || {};
         else if (m.handle.tint) { m.handle.setTint(1, 1, 1); m.handle.tint = null; }
       }
       for (const st of this.structures) st.flash = Math.max(0, st.flash - dt * 4);
+      for (const m of this.mechs) m.flash = Math.max(0, m.flash - dt * 4);
     }
 
     focusAt(wx, wy) {

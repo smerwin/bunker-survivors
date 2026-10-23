@@ -71,6 +71,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #outside .slot.boarding { border-style: solid; border-color: var(--green); }
 #outside .slot.stim { border-style: solid; border-color: var(--amber); }
 #outside.dense { gap: 2px; }
+/* Surprise high-tech cards (unlocked by maxing a tech tree). */
+.item.tech { border-color: rgba(189, 107, 255, 0.7); box-shadow: inset 0 0 18px rgba(189, 107, 255, 0.18); }
+.item.tech b { color: #e2c6ff; }
+.item.wait .price { color: var(--muted, #9aa7b5); }
+.item.wait img { filter: grayscale(0.6) brightness(0.7); }
 #outside.dense .slot { width: 12px; height: 12px; border-radius: 3px; }
 #radar.offline { display: none; }
 /* The bunker portrait toggles the view from inside the bunker. */

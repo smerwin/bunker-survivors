@@ -59,6 +59,9 @@ window.BS = window.BS || {};
     buildArmoury() {
       const g = this.g, T = BS.TERRAN;
       const items = [];
+      // Surprise cards first: hidden until their tech tree is maxed out (see Game.checkTech).
+      for (const c of BS.TECH) items.push({ name: c.name, tech: c.id, icon: () => c.icon, cost: () => g.techState(c.id).cost,
+        state: () => g.techState(c.id).state, wait: () => g.techState(c.id).wait, hidden: () => !g.techUnlocked[c.id], buy: () => g.buyTech(c.id) });
       for (const [k, d] of Object.entries(BS.INFANTRY)) items.push({ name: d.name, icon: () => d.icon, cost: () => d.cost,
         state: () => g.troopsFull() ? 'full' : '', buy: () => g.addInfantry(k) });
       items.push({ name: 'SCV', icon: () => 'btn-unit-terran-scv', cost: () => T.scv.cost, state: () => g.scvs.length >= T.scv.max ? 'max' : '', buy: () => g.addScv() });
@@ -72,7 +75,7 @@ window.BS = window.BS || {};
       const box = $('armoury'); box.innerHTML = '';
       this.items = items.map(it => {
         const el = document.createElement('button');
-        el.className = 'item';
+        el.className = 'item' + (it.tech ? ' tech' : '');
         el.innerHTML = '<img alt=""><b></b><span class="price"></span><span class="lvl"></span>';
         el.querySelector('b').textContent = it.name.toUpperCase();
         el.onclick = () => it.buy();
@@ -136,13 +139,16 @@ window.BS = window.BS || {};
       }
       // Armoury.
       for (const x of this.items) {
-        const st = x.it.state(), cost = x.it.cost(), poor = !st && g.minerals < cost;
-        const key = st + '|' + cost + '|' + poor + '|' + x.it.icon() + '|' + (x.it.level ? x.it.level() : '');
+        const hidden = x.it.hidden ? x.it.hidden() : false;
+        if (hidden) { if (x.last !== 'hidden') { x.last = 'hidden'; x.el.style.display = 'none'; } continue; }
+        const st = x.it.state(), cost = x.it.cost(), poor = !st && g.minerals < cost, wait = st === 'wait' ? Math.ceil(x.it.wait()) : 0;
+        const key = st + '|' + cost + '|' + poor + '|' + x.it.icon() + '|' + (x.it.level ? x.it.level() : '') + '|' + wait;
         if (x.last === key) continue;
+        if (x.last === 'hidden' || x.last === '') x.el.style.display = '';
         x.last = key;
-        x.el.className = 'item' + (st ? ' ' + st : '') + (poor ? ' poor' : '');
+        x.el.className = 'item' + (x.it.tech ? ' tech' : '') + (st ? ' ' + st : '') + (poor ? ' poor' : '');
         x.img.src = icon(x.it.icon());
-        x.price.textContent = st === 'full' ? 'FULL' : st === 'max' ? 'MAX' : st === 'locked' ? 'LOCKED' : String(cost);
+        x.price.textContent = st === 'full' ? 'FULL' : st === 'max' ? 'MAX' : st === 'locked' ? 'LOCKED' : st === 'wait' ? wait + 's' : String(cost);
         x.lvl.textContent = x.it.level ? x.it.level() : '';
       }
       // Toasts and the wave banner.

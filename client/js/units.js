@@ -45,6 +45,15 @@ window.BS = window.BS || {};
     missileturretDeath: 'assets/buildings/terran/missileturretdeath/missileturretdeath.m3',
     sensortower: 'assets/buildings/terran/sensortower/sensortower.m3',
     sensortowerDeath: 'assets/buildings/terran/sensortowerdeath/sensortowerdeath.m3',
+    // High-tech reinforcements (unlocked by maxing the tech trees).
+    goliath: U + 'terran/goliath/goliath.m3',
+    goliathDeath: U + 'terran/goliathdeath/goliathdeath.m3',
+    thor: U + 'terran/thor/thor.m3',
+    thorDeath: U + 'terran/thordeath/thordeath_00.m3',
+    odin: U + 'terran/odin/odin.m3',
+    odinDeath: U + 'terran/odindeath/odindeath.m3',
+    battlecruiser: U + 'terran/battlecruiser/battlecruiser.m3',
+    vikingfighter: U + 'terran/vikingfighter/vikingfighter.m3',
     // Effects (particle-only effect models cannot be drawn by the viewer, so only mesh-based ones are listed)
     fxMuzzle: 'assets/effects/terran/marineweaponlaunch/marineweaponlaunch.m3',
   };
@@ -87,6 +96,15 @@ window.BS = window.BS || {};
   roachMissile: [E + 'zerg/roachmissile/roachmissile.m3', null, true], roachImpact: [E + 'zerg/roachmissileimpact/roachmissileimpact.m3'],
   lurkerMissile: [E + 'zerg/lurkermissile/lurkermissile.m3'], zerglingImpact: [E + 'zerg/zerglingweaponimpact/zerglingweaponimpact.m3'],
   ultraliskImpact: [E + 'zerg/ultraliskweaponimpact/ultraliskweaponimpact.m3'],
+  goliathAirMissile: [E + 'terran/goliathairmissile/goliathairmissile.m3', null, true], goliathAirImpact: [E + 'terran/goliathairmissileimpact/goliathairmissileimpact.m3'],
+  thorArmLaunch: [E + 'terran/thorarmmissilelaunch/thorarmmissilelaunch.m3'], thorArmMissile: [E + 'terran/thorarmmissile/thorarmmissile.m3', null, true],
+  thorArmImpact: [E + 'terran/thorarmmissileimpact/thorarmmissileimpact.m3'], thorShoulderLaunch: [E + 'terran/thorshouldermissilelaunch/thorshouldermissilelaunch.m3'],
+  thorShoulderMissile: [E + 'terran/thorshouldermissile/thorshouldermissile.m3', null, true], thorShoulderImpact: [E + 'terran/thorshouldermissileimpact/thorshouldermissileimpact.m3'],
+  odinShoulderImpact: [E + 'terran/odinshouldermissileimpact/odinshouldermissileimpact.m3'],
+  vikingLaunch: [E + 'terran/vikingfightermissilelaunch/vikingfightermissilelaunch.m3'], vikingMissile: [E + 'terran/vikingfightermissile/vikingfightermissile.m3', null, true],
+  vikingImpact: [E + 'terran/vikingfightermissileimpact/vikingfightermissileimpact.m3'],
+  bcMissile: [E + 'terran/battlecruisermissile/battlecruisermissile.m3', null, true], bcMissileImpact: [E + 'terran/battlecruisermissileimpact/battlecruisermissileimpact.m3'],
+  nukeFalling: [E + 'terran/nukefalling/nukefalling.m3', null, true], nuke: [E + 'terran/nuke/nuke.m3'],
   samMissile: [E + 'terran/missileturretmissile/missileturretmissile.m3', null, true], samImpact: [E + 'terran/missileturretmissileimpact/missileturretmissileimpact.m3'],
   };
   // Every death model also carries its blood/acid burst: the plain "Death" one (the numbered sequences are SC2's
@@ -119,6 +137,14 @@ window.BS = window.BS || {};
     bansheeFire: [S + 'terran/banshee/banshee_attacklaunch0.wav'],
     bansheeHit: [S + 'terran/banshee/banshee_attackimpact0.wav'],
     samFire: [0, 1, 2].map(i => S + 'terran/missileturret/missileturret_attacklaunch' + i + '.wav'),
+    bcFire: [0, 1, 2].map(i => S + 'terran/battlecruiser/battlecruiser_attacklaunch' + i + '.wav'),
+    bcMissiles: [0, 1, 2].map(i => S + 'terran/battlecruiser/battlecruiser_missilepodslaunch' + i + '.wav'),
+    bcYamato: [S + 'terran/battlecruiser/battlecruiser_yamatoattacklaunch0.wav'],
+    thorFire: [0, 1, 2].map(i => S + 'terran/thor/thor_attacklaunch' + i + '.wav'),
+    thorHit: [0, 1, 2].map(i => S + 'terran/thor/thor_attackimpact' + i + '.wav'),
+    goliathFire: [0, 1, 2].map(i => S + 'terran/goliath/goliath_groundattacklaunch' + i + '.wav'),
+    vikingFire: [0, 1, 2].map(i => S + 'terran/viking/viking_fighterattacklaunch' + i + '.wav'),
+    nukeLaunch: [S + 'terran/ghost/ghost_nuclearstrikelaunch0.wav'],
     scvRepair: [S + 'terran/scv/scv_repair0.wav'],
     medivacUnload: [S + 'terran/medivac/medivac_unload0.wav'],
     zerglingAttack: [S + 'zerg/zergling/zergling_attacklaunch0.wav'],
@@ -179,6 +205,16 @@ window.BS = window.BS || {};
     // Sensor tower: the radar only works while one stands.
     sensor: { hp: 200, armor: 0, radius: 0.8, cost: 125, build: 3 },
     railsRange: 2,
+    // High-tech reinforcements. g* = anti-ground weapon, a* = anti-air; shots per volley; walkers walk in from the south.
+    goliath: { hp: 150, armor: 1, radius: 0.7, cost: 250, max: 4, speed: 3, gDmg: 12, gShots: 2, gCd: 0.9, gRange: 6, aDmg: 10, aShots: 2, aCd: 1.5, aRange: 8 },
+    thor: { hp: 450, armor: 1, radius: 1.25, cost: 600, max: 2, speed: 2.2, gDmg: 30, gShots: 2, gCd: 1.28, gRange: 7, aDmg: 6, aShots: 4, aCd: 2.1, aRange: 10, aSplash: 0.6 },
+    odin: { hp: 1500, armor: 2, radius: 2.2, cost: 2500, max: 1, speed: 2, gDmg: 60, gShots: 2, gCd: 1.1, gRange: 9, gSplash: 1.2, aDmg: 15, aShots: 6, aCd: 2, aRange: 11, aSplash: 0.8 },
+    // Battlecruiser on station: hovers over the lane out of reach; laser batteries at air and ground, Yamato on its own.
+    bc: { cost: 1500, laserG: 8, laserA: 5, laserCd: 0.16, range: 10, yamato: 240, yamatoCd: 20, missiles: 6, missileCd: 6, missileDmg: 20 },
+    // A ghost calls a tactical nuke on the densest pack well away from the bunker.
+    nuke: { cost: 400, cooldown: 45, dmg: 300, radius: 7, delay: 3, minDist: 9 },
+    // Four viking fighters patrol overhead hunting air for a while.
+    vikings: { cost: 300, cooldown: 35, count: 4, dmg: 10, shots: 2, cd: 1.4, range: 9, hover: 20, fly: 4.2, speed: 9 },
     yamato: { dmg: 240, splash: 120, radius: 3, cost: 300, cooldown: 40 },
     stim: { duration: 11, cooldown: 13 },
     repair: { cost: 75, cooldown: 20, amount: 150 },
@@ -196,6 +232,18 @@ window.BS = window.BS || {};
     medivac: { name: 'Medivac on Station', icons: ['btn-ability-terran-heal'], costs: [200], short: 'Heals troops and SCVs' },
     rails: { name: 'Magnetic Rails', icons: ['btn-upgrade-terran-magrailmunitions'], costs: [300], short: '+2 bunker range' },
   };
+
+  // Surprise cards: each appears in the armoury once its tech tree is maxed out. Trees: 'weapons', 'vehicle',
+  // 'plating' (all levels), 'systems' (Stimpack, Neosteel, Hi-Sec, Magnetic Rails, Medivac on Station), 'all' (every
+  // tree), 'bc' (the battlecruiser is on station).
+  BS.TECH = [
+    { id: 'goliath', name: 'Goliath', icon: 'btn-unit-terran-goliath', unlock: 'vehicle', banner: 'GOLIATHS' },
+    { id: 'nuke', name: 'Tactical Nuke', icon: 'btn-ability-terran-nuclearstrike', unlock: 'weapons', banner: 'TACTICAL NUKE' },
+    { id: 'vikings', name: 'Viking Wing', icon: 'btn-unit-terran-vikingfighter', unlock: 'systems', banner: 'VIKING WING' },
+    { id: 'thor', name: 'Thor', icon: 'btn-unit-terran-thor', unlock: 'plating', banner: 'THOR' },
+    { id: 'bc', name: 'Battlecruiser', icon: 'btn-unit-terran-battlecruiser', unlock: 'all', banner: 'BATTLECRUISER ON STATION' },
+    { id: 'odin', name: 'Odin', icon: 'btn-unit-terran-odin', unlock: 'bc', banner: 'THE ODIN' },
+  ];
 
   // Abilities on the action bar.
   BS.ABILITIES = [

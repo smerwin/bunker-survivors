@@ -30,7 +30,8 @@ for (const u of Object.values(BS.UPGRADES)) { if (u.icon) icons.add(u.icon); (u.
  'btn-unit-zerg-zergling', 'btn-unit-zerg-baneling', 'btn-unit-zerg-roach', 'btn-unit-zerg-hydralisk', 'btn-unit-zerg-mutalisk',
  'btn-unit-zerg-lurker', 'btn-unit-zerg-ultralisk', 'btn-unit-zerg-broodlord',
  'btn-upgrade-terran-buildingarmor', 'btn-upgrade-terran-hisecautotracking', 'btn-unit-terran-battlecruiser',
- 'btn-building-terran-missileturret', 'btn-building-terran-sensortower-silver', 'btn-ability-terran-unloadall'].forEach(i => icons.add(i));
+ 'btn-building-terran-missileturret', 'btn-building-terran-sensortower-silver', 'btn-ability-terran-unloadall',
+ 'btn-unit-terran-goliath', 'btn-unit-terran-thor', 'btn-unit-terran-odin', 'btn-unit-terran-vikingfighter', 'btn-ability-terran-nuclearstrike'].forEach(i => icons.add(i));
 
 function write(rel, buf) {
   const p = path.join(outDir, rel);

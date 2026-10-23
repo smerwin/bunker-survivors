@@ -61,6 +61,8 @@ window.BS = window.BS || {};
     window.game = game; window.renderer = renderer; window.bsHud = hud;
     game.beginOpening();
     game.started = true;
+    // Playtesting: ?tech=max researches everything (unlocking the high-tech cards) and banks minerals.
+    if (new URLSearchParams(location.search).get('tech') === 'max') setTimeout(() => game.grantAllTech(), 1500);
     // Stream the rest in the background: zerg in unlock order, then variants and projectiles, then effects.
     const rest = Object.keys(BS.MODELS).filter(k => !BS.CORE_MODELS.includes(k));
     rest.sort((a, b) => (BS.ZERG[a] ? BS.ZERG[a].unlock : 5) - (BS.ZERG[b] ? BS.ZERG[b].unlock : 5));
