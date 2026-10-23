@@ -32,7 +32,7 @@ Both play the same game: they share unit stats, waves, terrain and rules, and fe
 Download it as a ZIP from GitHub and unzip it, or clone it:
 
 ```bash
-git clone <this repository's URL> bunker-survivors
+git clone https://github.com/smerwin/bunker-survivors.git
 ```
 
 ### 3. Start it
