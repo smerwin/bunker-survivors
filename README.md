@@ -133,6 +133,20 @@ When the bunker is full, new recruits stand behind it, up to 48.
 | Siege tank (300, then +100 each) | Air-dropped; long-range splash against ground. Up to four. A destroyed tank can be replaced. |
 | Upgrades | Infantry Weapons, Vehicle Weapons and Building Armor (many levels), Stimpack, Neosteel Frame (six slots), Hi-Sec Auto Tracking (+1 range), Magnetic Rails (+2 bunker range; needs Hi-Sec), Medivac on Station (heals soldiers and SCVs; needs Stimpack). |
 
+**High-tech reinforcements.** Max out a tech tree and a surprise card appears at the front of the armoury:
+
+| Card | Unlocked by | What it does |
+| --- | --- | --- |
+| Goliath (250, up to 4) | Vehicle Weapons maxed | Walkers at the bunker's shoulders: autocannons against ground, missiles against air. |
+| Tactical Nuke (400) | Infantry Weapons maxed | A ghost calls a nuke on the densest pack clear of the bunker. 45 s to reload. |
+| Viking Wing (300) | every bunker system (Stimpack, Neosteel, Hi-Sec, Magnetic Rails, Medivac) | Four fighters patrol overhead for 20 s, hunting air. |
+| Thor (600, up to 2) | Building Armor maxed | Heavy walkers firing long-range from behind the bunker. |
+| Battlecruiser (1500) | every tree maxed | Stays on station over the lane: laser batteries, missile pods and an automatic Yamato. |
+| Odin (2500) | the battlecruiser on station | Heavy artillery from behind the bunker. |
+
+To try them without the grind, open the game with `?tech=max` (for example `http://localhost:8642/?mode=lane&tech=max`):
+it researches everything and banks minerals.
+
 **Bunker view.** Tap the bunker picture on the squad card (or press `V`) to look out from inside the bunker; drag to
 look all the way round and pinch to zoom. Tap it again for the overhead view.
 

@@ -49,6 +49,27 @@ struct FBSScv
 	bool bDead = false;
 };
 
+// A high-tech walker (goliath, thor, odin): walks in from the south to its post, then fights.
+struct FBSMech
+{
+	const FBSMechDef* Def = nullptr;
+	FVector2D Slot = FVector2D::ZeroVector;
+	float X = 0, Y = 0, Yaw = PI / 2, Aim = PI / 2, Hp = 0, MaxHp = 0, CdG = 0.5f, CdA = 0.5f, Flash = 0;
+	bool bReady = false, bDead = false;
+	FString Anim;
+	ABSModelActor* Actor = nullptr;
+};
+
+// Battlecruiser on station.
+struct FBSBattlecruiser
+{
+	float X = 0, Y = 0, Z = 0, Sx = 0, Sy = 0, Sz = 0, Yaw = PI / 2, T = 0, CdL = 0, CdM = 3, CdY = 5;
+	bool bOnStation = false;
+	ABSModelActor* Actor = nullptr;
+};
+
+struct FBSNuke { float X = 0, Y = 0, T = 0; int32 Fall = 0; };
+
 // A soldier standing outside the bunker (ejected, or recruited while it was full).
 struct FBSTrooper
 {
@@ -72,11 +93,12 @@ struct FBSStructure
 
 struct FBSTarget
 {
-	enum EKind : uint8 { None, Bunker, Tank, Scv, Trooper, Structure } Kind = None;
+	enum EKind : uint8 { None, Bunker, Tank, Scv, Trooper, Structure, Mech } Kind = None;
 	TWeakPtr<FBSTank> TankRef;
 	TWeakPtr<FBSScv> ScvRef;
 	TWeakPtr<FBSTrooper> TrooperRef;
 	TWeakPtr<FBSStructure> StructureRef;
+	TWeakPtr<FBSMech> MechRef;
 	float X = 0, Y = 0, Radius = 0;
 	bool bStructure = false, bArmored = false, bLight = false;
 	bool IsValid(const FBSBunker& B) const
@@ -88,10 +110,11 @@ struct FBSTarget
 		case Scv: { auto P = ScvRef.Pin(); return P && !P->bDead; }
 		case Trooper: { auto P = TrooperRef.Pin(); return P && !P->bDead; }
 		case Structure: { auto P = StructureRef.Pin(); return P && !P->bDead; }
+		case Mech: { auto P = MechRef.Pin(); return P && !P->bDead; }
 		default: return false;
 		}
 	}
-	bool Same(const FBSTarget& O) const { return Kind == O.Kind && TankRef == O.TankRef && ScvRef == O.ScvRef && TrooperRef == O.TrooperRef && StructureRef == O.StructureRef; }
+	bool Same(const FBSTarget& O) const { return Kind == O.Kind && TankRef == O.TankRef && ScvRef == O.ScvRef && TrooperRef == O.TrooperRef && StructureRef == O.StructureRef && MechRef == O.MechRef; }
 };
 
 struct FBSEnemy
@@ -118,7 +141,7 @@ struct FBSBanshee
 	ABSModelActor* Actor = nullptr;
 };
 
-enum class EBSProjKind : uint8 { Shell, Grenade, Rocket, Acid, Spine, Bullet, Glaive, Spines, Brood, Yamato, Sam };
+enum class EBSProjKind : uint8 { Shell, Grenade, Rocket, Acid, Spine, Bullet, Glaive, Spines, Brood, Yamato, Sam, Missile };
 
 struct FBSProjectile
 {
@@ -138,6 +161,8 @@ struct FBSProjectile
 	FString ImpactFx;
 	int32 Bounces = 0;                        // mutalisk glaive: remaining bounces
 	TArray<FBSTarget> AlreadyHit;
+	float Splash = 0, ImpactScale = 1;        // Missile: splash radius (0 = single target), impact effect scale
+	int8 SplashAir = -1;                      // Missile splash hits: -1 anything, 0 ground only, 1 air only
 };
 
 // Reinforcements: a medivac flies in, lands behind the bunker, and the troops walk inside.
@@ -209,6 +234,18 @@ public:
 	int32 SamCount() const { int32 N = 0; for (auto& S : Structures) N += S->bSam; return N; }
 	bool HasSensor() const { for (auto& S : Structures) if (!S->bSam) return true; return false; }
 	bool SensorUp() const { for (auto& S : Structures) if (!S->bSam && S->bReady) return true; return false; }
+	// High-tech reinforcements: surprise armoury cards unlocked by maxing out the tech trees (see BSDefs::Tech).
+	TSet<FString> TechUnlocked;
+	float NukeCd = 0, VikingCd = 0;
+	TArray<TSharedPtr<FBSMech>> Mechs;
+	TSharedPtr<FBSBattlecruiser> Bc;
+	bool TreeMaxed(const FString& Tree) const;
+	void CheckTech();
+	int32 TechCount(const FString& Kind) const { int32 N = 0; for (auto& M : Mechs) N += M->Def->Key == Kind; return N; }
+	// For the armoury: Cost, and whether it can be bought now; Tag is "MAX" or the seconds left when it cannot.
+	bool TechReady(const FString& Id, int32& OutCost, FString& OutTag) const;
+	bool BuyTech(const FString& Id);
+	void GrantAllTech();                  // playtesting (-BSTechMax): research every upgrade
 	void Toast(const FString& Msg);
 
 	// State read by the HUD and camera.
@@ -280,6 +317,19 @@ private:
 	void UpdateProjectiles(float Dt);
 	void UpdateReinforcements(float Dt);
 	void UpdateSquad(float Dt);
+	bool AddMech(const FString& Kind);
+	void UpdateMechs(float Dt);
+	void MechFire(FBSMech& M, const TSharedPtr<FBSEnemy>& Target, bool bAir, float Dmg);
+	void KillMech(const TSharedPtr<FBSMech>& M);
+	bool CallBattlecruiser();
+	void UpdateBc(float Dt);
+	bool CallVikings();
+	void UpdateVikings(float Dt);
+	bool LaunchNuke();
+	void UpdateNukes(float Dt);
+	TArray<FBSBanshee> VikingWing;
+	TArray<FBSNuke> Nukes;
+	TMap<FString, TArray<FVector2D>> MechSlots;
 	void BuildTerrain();                      // the lane chokepoint's ground mesh (BSTerrain heights)
 	bool StepGround(float& X, float& Y, float Mx, float My) const;
 	void UpdateStructures(float Dt);

@@ -184,6 +184,20 @@ void ABSGameMode::Tick(float Dt)
 				if (!Cv->IsBunkerView()) { Cv->SetBunkerView(true); Game->bBunkerView = true; if (Game->Bunker.Actor) Game->Bunker.Actor->SetActorHiddenInGame(true); }
 				Cv->PanPixels(-Dt * 140.f, 0, 960);
 			}
+	// -BSTechMax: research every upgrade a few seconds in (unlocking the high-tech cards); with -BSTestTech, buy them all.
+	static bool bTechGranted = false;
+	if (Game && Game->bStarted && !bTechGranted && Game->Time > 3.f && FParse::Param(FCommandLine::Get(), TEXT("BSTechMax")))
+	{
+		bTechGranted = true;
+		Game->GrantAllTech();
+		if (FParse::Param(FCommandLine::Get(), TEXT("BSTestTech")))
+		{
+			Game->Minerals += 20000;
+			for (int32 i = 0; i < 4; i++) Game->BuyTech(TEXT("goliath"));
+			Game->BuyTech(TEXT("thor")); Game->BuyTech(TEXT("thor")); Game->BuyTech(TEXT("bc")); Game->BuyTech(TEXT("odin")); Game->BuyTech(TEXT("vikings"));
+		}
+		UE_LOG(LogTemp, Display, TEXT("BSTechMax unlocked=%d mechs=%d bc=%d"), Game->TechUnlocked.Num(), Game->Mechs.Num(), Game->Bc.IsValid() ? 1 : 0);
+	}
 	// -BSTestSquad: exercise the outside squad, turrets, sensor tower, magnetic rails, lethal stim and the hovering air strike.
 	static int32 SquadStep = 0;
 	if (Game && Game->bStarted && FParse::Param(FCommandLine::Get(), TEXT("BSTestSquad")))

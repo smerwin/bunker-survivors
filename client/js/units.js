@@ -207,8 +207,8 @@ window.BS = window.BS || {};
     railsRange: 2,
     // High-tech reinforcements. g* = anti-ground weapon, a* = anti-air; shots per volley; walkers walk in from the south.
     goliath: { hp: 150, armor: 1, radius: 0.7, cost: 250, max: 4, speed: 3, gDmg: 12, gShots: 2, gCd: 0.9, gRange: 6, aDmg: 10, aShots: 2, aCd: 1.5, aRange: 8 },
-    thor: { hp: 450, armor: 1, radius: 1.25, cost: 600, max: 2, speed: 2.2, gDmg: 30, gShots: 2, gCd: 1.28, gRange: 7, aDmg: 6, aShots: 4, aCd: 2.1, aRange: 10, aSplash: 0.6 },
-    odin: { hp: 1500, armor: 2, radius: 2.2, cost: 2500, max: 1, speed: 2, gDmg: 60, gShots: 2, gCd: 1.1, gRange: 9, gSplash: 1.2, aDmg: 15, aShots: 6, aCd: 2, aRange: 11, aSplash: 0.8 },
+    thor: { hp: 450, armor: 1, radius: 1.25, cost: 600, max: 2, speed: 2.2, gDmg: 30, gShots: 2, gCd: 1.28, gRange: 10, aDmg: 6, aShots: 4, aCd: 2.1, aRange: 12, aSplash: 0.6 },
+    odin: { hp: 1500, armor: 2, radius: 2.2, cost: 2500, max: 1, speed: 2, gDmg: 60, gShots: 2, gCd: 1.1, gRange: 16, gSplash: 1.2, aDmg: 15, aShots: 6, aCd: 2, aRange: 16, aSplash: 0.8 },
     // Battlecruiser on station: hovers over the lane out of reach; laser batteries at air and ground, Yamato on its own.
     bc: { cost: 1500, laserG: 8, laserA: 5, laserCd: 0.16, range: 10, yamato: 240, yamatoCd: 20, missiles: 6, missileCd: 6, missileDmg: 20 },
     // A ghost calls a tactical nuke on the densest pack well away from the bunker.

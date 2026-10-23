@@ -122,6 +122,7 @@ gitignored and must never be shared or uploaded.
 - Playtests: `powershell -File Unreal\BunkerSurvivors\Scripts\playtest.ps1 -Name lane1 -Mode lane` runs a match and
   writes screenshots to `Saved/Shots/<name>`. Useful extra flags (via `-Extra "..."`): `-BSTestSquad` (squad,
   turrets, sensor tower, air strike), `-BSBunkerView` (turns slowly in the bunker view), `-BSTestAbilities`,
-  `-BSSpawn=ultralisk@0@8` (place zerg).
+  `-BSSpawn=ultralisk@0@8` (place zerg), `-BSTechMax` (research everything, unlocking the high-tech cards;
+  add `-BSTestTech` to buy them all).
 - After adding a model or effect to `client/js/units.js`, rerun the export, then the import with
   `BS_ONLY=<model keys>` set to import just those models.

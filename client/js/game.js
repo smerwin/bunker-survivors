@@ -49,8 +49,9 @@ window.BS = window.BS || {};
         this.samSlots = [[-5.6, 1.2], [5.6, 1.2], [-3.6, -4.6]];
         this.sensorSlot = [3.6, -4.6];
         this.strikePosts = [[-3.4, 3.6], [3.4, 3.6], [-1.4, 6.4], [1.4, 6.4]];   // in view: covering both ledges and the stem
-        // High-tech walkers hold the ground in front of the bunker: goliaths at its shoulders, thors and the odin up the stem.
-        this.mechSlots = { goliath: [[-3.9, 1.6], [3.9, 1.6], [-2.3, 2.3], [2.3, 2.3]], thor: [[-1.6, 3.6], [1.6, 3.6]], odin: [[0, 5.6]] };
+        // High-tech walkers: goliaths at the bunker's shoulders; the thors and the odin are too big to stand in the lane
+        // without walling off the view, so they fire long-range from behind the bunker.
+        this.mechSlots = { goliath: [[-3.9, 1.6], [3.9, 1.6], [-2.3, 2.3], [2.3, 2.3]], thor: [[-5.0, -5.8], [5.0, -5.8]], odin: [[0, -10.5]] };
       } else {
         this.tankSlots = [[-3.0, -2.6], [3.0, -2.6], [-3.0, 2.6], [3.0, 2.6]];
         this.scvIdle = [[-2.6, -2.6], [2.6, 2.6], [-2.6, 2.6], [2.6, -2.6]];
@@ -573,8 +574,9 @@ window.BS = window.BS || {};
       if (this.minerals < D.cost) return this.toast('Not enough minerals');
       this.minerals -= D.cost;
       const lane = this.mode === 'lane';
-      this.bc = { x: 0, y: lane ? -24 : -34, z: 10, sx: 0, sy: lane ? 4.5 : 0, sz: 6.5, yaw: Math.PI / 2, state: 'in', cdL: 0, cdM: 3, cdY: 5, t: 0 };
-      this.bc.handle = this.r.spawn('battlecruiser', this.bc.x, this.bc.y, this.bc.z, this.bc.yaw).setTeam(1);
+      // On station over the right-hand plateau (not the middle of the lane, which it would hide), a little scaled down.
+      this.bc = { x: lane ? 5.5 : 0, y: lane ? -24 : -34, z: 10, sx: lane ? 5.5 : 0, sy: lane ? 3 : 0, sz: lane ? 7 : 8, yaw: Math.PI / 2, state: 'in', cdL: 0, cdM: 3, cdY: 5, t: 0 };
+      this.bc.handle = this.r.spawn('battlecruiser', this.bc.x, this.bc.y, this.bc.z, this.bc.yaw).setTeam(1).setScale(0.75);
       this.bc.handle.play(/^walk|^fly|^stand/i, true);
       this.toast('Battlecruiser inbound');
       this.checkTech();

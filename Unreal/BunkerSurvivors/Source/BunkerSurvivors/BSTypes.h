@@ -32,6 +32,20 @@ struct FBSInfantryDef
 	float StimHp = 10;
 };
 
+// High-tech walkers (goliath, thor, odin). G* = anti-ground weapon, A* = anti-air; Shots per volley.
+struct FBSMechDef
+{
+	FString Key, Name;
+	float Hp = 150, Armor = 1, Radius = 0.7f, Speed = 3;
+	int32 Cost = 250, Max = 4;
+	float GDmg = 12, GCd = 0.9f, GRange = 6, GSplash = 0; int32 GShots = 2;
+	float ADmg = 10, ACd = 1.5f, ARange = 8, ASplash = 0; int32 AShots = 2;
+};
+
+// A surprise armoury card: appears once its tech tree is maxed out. Trees: weapons, vehicle, plating (all levels),
+// systems (Stimpack, Neosteel, Hi-Sec, Magnetic Rails, Medivac on Station), all (every tree), bc (battlecruiser up).
+struct FBSTechCard { FString Id, Name, Icon, Unlock, Banner; };
+
 struct FBSUpgradeDef
 {
 	FString Key, Name, Desc;
@@ -47,6 +61,10 @@ namespace BSDefs
 	const FBSInfantryDef* FindInfantry(const FString& Key);
 	const TArray<FBSUpgradeDef>& Upgrades();
 	const FBSUpgradeDef* FindUpgrade(const FString& Key);
+	const TArray<FBSMechDef>& Mechs();
+	const FBSMechDef* FindMech(const FString& Key);
+	const TArray<FBSTechCard>& Tech();
+	const FBSTechCard* FindTech(const FString& Id);
 
 	// Terran constants.
 	constexpr float BunkerHp = 400, BunkerArmor = 1, BunkerRangeBonus = 1, BunkerHalfSize = 1.5f;
@@ -65,6 +83,16 @@ namespace BSDefs
 	constexpr float SamHp = 250, SamDmg = 12, SamCd = 0.86f, SamRange = 7, SamRadius = 1.0f, SensorHp = 200, SensorRadius = 0.8f, BuildTime = 3;
 	constexpr int32 SamShots = 2, SamCost = 100, SamMax = 3, SensorCost = 125;
 	constexpr float RailsRange = 2.f;
+	// Battlecruiser on station: hovers over the lane out of reach; laser batteries at air and ground, missile pods,
+	// and a Yamato cannon on its own.
+	constexpr float BcLaserG = 8, BcLaserA = 5, BcLaserCd = 0.16f, BcRange = 10, BcYamato = 240, BcYamatoCd = 20, BcMissileCd = 6, BcMissileDmg = 20;
+	constexpr int32 BcCost = 1500, BcMissiles = 6;
+	// A ghost calls a tactical nuke on the densest pack well away from the bunker.
+	constexpr float NukeDmg = 300, NukeRadius = 7, NukeDelay = 3, NukeMinDist = 9, NukeCooldown = 45;
+	constexpr int32 NukeCost = 400;
+	// Four viking fighters patrol overhead hunting air.
+	constexpr float VikingDmg = 10, VikingCd = 1.4f, VikingRange = 9, VikingHover = 20, VikingFly = 4.2f, VikingSpeed = 9, VikingCooldown = 35;
+	constexpr int32 VikingShots = 2, VikingCost = 300, VikingCount = 4;
 	// Yamato strike: a Battlecruiser fires on the densest cluster.
 	constexpr float YamatoDmg = 240, YamatoSplash = 120, YamatoRadius = 3.f, YamatoCooldown = 40;
 	constexpr int32 YamatoCost = 300;

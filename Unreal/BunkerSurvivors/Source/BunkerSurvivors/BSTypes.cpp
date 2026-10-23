@@ -134,8 +134,49 @@ namespace
 	}
 }
 
+namespace
+{
+	TArray<FBSMechDef> MakeMechs()
+	{
+		TArray<FBSMechDef> Out;
+		auto Add = [&Out](const TCHAR* Key, const TCHAR* Name) -> FBSMechDef& { FBSMechDef& D = Out.AddDefaulted_GetRef(); D.Key = Key; D.Name = Name; return D; };
+		{
+			FBSMechDef& D = Add(TEXT("goliath"), TEXT("Goliath"));
+			D.Hp = 150; D.Armor = 1; D.Radius = 0.7f; D.Cost = 250; D.Max = 4; D.Speed = 3;
+			D.GDmg = 12; D.GShots = 2; D.GCd = 0.9f; D.GRange = 6; D.ADmg = 10; D.AShots = 2; D.ACd = 1.5f; D.ARange = 8;
+		}
+		{
+			FBSMechDef& D = Add(TEXT("thor"), TEXT("Thor"));
+			D.Hp = 450; D.Armor = 1; D.Radius = 1.25f; D.Cost = 600; D.Max = 2; D.Speed = 2.2f;
+			D.GDmg = 30; D.GShots = 2; D.GCd = 1.28f; D.GRange = 10; D.ADmg = 6; D.AShots = 4; D.ACd = 2.1f; D.ARange = 12; D.ASplash = 0.6f;
+		}
+		{
+			FBSMechDef& D = Add(TEXT("odin"), TEXT("Odin"));
+			D.Hp = 1500; D.Armor = 2; D.Radius = 2.2f; D.Cost = 2500; D.Max = 1; D.Speed = 2;
+			D.GDmg = 60; D.GShots = 2; D.GCd = 1.1f; D.GRange = 16; D.GSplash = 1.2f; D.ADmg = 15; D.AShots = 6; D.ACd = 2; D.ARange = 16; D.ASplash = 0.8f;
+		}
+		return Out;
+	}
+
+	TArray<FBSTechCard> MakeTech()
+	{
+		return {
+			{ TEXT("goliath"), TEXT("Goliath"), TEXT("btn-unit-terran-goliath"), TEXT("vehicle"), TEXT("GOLIATHS") },
+			{ TEXT("nuke"), TEXT("Tactical Nuke"), TEXT("btn-ability-terran-nuclearstrike"), TEXT("weapons"), TEXT("TACTICAL NUKE") },
+			{ TEXT("vikings"), TEXT("Viking Wing"), TEXT("btn-unit-terran-vikingfighter"), TEXT("systems"), TEXT("VIKING WING") },
+			{ TEXT("thor"), TEXT("Thor"), TEXT("btn-unit-terran-thor"), TEXT("plating"), TEXT("THOR") },
+			{ TEXT("bc"), TEXT("Battlecruiser"), TEXT("btn-unit-terran-battlecruiser"), TEXT("all"), TEXT("BATTLECRUISER ON STATION") },
+			{ TEXT("odin"), TEXT("Odin"), TEXT("btn-unit-terran-odin"), TEXT("bc"), TEXT("THE ODIN") },
+		};
+	}
+}
+
 namespace BSDefs
 {
+	const TArray<FBSMechDef>& Mechs() { static TArray<FBSMechDef> V = MakeMechs(); return V; }
+	const FBSMechDef* FindMech(const FString& Key) { return Mechs().FindByPredicate([&](const FBSMechDef& D) { return D.Key == Key; }); }
+	const TArray<FBSTechCard>& Tech() { static TArray<FBSTechCard> V = MakeTech(); return V; }
+	const FBSTechCard* FindTech(const FString& Id) { return Tech().FindByPredicate([&](const FBSTechCard& C) { return C.Id == Id; }); }
 	const TArray<FBSZergDef>& Zerg() { static TArray<FBSZergDef> V = MakeZerg(); return V; }
 	const FBSZergDef* FindZerg(const FString& Key) { return Zerg().FindByPredicate([&](const FBSZergDef& D) { return D.Key == Key; }); }
 	const TArray<FBSInfantryDef>& Infantry() { static TArray<FBSInfantryDef> V = MakeInfantry(); return V; }

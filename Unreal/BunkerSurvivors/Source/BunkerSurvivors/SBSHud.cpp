@@ -672,6 +672,9 @@ struct FBSArmItem
 	TFunction<int32(ABSGame*)> Level;       // -1 = no level pips
 	int32 MaxLevel = 0;
 	TFunction<void(ABSGame*)> Buy;
+	TFunction<bool(ABSGame*)> Hidden;       // surprise cards stay hidden until unlocked
+	bool bTech = false;
+	bool IsHidden(ABSGame* G) const { return Hidden && Hidden(G); }
 };
 
 static const TArray<FBSArmItem>& ArmItems()
@@ -679,6 +682,23 @@ static const TArray<FBSArmItem>& ArmItems()
 	static TArray<FBSArmItem> Items = []()
 	{
 		TArray<FBSArmItem> Out;
+		// Surprise cards first: hidden until their tech tree is maxed out (see ABSGame::CheckTech).
+		for (const FBSTechCard& Tc : BSDefs::Tech())
+		{
+			const FString Id = Tc.Id, Ic = Tc.Icon;
+			FBSArmItem I; I.Id = Id; I.Name = Tc.Name; I.bTech = true;
+			I.Short = Id == TEXT("goliath") ? TEXT("Walker: autocannons, AA missiles") : Id == TEXT("nuke") ? TEXT("Ghost-called nuke on the densest pack")
+				: Id == TEXT("vikings") ? TEXT("Fighter wing hunts air") : Id == TEXT("thor") ? TEXT("Heavy walker holds the lane")
+				: Id == TEXT("bc") ? TEXT("Hovers overhead: lasers, missiles, Yamato") : TEXT("The Odin");
+			I.Icon = [Ic](ABSGame*) { return Ic; };
+			I.Cost = [Id](ABSGame* G) { int32 C = 0; FString T; G->TechReady(Id, C, T); return C; };
+			I.Avail = [Id](ABSGame* G) { int32 C = 0; FString T; return G->TechReady(Id, C, T); };
+			I.Tag = [Id](ABSGame* G) { int32 C = 0; FString T; G->TechReady(Id, C, T); return T; };
+			I.Level = [](ABSGame*) { return -1; };
+			I.Hidden = [Id](ABSGame* G) { return !G->TechUnlocked.Contains(Id); };
+			I.Buy = [Id](ABSGame* G) { G->BuyTech(Id); };
+			Out.Add(I);
+		}
 		for (const FBSInfantryDef& Inf : BSDefs::Infantry())
 		{
 			const FString Key = Inf.Key;
@@ -749,7 +769,7 @@ TSharedRef<SWidget> SBSHud::MakeArmouryCard(int32 Index)
 		const bool bPoor = bAvail && Gm->Minerals < Cost;
 		const FVector2f S((float)Size.X, (float)Size.Y), P(0, bPress ? 1.f : 0.f);
 		D::RFill(Out, L, G, P, S, 12, bHover ? C::GlassHi : C::Glass);
-		D::RLine(Out, L + 1, G, P, S, 12, bHover ? C::A(C::Cyan, 0.7f) : C::Hair);
+		D::RLine(Out, L + 1, G, P, S, 12, bHover ? C::A(C::Cyan, 0.7f) : I.bTech ? C::A(C::Violet, 0.8f) : C::Hair, I.bTech ? 1.5f : 1.f);
 		const float Is = 44;
 		const FVector2f Ip(P.X + (S.X - Is) * 0.5f, P.Y + 8);
 		D::Image(Out, L + 2, G, Gm->GetAssets()->IconBrush(I.Icon(Gm)), Ip, FVector2f(Is, Is), (bAvail && !bPoor) ? FLinearColor::White : FLinearColor(0.3f, 0.32f, 0.36f));
@@ -820,7 +840,8 @@ TSharedRef<SWidget> SBSHud::MakeArmouryRow(int32 Index)
 TSharedRef<SWidget> SBSHud::BuildArmouryStrip()
 {
 	TSharedRef<SScrollBox> Strip = SNew(SScrollBox).Orientation(Orient_Horizontal).ScrollBarVisibility(EVisibility::Collapsed).ConsumeMouseWheel(EConsumeMouseWheel::Always);
-	for (int32 i = 0; i < ArmItems().Num(); i++) Strip->AddSlot().Padding(i == 0 ? 10 : 4, 0, 4, 0)[ MakeArmouryCard(i) ];
+	auto Shown = [this](int32 i) { ABSGame* Gm = Game(); return (Gm && ArmItems()[i].IsHidden(Gm)) ? EVisibility::Collapsed : EVisibility::Visible; };
+	for (int32 i = 0; i < ArmItems().Num(); i++) Strip->AddSlot().Padding(4, 0, 4, 0)[ SNew(SBox).Visibility_Lambda([Shown, i]() { return Shown(i); })[ MakeArmouryCard(i) ] ];
 
 	auto Header = PaintedButton(TAttribute<FVector2D>::CreateLambda([this]() { return FVector2D(LocalSize.X, 26); }),
 		[this](const FGeometry& G, FSlateWindowElementList& Out, int32 L, bool bHover, bool)
@@ -843,7 +864,8 @@ TSharedRef<SWidget> SBSHud::BuildArmouryStrip()
 TSharedRef<SWidget> SBSHud::BuildArmouryColumn()
 {
 	TSharedRef<SScrollBox> List = SNew(SScrollBox).Orientation(Orient_Vertical).ScrollBarVisibility(EVisibility::Collapsed);
-	for (int32 i = 0; i < ArmItems().Num(); i++) List->AddSlot()[ MakeArmouryRow(i) ];
+	for (int32 i = 0; i < ArmItems().Num(); i++)
+		List->AddSlot()[ SNew(SBox).Visibility_Lambda([this, i]() { ABSGame* Gm = Game(); return (Gm && ArmItems()[i].IsHidden(Gm)) ? EVisibility::Collapsed : EVisibility::Visible; })[ MakeArmouryRow(i) ] ];
 	return SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(2, 0, 0, 6)
 		[

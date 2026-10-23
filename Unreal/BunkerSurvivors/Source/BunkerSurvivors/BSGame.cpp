@@ -204,6 +204,11 @@ void ABSGame::Init(UBSAssets* InAssets, EBSMode InMode)
 		SamSlots = { FVector2D(-5.6f, 1.2f), FVector2D(5.6f, 1.2f), FVector2D(-3.6f, -4.6f) };
 		SensorSlot = FVector2D(3.6f, -4.6f);
 		StrikePosts = { FVector2D(-3.4f, 3.6f), FVector2D(3.4f, 3.6f), FVector2D(-1.4f, 6.4f), FVector2D(1.4f, 6.4f) };   // in view: covering both ledges and the lane
+		// High-tech walkers: goliaths at the bunker's shoulders; the thors and the odin are too big to stand in the lane
+		// without walling off the view, so they fire long-range from behind the bunker.
+		MechSlots.Add(TEXT("goliath"), { FVector2D(-3.9f, 1.6f), FVector2D(3.9f, 1.6f), FVector2D(-2.3f, 2.3f), FVector2D(2.3f, 2.3f) });
+		MechSlots.Add(TEXT("thor"), { FVector2D(-5.0f, -5.8f), FVector2D(5.0f, -5.8f) });
+		MechSlots.Add(TEXT("odin"), { FVector2D(0, -10.5f) });
 	}
 	else
 	{
@@ -212,11 +217,15 @@ void ABSGame::Init(UBSAssets* InAssets, EBSMode InMode)
 		TankMax = BSDefs::TankMaxArena;
 		SamSlots = { FVector2D(0, 4), FVector2D(-4, 0), FVector2D(4, 0) };
 		SensorSlot = FVector2D(-4.2f, -4.2f);
+		MechSlots.Add(TEXT("goliath"), { FVector2D(0, 2.7f), FVector2D(2.7f, 0), FVector2D(-2.7f, 0), FVector2D(0, -2.7f) });
+		MechSlots.Add(TEXT("thor"), { FVector2D(-4.6f, -3.6f), FVector2D(4.6f, 3.6f) });
+		MechSlots.Add(TEXT("odin"), { FVector2D(-5.2f, 3.2f) });
 		for (const float A : { 45.f, 135.f, 225.f, 315.f }) StrikePosts.Add(FVector2D(FMath::Cos(FMath::DegreesToRadians(A)) * 7, FMath::Sin(FMath::DegreesToRadians(A)) * 7));
 	}
 	// Ranks of eight behind the bunker (the side away from the lane), stepping round the tanks, SCVs, turrets and sensor
 	// tower, as deep as it takes to fit the whole squad.
 	TArray<FVector2D> Taken = TankSlots; Taken.Append(ScvIdle); Taken.Append(SamSlots); Taken.Add(SensorSlot);
+	for (const auto& Pair : MechSlots) Taken.Append(Pair.Value);
 	for (float Y = -2.3f; SquadSpots.Num() < BSDefs::SquadMax; Y -= 0.7f)
 		for (int32 i = 0; i < 8 && SquadSpots.Num() < BSDefs::SquadMax; i++)
 		{
@@ -1149,8 +1158,388 @@ bool ABSGame::BuyUpgrade(const FString& Id)
 	else if (Id == TEXT("hisec")) { Up.bHiSec = true; Toast(TEXT("Hi-Sec Auto Tracking online")); }
 	else if (Id == TEXT("medivac")) { Up.bMedivac = true; Toast(TEXT("Medivac on station")); }
 	else if (Id == TEXT("rails")) { Up.bRails = true; Toast(TEXT("Magnetic rails fitted: +2 bunker range")); }
+	CheckTech();
 	return true;
 }
+
+// ---- High-tech reinforcements --------------------------------------------------------------------------------
+bool ABSGame::TreeMaxed(const FString& Tree) const
+{
+	auto Maxed = [this](const TCHAR* Id) { const FBSUpgradeDef* D = BSDefs::FindUpgrade(Id); return D && UpgradeLevel(Id) >= D->Costs.Num(); };
+	if (Tree == TEXT("systems")) return Maxed(TEXT("stim")) && Maxed(TEXT("neosteel")) && Maxed(TEXT("hisec")) && Maxed(TEXT("rails")) && Maxed(TEXT("medivac"));
+	if (Tree == TEXT("all")) return TreeMaxed(TEXT("weapons")) && TreeMaxed(TEXT("vehicle")) && TreeMaxed(TEXT("plating")) && TreeMaxed(TEXT("systems"));
+	if (Tree == TEXT("bc")) return Bc.IsValid();
+	return Maxed(*Tree);
+}
+
+// Surprise cards: each appears once its tech tree is maxed out.
+void ABSGame::CheckTech()
+{
+	for (const FBSTechCard& C : BSDefs::Tech())
+	{
+		if (TechUnlocked.Contains(C.Id) || !TreeMaxed(C.Unlock)) continue;
+		TechUnlocked.Add(C.Id);
+		WaveBanner = TEXT("NEW TECH  //  ") + C.Banner; WaveBannerT = Time; WaveSerial++;
+		Toast(C.Name + TEXT(" unlocked"));
+	}
+}
+
+bool ABSGame::TechReady(const FString& Id, int32& OutCost, FString& OutTag) const
+{
+	if (Id == TEXT("nuke")) { OutCost = BSDefs::NukeCost; OutTag = FString::Printf(TEXT("%ds"), FMath::CeilToInt(NukeCd)); return NukeCd <= 0; }
+	if (Id == TEXT("vikings")) { OutCost = BSDefs::VikingCost; OutTag = FString::Printf(TEXT("%ds"), FMath::CeilToInt(VikingCd)); return VikingCd <= 0; }
+	OutTag = TEXT("MAX");
+	if (Id == TEXT("bc")) { OutCost = BSDefs::BcCost; return !Bc.IsValid(); }
+	const FBSMechDef* D = BSDefs::FindMech(Id);
+	OutCost = D ? D->Cost : 0;
+	return D && TechCount(Id) < D->Max;
+}
+
+bool ABSGame::BuyTech(const FString& Id)
+{
+	if (!TechUnlocked.Contains(Id)) return false;
+	if (Id == TEXT("nuke")) return LaunchNuke();
+	if (Id == TEXT("vikings")) return CallVikings();
+	if (Id == TEXT("bc")) return CallBattlecruiser();
+	return AddMech(Id);
+}
+
+void ABSGame::GrantAllTech()
+{
+	Minerals += 1e6f;
+	if (!Tanks.Num()) DropTank();
+	for (const FBSUpgradeDef& U : BSDefs::Upgrades())
+		for (int32 Guard = 0; Guard < 20 && UpgradeAvailable(U.Key); Guard++) BuyUpgrade(U.Key);
+	Minerals += 20000;
+}
+
+// Goliaths, thors and the odin walk in from the south to their posts, then fight with separate anti-ground and
+// anti-air weapons.
+bool ABSGame::AddMech(const FString& Kind)
+{
+	const FBSMechDef* D = BSDefs::FindMech(Kind);
+	const TArray<FVector2D>* Slots = MechSlots.Find(Kind);
+	if (!D || !Slots) return false;
+	if (TechCount(Kind) >= D->Max) { Toast(TEXT("No room for more")); return false; }
+	const FVector2D* Slot = Slots->FindByPredicate([this](const FVector2D& Sl) { return !Mechs.ContainsByPredicate([&Sl](const TSharedPtr<FBSMech>& M) { return M->Slot == Sl; }); });
+	if (!Slot) { Toast(TEXT("No room for more")); return false; }
+	if (Minerals < D->Cost) { Toast(TEXT("Not enough minerals")); return false; }
+	Minerals -= D->Cost;
+	TSharedPtr<FBSMech> M = MakeShared<FBSMech>();
+	M->Def = D; M->Slot = *Slot; M->X = Slot->X; M->Y = Mode == EBSMode::Lane ? -9.f : -14.f; M->Hp = M->MaxHp = D->Hp;
+	M->Actor = AcquireModel(Kind);
+	if (M->Actor) { M->Actor->SetTeamColor(TerranColor); M->Actor->SetSim(M->X, M->Y, BSTerrain::Height(M->X, M->Y), M->Yaw); }
+	Mechs.Add(M);
+	Toast(D->Name + TEXT(" inbound"));
+	return true;
+}
+
+void ABSGame::UpdateMechs(float Dt)
+{
+	TArray<TSharedPtr<FBSMech>> Snapshot = Mechs;
+	for (const TSharedPtr<FBSMech>& MP : Snapshot)
+	{
+		FBSMech& M = *MP;
+		if (M.bDead) continue;
+		const FBSMechDef* D = M.Def;
+		if (!M.bReady)
+		{
+			const FVector2D Wp = RoundBunker(M.X, M.Y, M.Slot.X, M.Slot.Y);
+			const float Far = FVector2D::Distance(M.Slot, FVector2D(M.X, M.Y)), Dx = Wp.X - M.X, Dy = Wp.Y - M.Y, Dd = FMath::Max(0.001f, FMath::Sqrt(Dx * Dx + Dy * Dy));
+			if (Far > 0.15f)
+			{
+				const float Sp = FMath::Min(Dd, D->Speed * Dt);
+				StepGround(M.X, M.Y, Dx / Dd * Sp, Dy / Dd * Sp);
+				M.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(M.Yaw, FMath::Atan2(Dy, Dx)), -3 * Dt, 3 * Dt);
+				if (M.Actor && M.Anim != TEXT("walk")) { M.Anim = TEXT("walk"); M.Actor->Play(WalkNames, true); }
+			}
+			else { M.bReady = true; M.Anim = TEXT("stand"); if (M.Actor) M.Actor->Play(StandNames, true); Toast(D->Name + TEXT(" in position")); }
+			if (M.Actor) M.Actor->SetSim(M.X, M.Y, BSTerrain::Height(M.X, M.Y), M.Yaw);
+			continue;
+		}
+		const float Bonus = Up.Vehicle * 2.f;
+		M.CdG -= Dt; M.CdA -= Dt;
+		for (const bool bAir : { false, true })
+		{
+			if ((bAir ? M.CdA : M.CdG) > 0) continue;
+			const float Range = bAir ? D->ARange : D->GRange;
+			auto Pred = [bAir](const FBSEnemy& E) { return E.Def->bFlying == bAir; };
+			TSharedPtr<FBSEnemy> Target;
+			if (TSharedPtr<FBSEnemy> F = Focus.Pin())
+				if (F->Alive() && Pred(*F) && FMath::Sqrt(Dist2(M.X, M.Y, F->X, F->Y)) - F->Radius <= Range) Target = F;
+			if (!Target) { TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(M.X, M.Y, Range, Pred); if (L.Num()) Target = L[0]; }
+			if (!Target) { (bAir ? M.CdA : M.CdG) = 0.15f; continue; }
+			(bAir ? M.CdA : M.CdG) = bAir ? D->ACd : D->GCd;
+			M.Aim = FMath::Atan2(Target->Y - M.Y, Target->X - M.X);
+			MechFire(M, Target, bAir, (bAir ? D->ADmg : D->GDmg) + Bonus);
+		}
+		M.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(M.Yaw, M.Aim), -4 * Dt, 4 * Dt);
+		if (M.Actor) M.Actor->SetSim(M.X, M.Y, BSTerrain::Height(M.X, M.Y), M.Yaw);
+	}
+}
+
+// One volley: goliath autocannons and hellfire missiles, thor arm cannons and javelin barrage, odin heavy cannons
+// and missile salvos.
+void ABSGame::MechFire(FBSMech& M, const TSharedPtr<FBSEnemy>& Target, bool bAir, float Dmg)
+{
+	const FBSMechDef* D = M.Def;
+	const FString& Kind = D->Key;
+	const float H = BSTerrain::Height(M.X, M.Y), Ang = M.Aim, Cs = FMath::Cos(Ang), Sn = FMath::Sin(Ang);
+	const float Mz = H + (Kind == TEXT("odin") ? 4.f : Kind == TEXT("thor") ? 3.f : 1.4f);
+	const int32 Shots = bAir ? D->AShots : D->GShots;
+	const FVector Hit(Target->X, Target->Y, Target->Z + Target->Def->Height * 0.5f);
+	if (M.Actor) M.Actor->Play(TEXT("attack"), false);
+	if (Kind == TEXT("goliath") && !bAir)
+	{
+		for (int32 k = 0; k < Shots; k++)
+		{
+			const float Off = k ? 0.35f : -0.35f;
+			const FVector Muzzle(M.X + Cs * 0.7f - Sn * Off, M.Y + Sn * 0.7f + Cs * Off, Mz);
+			PlayFx(TEXT("marineLaunch"), Muzzle, Ang, 2.f, k * 0.12f);
+			PlayFx(TEXT("marineImpact"), Hit + FVector(Rnd(-0.2f, 0.2f), Rnd(-0.2f, 0.2f), 0), Ang + PI, 1.6f, k * 0.12f + 0.04f);
+			HurtEnemy(Target, Dmg);
+		}
+		PlaySound(TEXT("goliathFire"), 0.45f, 0.15f);
+		return;
+	}
+	const TCHAR* Trail = nullptr; const TCHAR* Impact = nullptr; const TCHAR* Launch = nullptr;
+	float Splash = 0, Scale = 1, Arc = bAir ? 0.8f : 0.4f;
+	if (Kind == TEXT("goliath")) { Trail = TEXT("goliathAirMissile"); Impact = TEXT("goliathAirImpact"); }
+	else if (Kind == TEXT("thor"))
+	{
+		if (bAir) { Trail = TEXT("thorShoulderMissile"); Impact = TEXT("thorShoulderImpact"); Launch = TEXT("thorShoulderLaunch"); Splash = D->ASplash; }
+		else { Trail = TEXT("thorArmMissile"); Impact = TEXT("thorArmImpact"); Launch = TEXT("thorArmLaunch"); }
+	}
+	else
+	{
+		if (bAir) { Trail = TEXT("thorShoulderMissile"); Impact = TEXT("odinShoulderImpact"); Launch = TEXT("thorShoulderLaunch"); Splash = D->ASplash; }
+		else { Impact = TEXT("tankImpact"); Launch = TEXT("tankLaunch"); Splash = D->GSplash; Scale = 1.6f; Arc = 3; }
+	}
+	for (int32 k = 0; k < Shots; k++)
+	{
+		const float Off = (k - (Shots - 1) * 0.5f) * 0.45f;
+		const FVector Muzzle(M.X + Cs * 0.6f - Sn * Off, M.Y + Sn * 0.6f + Cs * Off, Mz);
+		if (Launch) PlayFx(Launch, Muzzle, Ang, Scale, k * 0.08f);
+		FBSProjectile P; P.Kind = EBSProjKind::Missile; P.bFriendly = true; P.From = Muzzle; P.To = Hit; P.T = -k * 0.08f;
+		P.Dur = 0.45f + (Arc > 2 ? 0.15f : 0.f); P.Arc = Arc; P.Dmg = Dmg; P.TargetEnemy = Target; P.ImpactFx = Impact; P.ImpactScale = Scale;
+		P.Splash = Splash; P.SplashAir = bAir ? 1 : 0;
+		if (Trail) AddProjectileModel(P, nullptr, Trail);
+		if (!P.Trail) AddProjectileVisual(P, FLinearColor(1, 0.75f, 0.4f), 0.2f);
+		Projectiles.Add(P);
+	}
+	PlaySound(Kind == TEXT("goliath") ? TEXT("goliathFire") : TEXT("thorFire"), Kind == TEXT("odin") ? 0.8f : 0.5f, 0.15f);
+	if (Kind == TEXT("odin") && !bAir) Shake = FMath::Min(1.f, Shake + 0.2f);
+}
+
+void ABSGame::KillMech(const TSharedPtr<FBSMech>& M)
+{
+	M->bDead = true;
+	ReleaseModel(M->Actor); M->Actor = nullptr;
+	Mechs.Remove(M);
+	Corpse(M->Def->Key + TEXT("Death"), M->X, M->Y, BSTerrain::Height(M->X, M->Y), M->Yaw, 6, 1, true);
+	PlaySound(BSSounds::Explosion, 0.8f);
+	Toast(M->Def->Name + TEXT(" destroyed"));
+}
+
+// Battlecruiser on station: flies in over the lane and stays, out of reach.
+bool ABSGame::CallBattlecruiser()
+{
+	if (Bc.IsValid()) { Toast(TEXT("The battlecruiser is already on station")); return false; }
+	if (Minerals < BSDefs::BcCost) { Toast(TEXT("Not enough minerals")); return false; }
+	Minerals -= BSDefs::BcCost;
+	const bool bLane = Mode == EBSMode::Lane;
+	Bc = MakeShared<FBSBattlecruiser>();
+	// On station over the right-hand plateau (not the middle of the lane, which it would hide), a little scaled down.
+	Bc->X = Bc->Sx = bLane ? 5.5f : 0.f; Bc->Y = bLane ? -24.f : -34.f; Bc->Z = 10; Bc->Sy = bLane ? 3.f : 0.f; Bc->Sz = bLane ? 7.f : 8.f;
+	Bc->Actor = AcquireModel(TEXT("battlecruiser"));
+	if (Bc->Actor) { Bc->Actor->SetScale(0.75f); Bc->Actor->SetTeamColor(TerranColor); Bc->Actor->SetSim(Bc->X, Bc->Y, Bc->Z, Bc->Yaw); Bc->Actor->Play(WalkNames, true); }
+	Toast(TEXT("Battlecruiser inbound"));
+	CheckTech();
+	return true;
+}
+
+void ABSGame::UpdateBc(float Dt)
+{
+	if (!Bc.IsValid()) return;
+	FBSBattlecruiser& B = *Bc;
+	B.T += Dt;
+	if (!B.bOnStation)
+	{
+		const FVector D = FVector(B.Sx, B.Sy, B.Sz) - FVector(B.X, B.Y, B.Z);
+		if (D.Size() > 0.2f) { const FVector Mv = D.GetSafeNormal() * FMath::Min(D.Size(), 7.f * Dt); B.X += Mv.X; B.Y += Mv.Y; B.Z += Mv.Z; }
+		else { B.bOnStation = true; if (B.Actor) B.Actor->Play(StandNames, true); Toast(TEXT("Battlecruiser on station")); }
+		if (B.Actor) B.Actor->SetSim(B.X, B.Y, B.Z, B.Yaw);
+		return;
+	}
+	if (B.Actor) B.Actor->SetSim(B.X, B.Y, B.Sz + 0.25f * FMath::Sin(B.T * 0.7f), B.Yaw);
+	auto Any = [](const FBSEnemy& E) { return E.Alive(); };
+	// Laser batteries: rapid fire spread over whatever is in reach, air and ground alike.
+	B.CdL -= Dt;
+	if (B.CdL <= 0)
+	{
+		B.CdL = BSDefs::BcLaserCd;
+		TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(B.X, B.Y, BSDefs::BcRange, Any);
+		if (L.Num())
+		{
+			const TSharedPtr<FBSEnemy> E = L[FMath::RandRange(0, FMath::Min(6, L.Num()) - 1)];
+			HurtEnemy(E, E->Def->bFlying ? BSDefs::BcLaserA : BSDefs::BcLaserG);
+			const FVector From(B.X + Rnd(-1.5f, 1.5f), B.Y + Rnd(-2.5f, 2.5f), B.Sz - 0.6f);
+			const float Ang = FMath::Atan2(E->Y - From.Y, E->X - From.X);
+			PlayFx(TEXT("marineLaunch"), From, Ang, 2.2f);
+			PlayFx(TEXT("marineImpact"), FVector(E->X + Rnd(-0.2f, 0.2f), E->Y + Rnd(-0.2f, 0.2f), E->Z + E->Def->Height * 0.5f), Ang + PI, 1.8f);
+			PlaySound(TEXT("bcFire"), 0.4f, 0.22f);
+		}
+	}
+	// Missile pods every few seconds at a spread of targets.
+	B.CdM -= Dt;
+	if (B.CdM <= 0)
+	{
+		TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(B.X, B.Y, BSDefs::BcRange + 2, Any);
+		B.CdM = L.Num() ? BSDefs::BcMissileCd : 0.5f;
+		for (int32 k = 0; k < FMath::Min(BSDefs::BcMissiles, L.Num()); k++)
+		{
+			FBSProjectile P; P.Kind = EBSProjKind::Missile; P.bFriendly = true;
+			P.From = FVector(B.X + Rnd(-2, 2), B.Y + Rnd(-1, 1), B.Sz - 0.4f); P.To = FVector(L[k]->X, L[k]->Y, L[k]->Z + 0.4f);
+			P.T = -k * 0.1f; P.Dur = 0.6f; P.Arc = 1.2f; P.Dmg = BSDefs::BcMissileDmg; P.TargetEnemy = L[k]; P.ImpactFx = TEXT("bcMissileImpact");
+			AddProjectileModel(P, nullptr, TEXT("bcMissile"));
+			if (!P.Trail) AddProjectileVisual(P, FLinearColor(1, 0.7f, 0.35f), 0.2f);
+			Projectiles.Add(P);
+		}
+		if (L.Num()) PlaySound(TEXT("bcMissiles"), 0.5f);
+	}
+	// Yamato cannon on its own, at the toughest zerg in reach.
+	B.CdY -= Dt;
+	if (B.CdY <= 0)
+	{
+		TSharedPtr<FBSEnemy> Pick;
+		for (const TSharedPtr<FBSEnemy>& E : EnemiesInRange(B.X, B.Y, BSDefs::BcRange + 4, Any)) if (!Pick || E->Hp > Pick->Hp) Pick = E;
+		B.CdY = Pick ? BSDefs::BcYamatoCd : 1.f;
+		if (Pick)
+		{
+			FBSProjectile P; P.Kind = EBSProjKind::Yamato; P.bFriendly = true;
+			P.From = FVector(B.X, B.Y + 2.5f, B.Sz); P.To = FVector(Pick->X, Pick->Y, 0.6f); P.Dur = 0.5f; P.TargetEnemy = Pick; P.Dmg = BSDefs::BcYamato;
+			AddProjectileModel(P, TEXT("projYamato"), TEXT("yamatoMissile"));
+			Projectiles.Add(P);
+			PlaySound(TEXT("bcYamato"), 0.8f);
+			Floater(B.X, B.Y, B.Sz + 1, TEXT("YAMATO"), FLinearColor(0.74f, 0.42f, 1));
+		}
+	}
+}
+
+// Viking wing: four fighters take up posts high over the lane and shoot down air for a while.
+bool ABSGame::CallVikings()
+{
+	if (VikingCd > 0) { Toast(TEXT("Vikings are rearming")); return false; }
+	if (Minerals < BSDefs::VikingCost) { Toast(TEXT("Not enough minerals")); return false; }
+	Minerals -= BSDefs::VikingCost; VikingCd = BSDefs::VikingCooldown;
+	for (int32 i = 0; i < BSDefs::VikingCount; i++)
+	{
+		const FVector2D Post = StrikePosts[i % StrikePosts.Num()];
+		FBSBanshee V; V.Post = FVector2D(Post.X * 1.2f, Post.Y + 2); V.X = Post.X * 0.6f; V.Y = (Mode == EBSMode::Lane ? -18.f : -34.f) - i * 1.2f;
+		V.Z = BSDefs::VikingFly + 1.5f; V.Yaw = PI / 2; V.Cd = 0.4f + i * 0.2f;
+		V.Actor = AcquireModel(TEXT("vikingfighter"));
+		if (V.Actor) { V.Actor->SetTeamColor(TerranColor); V.Actor->Play(WalkNames, true); }
+		VikingWing.Add(V);
+	}
+	Toast(TEXT("Viking wing inbound"));
+	return true;
+}
+
+void ABSGame::UpdateVikings(float Dt)
+{
+	const float HomeY = Mode == EBSMode::Lane ? -20.f : -36.f;
+	for (int32 i = VikingWing.Num() - 1; i >= 0; i--)
+	{
+		FBSBanshee& V = VikingWing[i];
+		V.T += Dt;
+		if (V.State == FBSBanshee::In)
+		{
+			const FVector D = FVector(V.Post.X, V.Post.Y, BSDefs::VikingFly) - FVector(V.X, V.Y, V.Z);
+			if (D.Size() > 0.2f) { const FVector Mv = D.GetSafeNormal() * FMath::Min(D.Size(), BSDefs::VikingSpeed * Dt); V.X += Mv.X; V.Y += Mv.Y; V.Z += Mv.Z; V.Yaw = FMath::Atan2(D.Y, D.X); }
+			else { V.State = FBSBanshee::Hover; V.T = 0; }
+		}
+		else if (V.State == FBSBanshee::Hover)
+		{
+			// A lazy figure-of-eight round the post, turning to engage.
+			V.X = V.Post.X + FMath::Sin(V.T * 0.8f + i) * 1.2f; V.Y = V.Post.Y + FMath::Sin(V.T * 1.6f + i) * 0.6f; V.Z = BSDefs::VikingFly + 0.2f * FMath::Sin(V.T * 2 + i);
+			TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(V.X, V.Y, BSDefs::VikingRange, [](const FBSEnemy& E) { return E.Def->bFlying; });
+			if (L.Num()) V.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(V.Yaw, FMath::Atan2(L[0]->Y - V.Y, L[0]->X - V.X)), -4 * Dt, 4 * Dt);
+			V.Cd -= Dt;
+			if (V.Cd <= 0 && L.Num())
+			{
+				V.Cd = BSDefs::VikingCd;
+				for (int32 k = 0; k < BSDefs::VikingShots; k++)
+				{
+					const float Off = k ? 0.4f : -0.4f;
+					FBSProjectile P; P.Kind = EBSProjKind::Missile; P.bFriendly = true;
+					P.From = FVector(V.X - FMath::Sin(V.Yaw) * Off, V.Y + FMath::Cos(V.Yaw) * Off, V.Z - 0.2f); P.To = FVector(L[0]->X, L[0]->Y, L[0]->Z);
+					P.T = -k * 0.1f; P.Dur = 0.4f; P.Dmg = BSDefs::VikingDmg; P.TargetEnemy = L[0]; P.ImpactFx = TEXT("vikingImpact");
+					AddProjectileModel(P, nullptr, TEXT("vikingMissile"));
+					if (!P.Trail) AddProjectileVisual(P, FLinearColor(1, 0.8f, 0.5f), 0.15f);
+					Projectiles.Add(P);
+				}
+				PlayFx(TEXT("vikingLaunch"), FVector(V.X, V.Y, V.Z), V.Yaw);
+				PlaySound(TEXT("vikingFire"), 0.45f, 0.2f);
+			}
+			else if (V.Cd <= 0) V.Cd = 0.1f;
+			if (V.T > BSDefs::VikingHover) { V.State = FBSBanshee::Out; V.T = 0; }
+		}
+		else
+		{
+			V.Y -= BSDefs::VikingSpeed * Dt; V.Z += 2 * Dt;
+			V.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(V.Yaw, -PI / 2), -3 * Dt, 3 * Dt);
+			if (V.Y <= HomeY) { ReleaseModel(V.Actor); VikingWing.RemoveAt(i); continue; }
+		}
+		if (V.Actor) V.Actor->SetSim(V.X, V.Y, V.Z, V.Yaw);
+	}
+}
+
+// Tactical nuke: a ghost paints the densest pack well away from the bunker; the warhead falls, then everything in
+// the blast takes 300 (half at the edge).
+bool ABSGame::LaunchNuke()
+{
+	if (NukeCd > 0) { Toast(TEXT("Nuke silo reloading")); return false; }
+	if (Minerals < BSDefs::NukeCost) { Toast(TEXT("Not enough minerals")); return false; }
+	auto Any = [](const FBSEnemy& E) { return E.Alive(); };
+	TSharedPtr<FBSEnemy> Pick; int32 PickN = 0;
+	for (const TSharedPtr<FBSEnemy>& E : Enemies)
+	{
+		if (!E->Alive() || FMath::Sqrt(E->X * E->X + E->Y * E->Y) < BSDefs::NukeMinDist) continue;
+		const int32 N = EnemiesInRange(E->X, E->Y, BSDefs::NukeRadius * 0.6f, Any).Num();
+		if (N > PickN) { PickN = N; Pick = E; }
+	}
+	if (!Pick) { Toast(TEXT("No target clear of the bunker")); return false; }
+	Minerals -= BSDefs::NukeCost; NukeCd = BSDefs::NukeCooldown;
+	FBSNuke N; N.X = Pick->X; N.Y = Pick->Y;
+	N.Fall = PlayFx(TEXT("nukeFalling"), FVector(N.X, N.Y, 14), 0, 1.4f);
+	Nukes.Add(N);
+	PlaySound(TEXT("nukeLaunch"), 0.9f);
+	Toast(TEXT("Nuclear launch detected"));
+	Floater(N.X, N.Y, 1, TEXT("NUKE"), FLinearColor(1, 0.42f, 0.35f));
+	return true;
+}
+
+void ABSGame::UpdateNukes(float Dt)
+{
+	auto Any = [](const FBSEnemy& E) { return E.Alive(); };
+	for (int32 i = Nukes.Num() - 1; i >= 0; i--)
+	{
+		FBSNuke& N = Nukes[i];
+		N.T += Dt;
+		if (N.T < BSDefs::NukeDelay) { MoveFx(N.Fall, FVector(N.X, N.Y, 14 * (1 - N.T / BSDefs::NukeDelay)), 0); continue; }
+		const FBSNuke Done = N;
+		Nukes.RemoveAt(i);
+		StopFx(Done.Fall);
+		if (!PlayFx(TEXT("nuke"), FVector(Done.X, Done.Y, BSTerrain::Height(Done.X, Done.Y)), 0, 1.6f))
+			EmitExplosion(FVector(Done.X, Done.Y, 0.5f), BSDefs::NukeRadius, FLinearColor(1, 0.85f, 0.5f), FLinearColor(0.9f, 0.3f, 0.05f), 60);
+		for (const TSharedPtr<FBSEnemy>& E : EnemiesInRange(Done.X, Done.Y, BSDefs::NukeRadius, Any))
+			HurtEnemy(E, FMath::Sqrt(Dist2(Done.X, Done.Y, E->X, E->Y)) < BSDefs::NukeRadius * 0.5f ? BSDefs::NukeDmg : BSDefs::NukeDmg * 0.5f);
+		PlaySound(BSSounds::Explosion, 1.f); PlaySound(BSSounds::TankHit, 0.9f);
+		Shake = 1;
+	}
+}
+
+
 
 bool ABSGame::FocusAt(float SimX, float SimY)
 {
@@ -1336,6 +1725,12 @@ void ABSGame::BuildTargets()
 		FBSTarget T; T.Kind = FBSTarget::Trooper; T.TrooperRef = M; T.X = M->X; T.Y = M->Y; T.Radius = 0.375f; T.bLight = !bMarauder; T.bArmored = bMarauder;
 		Targets.Add(T);
 	}
+	for (const TSharedPtr<FBSMech>& M : Mechs)
+	{
+		if (M->bDead) continue;
+		FBSTarget T; T.Kind = FBSTarget::Mech; T.MechRef = M; T.X = M->X; T.Y = M->Y; T.Radius = M->Def->Radius; T.bArmored = true;
+		Targets.Add(T);
+	}
 	for (const TSharedPtr<FBSStructure>& S : Structures)
 	{
 		if (S->bDead) continue;
@@ -1394,6 +1789,12 @@ void ABSGame::DamageDefender(const FBSTarget& T, float Dmg)
 			KillTrooper(M->Def, M->X, M->Y, M->Yaw, M->Actor, false); M->Actor = nullptr;
 			Squad.Remove(M);
 		}
+	}
+	else if (T.Kind == FBSTarget::Mech)
+	{
+		TSharedPtr<FBSMech> M = T.MechRef.Pin();
+		M->Hp -= FMath::Max(0.5f, Dmg - M->Def->Armor); M->Flash = 1;
+		if (M->Hp <= 0 && !M->bDead) KillMech(M);
 	}
 	else if (T.Kind == FBSTarget::Structure)
 	{
@@ -1507,6 +1908,7 @@ void ABSGame::Step(float Dt)
 	Score += Dt * 0.5f;
 	Shake = FMath::Max(0.f, Shake - Dt * 2);
 	Ab.StimCd = FMath::Max(0.f, Ab.StimCd - Dt); Ab.StrikeCd = FMath::Max(0.f, Ab.StrikeCd - Dt); Ab.RepairCd = FMath::Max(0.f, Ab.RepairCd - Dt); Ab.YamatoCd = FMath::Max(0.f, Ab.YamatoCd - Dt);
+	NukeCd = FMath::Max(0.f, NukeCd - Dt); VikingCd = FMath::Max(0.f, VikingCd - Dt);
 
 	WaveTimer -= Dt;
 	if (WaveTimer <= 0 || (SpawnQueue.Num() == 0 && Enemies.Num() == 0 && Wave > 0 && WaveTimer < WaveLen - 6))
@@ -1530,6 +1932,10 @@ void ABSGame::Step(float Dt)
 	UpdateSquad(Dt);
 	UpdateStructures(Dt);
 	UpdateBanshees(Dt);
+	UpdateMechs(Dt);
+	UpdateBc(Dt);
+	UpdateVikings(Dt);
+	UpdateNukes(Dt);
 	UpdateProjectiles(Dt);
 	UpdateReinforcements(Dt);
 	if (bAutoPlay) { AutoT -= Dt; if (AutoT <= 0) { AutoT = 0.8f; AutoPlay(); } }
@@ -1895,6 +2301,9 @@ void ABSGame::UpdateScvs(float Dt)
 	if (BunkerFrac > 0.4f)
 		for (const TSharedPtr<FBSStructure>& St : Structures)
 			if (St->bReady && !St->bDead && St->Hp < St->MaxHp - 1) Jobs.Add({ St->X, St->Y, St->Radius, 0.3f, &St->Hp, St->MaxHp, St->Hp / St->MaxHp });
+	if (BunkerFrac > 0.4f)
+		for (const TSharedPtr<FBSMech>& M : Mechs)
+			if (M->bReady && !M->bDead && M->Hp < M->MaxHp - 1) Jobs.Add({ M->X, M->Y, M->Def->Radius, 0.4f, &M->Hp, M->MaxHp, M->Hp / M->MaxHp });
 	Jobs.Sort([](const FJob& A, const FJob& B) { return A.Need < B.Need; });
 	int32 ScvIndex = 0;
 	for (const TSharedPtr<FBSScv>& SP : Scvs)
@@ -2020,7 +2429,7 @@ void ABSGame::UpdateProjectiles(float Dt)
 		if (Done.Model) ReleaseModel(Done.Model);
 		if (Done.Trail) StopFx(Done.Trail);
 		const float ImpactYaw = FMath::Atan2(Done.From.Y - Done.To.Y, Done.From.X - Done.To.X);
-		const bool bImpactFx = !Done.ImpactFx.IsEmpty() && PlayFx(Done.ImpactFx, Done.To, ImpactYaw) != 0;
+		const bool bImpactFx = !Done.ImpactFx.IsEmpty() && PlayFx(Done.ImpactFx, Done.To, ImpactYaw, Done.ImpactScale) != 0;
 		if (Done.bFriendly)
 		{
 			if (Done.Kind == EBSProjKind::Shell)
@@ -2058,6 +2467,17 @@ void ABSGame::UpdateProjectiles(float Dt)
 					AddFx(EBSFxKind::Flash, Done.To, Done.To, 0.15f, 0.5f, FLinearColor(1, 0.8f, 0.5f), 10);
 				}
 				PlaySound(BSSounds::BansheeHit, 0.35f, 0.1f);
+			}
+			else if (Done.Kind == EBSProjKind::Missile)
+			{
+				if (Done.Splash > 0)
+				{
+					const int8 Air = Done.SplashAir;
+					for (const TSharedPtr<FBSEnemy>& V : EnemiesInRange(Done.To.X, Done.To.Y, Done.Splash, [Air](const FBSEnemy& E) { return Air < 0 || E.Def->bFlying == (Air == 1); }))
+						HurtEnemy(V, Done.Dmg);
+				}
+				else if (TSharedPtr<FBSEnemy> TE = Done.TargetEnemy.Pin()) HurtEnemy(TE, Done.Dmg);
+				if (!bImpactFx) AddFx(EBSFxKind::Flash, Done.To, Done.To, 0.15f, 0.5f * Done.ImpactScale, FLinearColor(1, 0.75f, 0.4f), 10);
 			}
 			else if (Done.Kind == EBSProjKind::Sam)
 			{
@@ -2162,6 +2582,7 @@ void ABSGame::UpdateVisuals(float Dt)
 		M->Actor->SetHitFlash(M->Flash * 0.3f + (bStimmed ? 0.06f : 0.f));
 		if (bStimmed || M->bStimLook) { M->Actor->SetTeamColor(bStimmed ? StimColor : TerranColor); M->bStimLook = bStimmed; }
 	}
+	for (auto& Mc : Mechs) { Mc->Flash = FMath::Max(0.f, Mc->Flash - Dt * 4); if (Mc->Actor) Mc->Actor->SetHitFlash(Mc->Flash * 0.3f); }
 	for (auto& St : Structures) { St->Flash = FMath::Max(0.f, St->Flash - Dt * 4); if (St->Actor) St->Actor->SetHitFlash(St->Flash * 0.3f); }
 
 	UpdateParticles(Dt);
