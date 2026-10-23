@@ -35,7 +35,9 @@ void ABSGameMode::StartPlay()
 	FParse::Value(Cmd, TEXT("BSShotDir="), ShotDir);
 	FParse::Value(Cmd, TEXT("BSShotEvery="), ShotEvery);
 	FParse::Value(Cmd, TEXT("BSQuitAfter="), QuitAfter);
-	NextShot = ShotEvery > 0 ? ShotEvery : 0;
+	float ShotStart = 0;
+	FParse::Value(Cmd, TEXT("BSShotStart="), ShotStart);     // e.g. -BSShotStart=200 -BSShotEvery=0.1 for animation frames
+	NextShot = ShotEvery > 0 ? FMath::Max(ShotStart, ShotEvery) : 0;
 
 	FString Auto = UGameplayStatics::ParseOption(OptionsString, TEXT("mode"));
 	if (Auto.IsEmpty()) FParse::Value(Cmd, TEXT("BSAutoStart="), Auto);
@@ -154,7 +156,7 @@ void ABSGameMode::Tick(float Dt)
 	if (ShotEvery > 0 && !ShotDir.IsEmpty() && Elapsed >= NextShot)
 	{
 		NextShot += ShotEvery;
-		const FString File = FPaths::Combine(ShotDir, FString::Printf(TEXT("shot_%02d.png"), ShotIndex++));
+		const FString File = FPaths::Combine(ShotDir, FString::Printf(TEXT("shot_%03d.png"), ShotIndex++));
 		FScreenshotRequest::RequestScreenshot(File, true, false);
 		FString CamInfo = TEXT("no pawn");
 		if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
@@ -195,6 +197,7 @@ void ABSGameMode::Tick(float Dt)
 			Game->Minerals += 20000;
 			for (int32 i = 0; i < 4; i++) Game->BuyTech(TEXT("goliath"));
 			Game->BuyTech(TEXT("thor")); Game->BuyTech(TEXT("thor")); Game->BuyTech(TEXT("bc")); Game->BuyTech(TEXT("odin")); Game->BuyTech(TEXT("vikings"));
+			Game->Minerals = FMath::Min(Game->Minerals, 1850);   // a normal-looking bank again (GrantAllTech banks a million)
 			Game->BuildStructure(false);              // sensor tower, for the radar
 		}
 		UE_LOG(LogTemp, Display, TEXT("BSTechMax unlocked=%d mechs=%d bc=%d"), Game->TechUnlocked.Num(), Game->Mechs.Num(), Game->Bc.IsValid() ? 1 : 0);

@@ -5,9 +5,9 @@ firebats, marauders, SCVs, air-dropped siege tanks, missile turrets, banshee str
 Plays in portrait on a phone (lane defence) and in a desktop browser (a harder 360-degree arena too).
 
 The game renders **real StarCraft II models, animations, effects, icons, sounds and fonts**, read on demand from
-**your own StarCraft II install** by a small companion server. The repository contains no Blizzard assets and
-nothing is extracted to disk for the browser version: you need your own copy of StarCraft II (the free Starter
-Edition is enough).
+**your own StarCraft II install** by a small companion server. The repository contains no Blizzard asset files
+(the GIFs below are recordings of the game running) and nothing is extracted to disk for the browser version: you
+need your own copy of StarCraft II (the free Starter Edition is enough).
 
 There are two versions:
 
@@ -18,6 +18,13 @@ There are two versions:
 | Where | `client/` + `server/` | `Unreal/` |
 
 Both play the same game: they share unit stats, waves, terrain and rules, and features land in both.
+
+| | Browser version | Unreal Engine version |
+| --- | --- | --- |
+| **Lane defence** (phone, portrait): squad behind the bunker, siege tanks, stim and the banshee strike | <img src="docs/media/browser-lane.gif" width="260" alt="Browser: lane defence"> | <img src="docs/media/unreal-lane.gif" width="260" alt="Unreal: lane defence"> |
+| **High-tech reinforcements**: goliaths, thors, the Odin, a battlecruiser on station and a tactical nuke | <img src="docs/media/browser-hightech.gif" width="260" alt="Browser: high-tech reinforcements"> | <img src="docs/media/unreal-hightech.gif" width="260" alt="Unreal: high-tech reinforcements"> |
+| **Bunker view**: 360 degrees from inside the bunker (tap the bunker on the squad card) | <img src="docs/media/browser-bunker-view.gif" width="260" alt="Browser: bunker view"> | <img src="docs/media/unreal-bunker-view.gif" width="260" alt="Unreal: bunker view"> |
+| **Arena** (desktop, landscape): zerg from every side | <img src="docs/media/browser-arena.gif" width="360" alt="Browser: arena"> | <img src="docs/media/unreal-arena.gif" width="360" alt="Unreal: arena"> |
 
 ## Quick start: browser version
 
