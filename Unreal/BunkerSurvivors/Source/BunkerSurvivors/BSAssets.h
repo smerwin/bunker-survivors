@@ -42,6 +42,7 @@ public:
 	UPROPERTY() TObjectPtr<UMaterialInterface> FxMaterial;
 	UPROPERTY() TObjectPtr<UMaterialInterface> FxRingMaterial;
 	UPROPERTY() TObjectPtr<UMaterialInterface> GroundMaterial;
+	UPROPERTY() TObjectPtr<UMaterialInterface> TerrainMaterial;   // lane chokepoint ground and cliffs
 	UPROPERTY() TObjectPtr<UMaterialInterface> ParticleMaterial;
 	UPROPERTY() TObjectPtr<UMaterialInterface> SpriteAddMaterial;
 	UPROPERTY() TObjectPtr<UMaterialInterface> SpriteBlendMaterial;

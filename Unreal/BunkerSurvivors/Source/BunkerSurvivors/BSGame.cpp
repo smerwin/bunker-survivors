@@ -5,6 +5,8 @@
 #include "HAL/FileManager.h"
 #include "BSAssets.h"
 #include "BSModelActor.h"
+#include "BSTerrain.h"
+#include "ProceduralMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
@@ -102,6 +104,12 @@ void ABSGame::BuildWorld(EBSMode InMode)
 		UMaterialInstanceDynamic* Mid = Ground->CreateAndSetMaterialInstanceDynamicFromMaterial(0, Assets->GroundMaterial);
 		Mid->SetScalarParameterValue(TEXT("Tiling"), Size / 7.f);
 	}
+	BSTerrain::SetMode(InMode == EBSMode::Lane && Assets->TerrainMaterial);
+	if (BSTerrain::Active())
+	{
+		BuildTerrain();
+		Ground->SetVisibility(false);           // the terrain mesh is the ground; past its edges the fog takes over
+	}
 
 	Sprites = MakeComp(NewObject<UInstancedStaticMeshComponent>(this, TEXT("Sprites")));
 	Sprites->SetStaticMesh(Assets->Plane);
@@ -116,6 +124,70 @@ void ABSGame::BuildWorld(EBSMode InMode)
 	MuzzleLight->SetAttenuationRadius(900);
 	MuzzleLight->SetIntensity(0);
 	MuzzleLight->SetCastShadows(false);
+}
+
+// The lane chokepoint: a height grid over BSTerrain with cliff faces textured by projection (see M_Terrain).
+void ABSGame::BuildTerrain()
+{
+	Terrain = NewObject<UProceduralMeshComponent>(this, TEXT("Terrain"));
+	Terrain->SetupAttachment(GetRootComponent());
+	Terrain->RegisterComponent();
+	Terrain->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Terrain->SetWorldLocation(FVector::ZeroVector);
+	const float X0 = -30, Y0 = -20, Step = 0.3f;
+	const int32 Nx = 201, Ny = 267;                        // to x = 30, y = 59.8
+	TArray<float> Hg; Hg.SetNumUninitialized(Nx * Ny);
+	for (int32 j = 0; j < Ny; j++) for (int32 i = 0; i < Nx; i++) Hg[j * Nx + i] = BSTerrain::Height(X0 + i * Step, Y0 + j * Step);
+	TArray<FVector> V, N; TArray<FVector2D> Uv0, Uv1, Uv2, Uv3; TArray<FLinearColor> Col; TArray<int32> Tri; TArray<FProcMeshTangent> Tan;
+	V.Reserve(Nx * Ny); N.Reserve(Nx * Ny); Uv0.Reserve(Nx * Ny); Uv1.Reserve(Nx * Ny); Uv2.Reserve(Nx * Ny); Col.Reserve(Nx * Ny);
+	auto Smooth = [](float A, float B, float X) { const float T = FMath::Clamp((X - A) / (B - A), 0.f, 1.f); return T * T * (3 - 2 * T); };
+	for (int32 j = 0; j < Ny; j++)
+		for (int32 i = 0; i < Nx; i++)
+		{
+			const float X = X0 + i * Step, Y = Y0 + j * Step, Hh = Hg[j * Nx + i];
+			const float Hx = (Hg[j * Nx + FMath::Min(i + 1, Nx - 1)] - Hg[j * Nx + FMath::Max(i - 1, 0)]) / (2 * Step);
+			const float Hy = (Hg[FMath::Min(j + 1, Ny - 1) * Nx + i] - Hg[FMath::Max(j - 1, 0) * Nx + i]) / (2 * Step);
+			const FVector Ns = FVector(-Hx, -Hy, 1).GetSafeNormal();                          // sim space
+			V.Add(BSSpace::ToWorld(X, Y, Hh));
+			N.Add(FVector(Ns.Y, Ns.X, Ns.Z));                                                // world axes (sim x/y swap)
+			// Low ground at the foot of a cliff sits in shadow, which outlines the channel; plateau tops are a touch lighter.
+			const float Sdf = BSTerrain::LowSdf(X, Y);
+			const float Ao = Sdf < 0 ? 1 - 0.38f * FMath::Max(0.f, 1 + Sdf / 1.6f) : 1;
+			const float Bright = Ao * (1 + 0.16f * Smooth(BSTerrain::H * 0.7f, BSTerrain::H, Hh)) / 1.25f;
+			const float Wx = FMath::Abs(Ns.X) / (FMath::Abs(Ns.X) + FMath::Abs(Ns.Y) + 1e-4f);
+			const float Cliff = Smooth(0.12f, 0.38f, 1 - Ns.Z);
+			const float Vv = FMath::Clamp(1 - Hh / BSTerrain::H, 0.03f, 0.97f) * 0.92f;
+			Uv0.Add(FVector2D(X / 6, Y / 6));
+			Uv1.Add(FVector2D(Y * 0.22f, Vv));
+			Uv2.Add(FVector2D(X * 0.22f, Vv));
+			Col.Add(FLinearColor(Bright, 0, Wx, Cliff));
+		}
+	Tri.Reserve((Nx - 1) * (Ny - 1) * 6);
+	for (int32 j = 0; j < Ny - 1; j++)
+		for (int32 i = 0; i < Nx - 1; i++)
+		{
+			const int32 A = j * Nx + i, B = A + 1, C = A + Nx, D = C + 1;
+			Tri.Append({ A, B, D, A, D, C });                    // front faces up (Unreal winds front faces clockwise)
+		}
+	Terrain->CreateMeshSection_LinearColor(0, V, Tri, N, Uv0, Uv1, Uv2, Uv3, Col, Tan, false, false);
+	Terrain->SetMaterial(0, Assets->TerrainMaterial);
+	Terrain->SetCastShadow(true);
+}
+
+// One step for a ground unit: straight on if it can, otherwise the nearest heading off the cliff face, so nothing
+// hangs on a corner (port of Game.stepGround). Returns false when boxed in.
+bool ABSGame::StepGround(float& X, float& Y, float Mx, float My) const
+{
+	if (BSTerrain::Walkable(X + Mx, Y + My)) { X += Mx; Y += My; return true; }
+	for (const float A : { 0.5f, -0.5f, 1.0f, -1.0f, PI / 2, -PI / 2, 2.1f, -2.1f })
+	{
+		const float C = FMath::Cos(A), S = FMath::Sin(A), K = FMath::Max(0.35f, C), Rx = (Mx * C - My * S) * K, Ry = (Mx * S + My * C) * K;
+		if (BSTerrain::Walkable(X + Rx, Y + Ry)) { X += Rx; Y += Ry; return true; }
+	}
+	// Wedged on a slope: step down it, back towards the low ground.
+	const float E = 0.2f, Gx = BSTerrain::Height(X + E, Y) - BSTerrain::Height(X - E, Y), Gy = BSTerrain::Height(X, Y + E) - BSTerrain::Height(X, Y - E), Gl = FMath::Sqrt(Gx * Gx + Gy * Gy);
+	if (Gl > 1e-4f) { const float L = FMath::Sqrt(Mx * Mx + My * My); X -= Gx / Gl * L; Y -= Gy / Gl * L; return true; }
+	return false;
 }
 
 void ABSGame::Init(UBSAssets* InAssets, EBSMode InMode)
@@ -673,10 +745,11 @@ void ABSGame::UpdateSquad(float Dt)
 		const float Dx = Wp.X - M.X, Dy = Wp.Y - M.Y, Dd = FMath::Max(0.001f, FMath::Sqrt(Dx * Dx + Dy * Dy));
 		if (Far > 0.12f)
 		{
-			const float Sp = FMath::Min(Dd, 3.15f * Dt);
-			M.X += Dx / Dd * Sp; M.Y += Dy / Dd * Sp; M.Yaw = FMath::Atan2(Dy, Dx);
+			const float Sp = FMath::Min(Dd, 3.15f * Dt), Ox = M.X, Oy = M.Y;
+			StepGround(M.X, M.Y, Dx / Dd * Sp, Dy / Dd * Sp);
+			if (M.X != Ox || M.Y != Oy) M.Yaw = FMath::Atan2(M.Y - Oy, M.X - Ox);
 			if (M.Actor && M.Anim != TEXT("walk")) { M.Anim = TEXT("walk"); M.Actor->Play(WalkNames, true, 1.2f); }
-			if (M.Actor) M.Actor->SetSim(M.X, M.Y, 0, M.Yaw);
+			if (M.Actor) M.Actor->SetSim(M.X, M.Y, BSTerrain::Height(M.X, M.Y), M.Yaw);
 			continue;
 		}
 		if (M.bBoarding)
@@ -705,21 +778,21 @@ void ABSGame::UpdateSquad(float Dt)
 			{
 				M.Cd += D->Cd;
 				M.Yaw = FMath::Atan2(Target->Y - M.Y, Target->X - M.X);
-				FireInfantry(D, FVector(M.X + FMath::Cos(M.Yaw) * 0.45f, M.Y + FMath::Sin(M.Yaw) * 0.45f, 0.85f), Target);
+				FireInfantry(D, FVector(M.X + FMath::Cos(M.Yaw) * 0.45f, M.Y + FMath::Sin(M.Yaw) * 0.45f, BSTerrain::Height(M.X, M.Y) + 0.85f), Target);
 				const float Len = M.Actor ? M.Actor->Play(TEXT("attack"), false, 1.4f) : 0.f;
 				M.Anim = TEXT("attack"); M.StandAt = Time + FMath::Min(D->Cd, Len > 0 ? Len : 0.5f);
 			}
 			else M.Cd = 0.1f;
 		}
 		if (M.Actor && (M.Anim == TEXT("walk") || (M.Anim == TEXT("attack") && Time > M.StandAt))) { M.Anim = TEXT("stand"); M.Actor->Play(StandNames, true); }
-		if (M.Actor) M.Actor->SetSim(M.X, M.Y, 0, M.Yaw);
+		if (M.Actor) M.Actor->SetSim(M.X, M.Y, BSTerrain::Height(M.X, M.Y), M.Yaw);
 	}
 }
 
 // A trooper dies: outside, it falls with SC2's death animation; inside, it is carried out. The caller removes it.
 void ABSGame::KillTrooper(const FBSInfantryDef* Def, float X, float Y, float Yaw, ABSModelActor* Actor, bool bStim)
 {
-	if (Actor) { ReleaseModel(Actor); Corpse(Def->Death, X, Y, 0, Yaw, 3.5f, 1, true); }
+	if (Actor) { ReleaseModel(Actor); Corpse(Def->Death, X, Y, BSTerrain::Height(X, Y), Yaw, 3.5f, 1, true); }
 	Toast(Def->Name + (bStim ? TEXT(" overdosed on stim") : TEXT(" down")));
 	Floater(X, Y, 2.5f, bStim ? TEXT("OVERDOSE") : TEXT("KIA"), FLinearColor(1, 0.42f, 0.35f));
 }
@@ -1124,14 +1197,26 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 	else if (Mode == EBSMode::Lane)
 	{
 		const int32 Side = FMath::RoundToInt(Ang);         // 0 north, 1 north-east, 2 north-west
-		if (Side == 1 || Side == 2) { X = (Side == 1 ? 1 : -1) * Rnd(10.f, 13.f); Y = Rnd(17, 23); }
+		if (Side == 1 || Side == 2)
+		{
+			// Somewhere down the arm (see BSTerrain), not on the cliffs beside it.
+			const FVector2D P = BSTerrain::Active() ? BSTerrain::ArmPoint(Side == 1 ? 1 : -1, Rnd(0.55f, 0.85f), Rnd(-2.2f, 2.2f)) : FVector2D((Side == 1 ? 1 : -1) * Rnd(10.f, 13.f), Rnd(17, 23));
+			X = P.X; Y = P.Y;
+		}
 		else { X = Rnd(-4.6f, 4.6f); Y = Rnd(27, 31); }
 	}
 	else { const float R = Rnd(25, 28); X = FMath::Cos(Ang + Rnd(-0.35f, 0.35f)) * R; Y = FMath::Sin(Ang + Rnd(-0.35f, 0.35f)) * R; }
 	TSharedPtr<FBSEnemy> E = MakeShared<FBSEnemy>();
-	E->Id = NextId++; E->Def = D; E->X = X; E->Y = Y; E->Z = D->bFlying ? D->Fly : 0; E->Yaw = FMath::Atan2(-Y, -X);
+	E->Id = NextId++; E->Def = D; E->X = X; E->Y = Y; E->Z = D->bFlying ? D->Fly : BSTerrain::Height(X, Y); E->Yaw = FMath::Atan2(-Y, -X);
 	E->Hp = E->MaxHp = D->Hp * (1 + (bHard ? 0.025f : 0.02f) * FMath::Max(0, Wave - 10));   // late waves get tougher
 	E->Cd = Rnd(0, D->Cd); E->Radius = D->Radius; E->Life = D->Life;
+	// Lane terrain: ground zerg follow the Y; some ranged ones climb a ramp to a ledge over the bunker.
+	if (!D->bFlying && !At)
+	{
+		const bool bRanged = D->Projectile == EBSProjectile::Acid || D->Projectile == EBSProjectile::Spine || D->Projectile == EBSProjectile::Bullet;
+		E->bHighRoute = Mode == EBSMode::Lane && bRanged && FMath::FRand() < 0.4f;
+		E->Route = BSTerrain::Route(X, Y, E->bHighRoute);
+	}
 	// A strain or skin variant now and then, for variety (only models with the animations the game needs).
 	E->ModelKey = D->Model; E->DeathKey = D->Death;
 	if (D->Variants.Num() && FMath::FRand() < 0.45f)
@@ -1324,7 +1409,8 @@ TArray<TSharedPtr<FBSEnemy>> ABSGame::EnemiesInRange(float X, float Y, float Ran
 
 void ABSGame::Corpse(const FString& Key, float X, float Y, float Z, float Yaw, float Hold, float Scale, bool bTerran)
 {
-	PlayFx(Key, FVector(X, Y, FMath::Max(Z, 0.f)), Yaw, Scale);
+	const float Gz = BSTerrain::Height(X, Y);
+	PlayFx(Key, FVector(X, Y, FMath::Max(Z, Gz)), Yaw, Scale);
 	ABSModelActor* A = AcquireModel(Key);
 	if (!A) return;
 	// Corpses are darkened and kept low so living units always read on top of the carnage.
@@ -1332,12 +1418,12 @@ void ABSGame::Corpse(const FString& Key, float X, float Y, float Z, float Yaw, f
 	A->SetScalarParam(TEXT("EmissiveStrength"), 0.25f);
 	A->SetScalarParam(TEXT("DepthPush"), 180.f);       // 1.8 m behind: live zerg always draw on top
 	A->SetScale(Scale);
-	A->SetSim(X, Y, FMath::Min(Z, 0.f), Yaw);
+	A->SetSim(X, Y, FMath::Min(Z, Gz), Yaw);
 	A->Mesh->CastShadow = false;
 	A->Mesh->MarkRenderStateDirty();
 	const float Len = A->PlayRandomWithPrefix(TEXT("death"), false);
 	FBSCorpse Cp;
-	Cp.Actor = A; Cp.X = X; Cp.Y = Y; Cp.Z = FMath::Min(Z, 0.f); Cp.Yaw = Yaw;
+	Cp.Actor = A; Cp.X = X; Cp.Y = Y; Cp.Z = FMath::Min(Z, Gz); Cp.Yaw = Yaw;
 	Cp.bSink = !Key.StartsWith(TEXT("bunker"));
 	Cp.Hold = Cp.bSink ? FMath::Clamp(FMath::Min(Len, 4.f), 2.5f, 4.f) : FMath::Max(Hold, FMath::Min(Len, 8.f));
 	// Baneling chunks fade out in SC2 through visibility tracks we do not import; drop them right after the burst.
@@ -1457,7 +1543,8 @@ void ABSGame::UpdateEnemies(float Dt)
 			if (!E.bBurrowed && Reach <= Range - 1) { E.bBurrowed = true; E.BurrowT = 1.0f; PlayEnemyAnim(E, TEXT("burrow")); }
 			else if (E.bBurrowed) E.BurrowT -= Dt;
 		}
-		const bool bCanAttack = Reach <= Range && !(D->bBurrows && (!E.bBurrowed || E.BurrowT > 0));
+		const bool bHigh = BSTerrain::OnHigh(E.X, E.Y);          // the high ground adds a metre of reach
+		const bool bCanAttack = Reach <= Range + (bHigh ? 1.f : 0.f) && !(D->bBurrows && (!E.bBurrowed || E.BurrowT > 0)) && !(E.Route.Num() && E.bHighRoute);
 		if (bCanAttack)
 		{
 			E.bAttacking = true;
@@ -1515,15 +1602,31 @@ void ABSGame::UpdateEnemies(float Dt)
 				}
 			}
 		}
+		else if (E.bPerched)
+		{
+			E.bAttacking = false;
+			PlayEnemyAnim(E, TEXT("stand"));                         // holding the ledge, waiting for something in range
+		}
 		else if (!(D->bBurrows && E.bBurrowed))
 		{
 			E.bAttacking = false;
 			PlayEnemyAnim(E, TEXT("walk"));
+			// Head for the next waypoint of the route through the Y, then straight for the target.
+			float Gx = T.X, Gy = T.Y;
+			if (E.Route.Num())
+			{
+				Gx = E.Route[0].X; Gy = E.Route[0].Y;
+				if (Dist2(Gx, Gy, E.X, E.Y) < 0.81f) { E.Route.RemoveAt(0); if (!E.Route.Num() && E.bHighRoute) E.bPerched = true; }
+			}
+			const float Gd = FMath::Max(0.001f, FMath::Sqrt(Dist2(Gx, Gy, E.X, E.Y)));
 			const float Sp = D->Speed * (bSlowed ? 0.5f : 1.f);
-			const float Nx = Dx / FMath::Max(Dd, 0.001f), Ny = Dy / FMath::Max(Dd, 0.001f);
+			const float Nx = (Gx - E.X) / Gd, Ny = (Gy - E.Y) / Gd;
 			const float Mx = Nx * Sp * Dt + E.Sx * 0.8f, My = Ny * Sp * Dt + E.Sy * 0.8f;
-			E.X += Mx; E.Y += My;
-			if (Mode == EBSMode::Lane) { const float Half = 5.2f + FMath::Max(0.f, E.Y - 4.f) * 0.75f; E.X = FMath::Clamp(E.X, -Half, Half); }   // the lane fans out to the north
+			// Cliffs: ground units steer around them; flyers ignore them.
+			if (D->bFlying) { E.X += Mx; E.Y += My; } else StepGround(E.X, E.Y, Mx, My);
+			if (Mode == EBSMode::Lane) E.X = FMath::Clamp(E.X, -21.f, 21.f);
+			if (!D->bFlying) E.Z = BSTerrain::Height(E.X, E.Y);
+			if (E.bPerched) PlayEnemyAnim(E, TEXT("stand"));
 			// Face the way it is heading, not the way the crowd shoves it (big units were turning round and backing up),
 			// and turn at a creature's pace instead of snapping.
 			const float WantYaw = FMath::Atan2(Ny, Nx);
@@ -1599,12 +1702,13 @@ void ABSGame::UpdateBunker(float Dt)
 void ABSGame::FireInfantry(const FBSInfantryDef* D, const FVector& Muzzle, const TSharedPtr<FBSEnemy>& Target)
 {
 	auto Pred = [D](const FBSEnemy& E) { return !(D->bGroundOnly && E.Def->bFlying); };
-	const float DmgBase = D->Dmg + Up.Weapons;
+	const bool bMiss = BSTerrain::OnHigh(Target->X, Target->Y) && FMath::FRand() < 0.3f;   // firing up at the high ground
+	const float DmgBase = bMiss ? 0.f : D->Dmg + Up.Weapons;
 	const FVector Hit(Target->X, Target->Y, Target->Z + Target->Def->Height * 0.5f);
 	const float Ang = FMath::Atan2(Hit.Y - Muzzle.Y, Hit.X - Muzzle.X);
 	if (D->Key == TEXT("marine"))
 	{
-		HurtEnemy(Target, DmgBase);
+		if (DmgBase > 0) HurtEnemy(Target, DmgBase);
 		// Three-round bursts with SC2's muzzle mesh and impact sparks.
 		bool bFx = true;
 		for (int32 r = 0; r < 3 && bFx; r++)
@@ -1619,7 +1723,7 @@ void ABSGame::FireInfantry(const FBSInfantryDef* D, const FVector& Muzzle, const
 	}
 	else if (D->Key == TEXT("firebat"))
 	{
-		for (auto& V : EnemiesInRange(Target->X, Target->Y, D->Splash, Pred)) HurtEnemy(V, DmgBase + (V->Def->bLight ? D->DmgLight : 0));
+		if (DmgBase > 0) for (auto& V : EnemiesInRange(Target->X, Target->Y, D->Splash, Pred)) HurtEnemy(V, DmgBase + (V->Def->bLight ? D->DmgLight : 0));
 		EmitFlame(Muzzle, FVector(Target->X, Target->Y, 0.4f));
 		MuzzleFlash = 1;
 		PlaySound(BSSounds::FirebatFire, 0.45f, 0.3f);
@@ -1886,7 +1990,8 @@ void ABSGame::UpdateProjectiles(float Dt)
 			}
 			else if (Done.Kind == EBSProjKind::Grenade)
 			{
-				if (TSharedPtr<FBSEnemy> TE = Done.TargetEnemy.Pin())
+				TSharedPtr<FBSEnemy> TE = Done.TargetEnemy.Pin();
+				if (TE && Done.Dmg > 0)
 				{
 					TE->SlowUntil = Time + Done.IDef->Slow; TE->Anim.Reset();
 					HurtEnemy(TE, Done.Dmg + (TE->Def->bArmored ? Done.IDef->DmgArmored : 0));

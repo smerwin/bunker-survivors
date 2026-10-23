@@ -19,7 +19,20 @@ window.BS = window.BS || {};
       // Tap a trooper in the bunker to send them outside; tap one outside to bring them back in.
       $('slots').onclick = ev => { const el = ev.target.closest('[data-i]'); if (el) game.eject(+el.dataset.i); };
       $('outside').onclick = ev => { const el = ev.target.closest('[data-o]'); if (el) game.board(+el.dataset.o); };
+      $('bunkerPortrait').onclick = () => this.toggleView();
       $('armouryToggle').onclick = () => { const c = $('armoury').classList.toggle('closed'); $('armouryToggle').classList.toggle('closed', c); };
+    }
+
+    // Sky view <-> bunker view. The bunker itself is hidden while we look out of it.
+    toggleView() {
+      const fp = !this.r.cam.fp;
+      this.r.setBunkerView(fp);
+      if (!fp) this.r.setCameraMode(this.g.mode);
+      const h = this.g.bunker.handle;
+      if (h && !this.g.bunker.dead) h.setScale(fp ? 0.001 : 1);
+      $('hud').classList.toggle('fp', fp);
+      $('bunkerPortrait').classList.toggle('on', fp);
+      $('bunkerPortrait').title = fp ? 'Tap: back to the sky view' : 'Tap: view from inside the bunker';
     }
 
     set(id, val) { if (this.cache[id] !== val) { this.cache[id] = val; $(id).textContent = val; } }
@@ -149,19 +162,20 @@ window.BS = window.BS || {};
       c.clearRect(0, 0, W, H);
       // Health bars over damaged zerg.
       for (const e of g.enemies) {
-        if (e.hp >= e.maxHp) continue;
+        if (e.hp >= e.maxHp || !r.inFront(e.x, e.y, e.z)) continue;
         const [sx, sy] = r.worldToScreen(e.x, e.y, e.z + e.def.height + 0.5);
         if (sx < -20 || sx > W + 20 || sy < -20 || sy > H + 20) continue;
         const w = 18 + e.radius * 14;
         c.fillStyle = 'rgba(0,0,0,0.55)'; c.fillRect(sx - w / 2 - 1, sy - 1, w + 2, 5);
         c.fillStyle = '#bd6bff'; c.fillRect(sx - w / 2, sy, w * Math.max(0, e.hp / e.maxHp), 3);
       }
-      if (g.focus && g.focus.hp > 0) {
+      if (g.focus && g.focus.hp > 0 && r.inFront(g.focus.x, g.focus.y, 0)) {
         const [sx, sy] = r.worldToScreen(g.focus.x, g.focus.y, 0.05);
         c.strokeStyle = '#ff6a5a'; c.lineWidth = 2; c.beginPath(); c.ellipse(sx, sy, 22 + g.focus.radius * 14, 12 + g.focus.radius * 7, 0, 0, Math.PI * 2); c.stroke();
       }
       c.textAlign = 'center'; c.font = '700 15px Eurostile, system-ui, sans-serif';
       for (const f of g.floaters) {
+        if (!r.inFront(f.x, f.y, f.z)) continue;
         const [sx, sy] = r.worldToScreen(f.x, f.y, f.z + f.t * 1.2);
         c.globalAlpha = Math.max(0, 1 - f.t / 1.3);
         c.fillStyle = 'rgba(0,0,0,0.6)'; c.fillText(f.text, sx + 1, sy + 1);
@@ -176,10 +190,19 @@ window.BS = window.BS || {};
     drawThreats(c, W, H) {
       const g = this.g, r = this.r, groups = new Map();
       const sq = document.getElementById('squad').getBoundingClientRect(), top = sq.bottom + 16, bottom = H - 270;
+      const cam = r.cam;
       for (const e of g.enemies) {
-        const [sx, sy] = r.worldToScreen(e.x, e.y, 0);
-        if (sx >= 0 && sx <= W && sy >= top && sy <= H) continue;
-        const ang = Math.atan2(sy - H / 2, sx - W / 2), k = Math.round(ang / (Math.PI / 6));
+        let ang;
+        if (cam.fp && !r.inFront(e.x, e.y, 0)) {
+          // Behind the eye: point by bearing (right, left, or down for straight behind).
+          const rel = Math.atan2(Math.sin(Math.atan2(e.x, e.y) - cam.fpYaw), Math.cos(Math.atan2(e.x, e.y) - cam.fpYaw));
+          ang = Math.atan2(-Math.cos(rel), Math.sin(rel));
+        } else {
+          const [sx, sy] = r.worldToScreen(e.x, e.y, 0);
+          if (sx >= 0 && sx <= W && sy >= top && sy <= H) continue;
+          ang = Math.atan2(sy - H / 2, sx - W / 2);
+        }
+        const k = Math.round(ang / (Math.PI / 6));
         const gr = groups.get(k) || { n: 0, ang: k * Math.PI / 6 }; gr.n++; groups.set(k, gr);
       }
       c.font = '700 11px Eurostile, system-ui, sans-serif';
@@ -213,7 +236,7 @@ window.BS = window.BS || {};
       const grad = c.createConicGradient ? c.createConicGradient(a - 0.6, R, R) : null;
       if (grad) { grad.addColorStop(0, 'rgba(95,227,255,0)'); grad.addColorStop(0.1, 'rgba(95,227,255,0.22)'); grad.addColorStop(0.1001, 'rgba(95,227,255,0)'); c.fillStyle = grad; c.beginPath(); c.arc(R, R, R - 2, 0, Math.PI * 2); c.fill(); }
       const scale = (R - 6) / (g.mode === 'lane' ? 32 : 30), cy = g.mode === 'lane' ? R + 8 * scale : R;
-      const yaw = this.r.cam.yaw || 0, cs = Math.cos(yaw), sn = Math.sin(yaw);
+      const yaw = (this.r.cam.fp ? this.r.cam.fpYaw : this.r.cam.yaw) || 0, cs = Math.cos(yaw), sn = Math.sin(yaw);
       const plot = (x, y) => { const rx = x * cs - y * sn, ry = x * sn + y * cs; return [R + rx * scale, cy - ry * scale]; };
       c.fillStyle = '#8de08a';
       for (const p of [[0, 0], ...g.tanks.map(t => [t.x, t.y]), ...g.structures.map(s => [s.x, s.y])]) { const [x, y] = plot(p[0], p[1]); c.fillRect(x - 2.5, y - 2.5, 5, 5); }

@@ -26,7 +26,10 @@ public:
 	void Orbit(float DeltaYawDeg);
 	void ResetView();
 	float GetZoom() const { return Zoom; }
-	float GetYaw() const { return Yaw; }
+	float GetYaw() const { return bBunkerView ? FpYaw : Yaw; }
+	// Bunker view: a first-person eye inside the bunker, dragged to look all the way round (sky view otherwise).
+	void SetBunkerView(bool bOn);
+	bool IsBunkerView() const { return bBunkerView; }
 
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UCameraComponent> Camera;
 
@@ -37,5 +40,7 @@ private:
 	float Yaw = 0, TargetYaw = 0;
 	FVector2D Pan = FVector2D::ZeroVector, TargetPan = FVector2D::ZeroVector;    // metres, in view-aligned axes
 	float ShakeT = 0;
-	float SquadBack = 0;                // eases the lane view back to show troopers standing behind the bunker
+	float SquadBack = 0;
+	bool bBunkerView = false;
+	float FpYaw = 0, FpPitch = 10, FpFov = 70;   // degrees: heading (0 = up the lane), look-down angle, vertical FOV                // eases the lane view back to show troopers standing behind the bunker
 };

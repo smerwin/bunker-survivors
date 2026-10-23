@@ -6,6 +6,7 @@ window.BS = window.BS || {};
 
   const MV = window.ModelViewer;
   const DEG = Math.PI / 180;
+  const BUNKER_EYE = 1.35;                     // bunker view eye height (just over the firing slits)
 
   // SC2 models face -Y at zero rotation; game yaw is measured from +X, so offset by 90 degrees.
   const FACING_OFFSET = Math.PI / 2;
@@ -229,8 +230,32 @@ window.BS = window.BS || {};
       }
       this.updateCamera();
     }
+    // Bunker view: a first-person eye inside the bunker, dragged to look all the way round (sky view otherwise).
+    setBunkerView(on) {
+      const c = this.cam;
+      c.fp = !!on;
+      if (c.fp) { c.fpYaw = 0; c.fpPitch = 10 * DEG; c.fpFov = (this.height > this.width ? 70 : 60) * DEG; }
+      this.updateCamera();
+    }
+    // Is a world point in front of the camera (worldToScreen mirrors points behind it)?
+    inFront(x, y, z) {
+      const c = this.cam;
+      if (!c.fp) return true;
+      const cp = Math.cos(c.fpPitch);
+      return x * Math.sin(c.fpYaw) * cp + y * Math.cos(c.fpYaw) * cp - ((z || 0) - BUNKER_EYE) * Math.sin(c.fpPitch) > 0.3;
+    }
     updateCamera() {
       const c = this.cam, cam = this.scene.camera;
+      if (c.fp) {
+        const j = this.shake > 0.01 ? this.shake * 0.05 : 0;
+        const eye = [(Math.random() - 0.5) * j, (Math.random() - 0.5) * j, BUNKER_EYE + (Math.random() - 0.5) * j];
+        const cp = Math.cos(c.fpPitch), dir = [Math.sin(c.fpYaw) * cp, Math.cos(c.fpYaw) * cp, -Math.sin(c.fpPitch)];
+        for (const sc of [this.scene, this.corpseScene]) {
+          sc.camera.perspective(c.fpFov, this.canvas.width / this.canvas.height, 0.15, 400);
+          sc.camera.moveToAndFace(eye, [eye[0] + dir[0], eye[1] + dir[1], eye[2] + dir[2]], [0, 0, 1]);
+        }
+        return;
+      }
       c.tx = Math.min(c.bounds.x1, Math.max(c.bounds.x0, c.tx));
       c.ty = Math.min(c.bounds.y1, Math.max(c.bounds.y0, c.ty));
       c.dist = Math.min(c.maxDist, Math.max(c.minDist, c.dist));
@@ -245,6 +270,7 @@ window.BS = window.BS || {};
     }
     zoomBy(factor, sx, sy) {
       const c = this.cam;
+      if (c.fp) { c.fpFov = Math.min(85 * DEG, Math.max(30 * DEG, c.fpFov * factor)); this.updateCamera(); return; }
       const before = (sx !== undefined) ? this.screenToGround(sx, sy) : null;
       c.dist = Math.min(c.maxDist, Math.max(c.minDist, c.dist * factor));
       this.updateCamera();
@@ -255,6 +281,14 @@ window.BS = window.BS || {};
     }
     panBy(dx, dy) {
       const c = this.cam;
+      if (c.fp) {
+        // Grab the world: drag right to look left, all the way round; up and down within limits.
+        const k = c.fpFov / this.height;
+        c.fpYaw = (c.fpYaw - dx * k) % (Math.PI * 2);
+        c.fpPitch = Math.min(50 * DEG, Math.max(-12 * DEG, c.fpPitch - dy * k));
+        this.updateCamera();
+        return;
+      }
       const k = c.dist / this.height * 1.6;
       const cy = Math.cos(c.yaw), sy = Math.sin(c.yaw);
       const mx = -dx * k, my = dy * k;

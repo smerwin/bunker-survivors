@@ -176,6 +176,14 @@ void ABSGameMode::Tick(float Dt)
 		Game->CallAirStrike();
 		Game->UseYamato();
 	}
+	// -BSBunkerView: start in the view from inside the bunker and turn slowly through 360 degrees (playtest shots).
+	if (Game && Game->bStarted && FParse::Param(FCommandLine::Get(), TEXT("BSBunkerView")))
+		if (APlayerController* P0 = GetWorld()->GetFirstPlayerController())
+			if (ABSCameraPawn* Cv = Cast<ABSCameraPawn>(P0->GetPawn()))
+			{
+				if (!Cv->IsBunkerView()) { Cv->SetBunkerView(true); if (Game->Bunker.Actor) Game->Bunker.Actor->SetActorHiddenInGame(true); }
+				Cv->PanPixels(-Dt * 140.f, 0, 960);
+			}
 	// -BSTestSquad: exercise the outside squad, turrets, sensor tower, magnetic rails, lethal stim and the hovering air strike.
 	static int32 SquadStep = 0;
 	if (Game && Game->bStarted && FParse::Param(FCommandLine::Get(), TEXT("BSTestSquad")))

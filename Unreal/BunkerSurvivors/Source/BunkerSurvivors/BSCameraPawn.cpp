@@ -29,13 +29,28 @@ ABSCameraPawn::ABSCameraPawn()
 void ABSCameraPawn::SetGame(ABSGame* InGame) { Game = InGame; }
 void ABSCameraPawn::SetArena(bool bInArena) { bArena = bInArena; ResetView(); Zoom = TargetZoom; Pan = TargetPan; Yaw = TargetYaw; }
 
+void ABSCameraPawn::SetBunkerView(bool bOn)
+{
+	bBunkerView = bOn;
+	FpYaw = bArena ? Yaw : 0; FpPitch = 10;
+}
+
 void ABSCameraPawn::ZoomBy(float Factor)
 {
+	if (bBunkerView) { FpFov = FMath::Clamp(FpFov * Factor, 30.f, 85.f); return; }
 	TargetZoom = FMath::Clamp(TargetZoom + FMath::Loge(FMath::Max(Factor, 0.01f)) / LogRatio(bArena), 0.f, 1.f);
 }
 
 void ABSCameraPawn::PanPixels(float Dx, float Dy, float ViewHeightPx)
 {
+	if (bBunkerView)
+	{
+		// Grab the world: drag right to look left, all the way round; up and down within limits.
+		const float K = FpFov / FMath::Max(ViewHeightPx, 1.f);
+		FpYaw = FMath::Fmod(FpYaw - Dx * K, 360.f);
+		FpPitch = FMath::Clamp(FpPitch - Dy * K, -12.f, 50.f);
+		return;
+	}
 	const float MetresPerPx = ArmLength(Zoom, bArena) / 100.f / FMath::Max(ViewHeightPx, 1.f) * 1.4f;
 	TargetPan.X -= Dx * MetresPerPx;
 	TargetPan.Y += Dy * MetresPerPx;
@@ -46,7 +61,7 @@ void ABSCameraPawn::PanPixels(float Dx, float Dy, float ViewHeightPx)
 
 void ABSCameraPawn::Orbit(float DeltaYawDeg) { if (bArena) TargetYaw += DeltaYawDeg; }
 
-void ABSCameraPawn::ResetView() { TargetZoom = 0.38f; TargetPan = FVector2D::ZeroVector; if (!bArena) TargetYaw = 0; }
+void ABSCameraPawn::ResetView() { if (bBunkerView) { FpYaw = bArena ? Yaw : 0; FpPitch = 10; return; } TargetZoom = 0.38f; TargetPan = FVector2D::ZeroVector; if (!bArena) TargetYaw = 0; }
 
 void ABSCameraPawn::Tick(float Dt)
 {
@@ -73,27 +88,35 @@ void ABSCameraPawn::Tick(float Dt)
 	const FVector2D FocusXY = Fwd * (Ahead + Pan.Y) + Right * Pan.X;               // world X/Y in metres
 	const FVector Focus(FocusXY.X * 100.f, FocusXY.Y * 100.f, bArena ? 60.f : 80.f);
 
-	const FRotator Rot(-Pitch, Yaw, 0);
+	FRotator Rot(-Pitch, Yaw, 0);
 	FVector Loc = Focus - Rot.Vector() * Arm;
+	float ViewFov = VFov;
+	if (bBunkerView && !bAttract)
+	{
+		// The eye sits just over the firing slits, inside the (hidden) bunker.
+		Rot = FRotator(-FpPitch, FpYaw, 0);
+		Loc = FVector(0, 0, 135.f);
+		ViewFov = FpFov;
+	}
 	if (ABSGame* G = Game.Get())
 	{
 		ShakeT += Dt * 40.f;
-		const float S = G->Shake * (1 - Z * 0.8f) * 18.f;
+		const float S = G->Shake * (bBunkerView ? 4.f : (1 - Z * 0.8f) * 18.f);
 		Loc += FVector(FMath::PerlinNoise1D(ShakeT) * S, FMath::PerlinNoise1D(ShakeT + 31.7f) * S, FMath::PerlinNoise1D(ShakeT + 77.3f) * S * 0.6f);
 	}
-	SetActorLocation(Focus);
+	SetActorLocation(bBunkerView ? Loc : Focus);
 	Camera->SetWorldLocationAndRotation(Loc, Rot);
 
 	// Unreal's FOV is horizontal: convert the desired vertical FOV for the current aspect ratio.
 	FVector2D Size(16, 9);
 	if (GEngine && GEngine->GameViewport) GEngine->GameViewport->GetViewportSize(Size);
 	const float Aspect = Size.Y > 0 ? Size.X / Size.Y : 16.f / 9.f;
-	const float HFov = 2.f * FMath::RadiansToDegrees(FMath::Atan(FMath::Tan(FMath::DegreesToRadians(VFov) * 0.5f) * Aspect));
+	const float HFov = 2.f * FMath::RadiansToDegrees(FMath::Atan(FMath::Tan(FMath::DegreesToRadians(ViewFov) * 0.5f) * Aspect));
 	Camera->SetFieldOfView(FMath::Clamp(HFov, 20.f, 120.f));
 
 	// Depth of field only when close: focus on the bunker, fading out past zoom 0.3.
 	FPostProcessSettings& P = Camera->PostProcessSettings;
-	const float Dof = FMath::Clamp(1.f - Z / 0.3f, 0.f, 1.f);
+	const float Dof = bBunkerView ? 0.f : FMath::Clamp(1.f - Z / 0.3f, 0.f, 1.f);
 	P.bOverride_DepthOfFieldFocalDistance = P.bOverride_DepthOfFieldFstop = P.bOverride_DepthOfFieldSensorWidth = true;
 	P.DepthOfFieldFocalDistance = Arm;
 	P.DepthOfFieldSensorWidth = 24.576f;

@@ -520,7 +520,9 @@ TSharedRef<SWidget> SBSHud::BuildSquadCard()
 			// Bunker badge.
 			UBSAssets* As = Gm->GetAssets();
 			D::Image(Out, L + 2, G, As->IconBrush(TEXT("btn-building-terran-bunker")), FVector2f(10, 11), FVector2f(48, 48));
-			D::RLine(Out, L + 3, G, FVector2f(9, 10), FVector2f(50, 50), 8, C::A(C::Ink, 0.25f));
+			const ABSCameraPawn* Cv = Cam();
+			const bool bFp = Cv && Cv->IsBunkerView();
+			D::RLine(Out, L + 3, G, FVector2f(9, 10), FVector2f(50, 50), 8, bFp ? C::A(C::Amber, 0.75f + 0.25f * FMath::Sin(NowS * 3)) : C::A(C::Ink, 0.25f), bFp ? 2.f : 1.f);
 			const float X0 = 70, Bw = S.X - X0 - 12;
 			// Header line.
 			D::Text(Out, L + 2, G, bCritical ? TEXT("INTEGRITY CRITICAL") : TEXT("BUNKER"), D::Label(8.5f), FVector2f(X0, 9), bCritical ? C::A(C::Red, 0.65f + 0.35f * Pulse) : C::Muted);
@@ -1088,6 +1090,18 @@ int32 SBSHud::PaintWorld(const FGeometry& G, FSlateWindowElementList& Out, int32
 	ABSGame* Gm = Game();
 	if (!Gm) return L;
 	const FVector2f S = FVector2f(G.GetLocalSize());
+	if (const ABSCameraPawn* Cv = Cam(); Cv && Cv->IsBunkerView())
+	{
+		// Looking out of the bunker: dark steel above and below, as if through the firing slit.
+		const FLinearColor Steel(0.03f, 0.04f, 0.055f);
+		const int32 N = 12;
+		for (int32 k = 0; k < N; k++)
+		{
+			const float Top = 0.17f * S.Y / N, Bot = 0.2f * S.Y / N;
+			D::Rect(Out, L, G, FVector2f(0, k * Top), FVector2f(S.X, Top + 1), C::A(Steel, 0.92f * (1 - (float)k / N)));
+			D::Rect(Out, L, G, FVector2f(0, S.Y - (k + 1) * Bot), FVector2f(S.X, Bot + 1), C::A(Steel, 0.7f * (1 - (float)k / N)));
+		}
+	}
 	auto Bar = [&](const FVector& W, float Pct, float Width, const FLinearColor& Col)
 	{
 		FVector2D P; if (!WorldToLocal(W, P)) return;
@@ -1214,6 +1228,16 @@ void SBSHud::Tap(const FGeometry& Geo, const FVector2D& ScreenPos)
 	if (Gm->FocusAt(Hit.Y / BSSpace::UnitsPerMetre, Hit.X / BSSpace::UnitsPerMetre)) Gm->Toast(TEXT("Focus fire"));
 }
 
+void SBSHud::ToggleBunkerView()
+{
+	ABSGame* Gm = Game(); ABSCameraPawn* Cv = Cam();
+	if (!Gm || !Cv) return;
+	const bool bOn = !Cv->IsBunkerView();
+	Cv->SetBunkerView(bOn);
+	// Looking out from inside it: hide the bunker itself.
+	if (Gm->Bunker.Actor && !Gm->Bunker.bDead) Gm->Bunker.Actor->SetActorHiddenInGame(bOn);
+}
+
 // Tap a trooper in the bunker to send them outside; tap one outside to bring them back in.
 bool SBSHud::TapSquadCard(const FVector2D& ScreenPos)
 {
@@ -1223,6 +1247,7 @@ bool SBSHud::TapSquadCard(const FVector2D& ScreenPos)
 	const FVector2f P = FVector2f(CG.AbsoluteToLocal(ScreenPos)), S = FVector2f(CG.GetLocalSize());
 	if (P.X < 0 || P.Y < 0 || P.X > S.X || P.Y > S.Y) return false;
 	auto In = [&P](const FVector2f& At, float Sz) { return P.X >= At.X - 3 && P.X <= At.X + Sz + 3 && P.Y >= At.Y - 3 && P.Y <= At.Y + Sz + 3; };
+	if (In(FVector2f(10, 11), 48)) { ToggleBunkerView(); return true; }
 	for (int32 i = 0; i < Gm->Bunker.Units.Num(); i++)
 		if (In(FVector2f(SquadRow::X0 + i * 27.f, 41), 22)) { Gm->Eject(i); return true; }
 	for (int32 i = 0; i < Gm->Squad.Num(); i++)
@@ -1329,6 +1354,7 @@ FReply SBSHud::OnKeyDown(const FGeometry& Geo, const FKeyEvent& Key)
 	}
 	const float H = LocalSize.Y * DpiScale;
 	if (K == EKeys::P || K == EKeys::Escape) TogglePause();
+	else if (K == EKeys::V) ToggleBunkerView();
 	else if (K == EKeys::S) Gm->UseStim();
 	else if (K == EKeys::A) Gm->CallAirStrike();
 	else if (K == EKeys::R) Gm->EmergencyRepair();

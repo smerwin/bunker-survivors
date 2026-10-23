@@ -132,7 +132,7 @@ window.BS = window.BS || {};
       if (!had || pointers.size || !game) { if (!pointers.size) { dragging = false; pinch = 0; } return; }
       if (dragging && moved <= 6 && performance.now() - downT < 350) {
         const now = performance.now();
-        if (now - lastTap < 300) { renderer.setCameraMode(mode); lastTap = 0; }
+        if (now - lastTap < 300) { if (renderer.cam.fp) renderer.setBunkerView(true); else renderer.setCameraMode(mode); lastTap = 0; }
         else { lastTap = now; const w = renderer.screenToGround(ev.clientX, ev.clientY); if (w && game.focusAt(w[0], w[1])) game.toast('Focus fire!'); }
       }
       dragging = false; pinch = 0;
@@ -143,6 +143,7 @@ window.BS = window.BS || {};
       if (!game) { if (ev.key === '1') start('lane'); if (ev.key === '2') start('arena'); return; }
       const k = ev.key.toLowerCase();
       if (k === 'p' || k === 'escape') togglePause();
+      else if (k === 'v') hud.toggleView();
       else if (k === 's') game.useStim(); else if (k === 'a') game.callAirStrike(); else if (k === 'r') game.emergencyRepair(); else if (k === 'y') game.useYamato();
       else if (k === '+' || k === '=') renderer.zoomBy(0.85); else if (k === '-') renderer.zoomBy(1.18);
       else if (k === 'q' && mode === 'arena') { renderer.cam.yaw -= 0.2; renderer.updateCamera(); }

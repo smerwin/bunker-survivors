@@ -56,7 +56,8 @@ private:
 	ABSCameraPawn* Cam() const;
 	bool Portrait() const { return LocalSize.Y > LocalSize.X; }
 	void Tap(const FGeometry& Geo, const FVector2D& ScreenPos);
-	bool TapSquadCard(const FVector2D& ScreenPos);   // eject / board a trooper; true if the tap landed on the card
+	bool TapSquadCard(const FVector2D& ScreenPos);
+	void ToggleBunkerView();                          // the bunker badge on the squad card switches sky / bunker view   // eject / board a trooper; true if the tap landed on the card
 	bool WorldToLocal(const FVector& World, FVector2D& Out) const;
 	void TogglePause();
 

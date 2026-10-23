@@ -349,6 +349,43 @@ def build_ground_material(path, name, ground_tex):
     return m
 
 
+def build_terrain_material(path, name, ground_tex, cliff_tex):
+    # Lane chokepoint ground (see BSGame::BuildTerrain): UV0 tiles the ground texture, UV1/UV2 project the cliff texture
+    # along the two horizontal axes; vertex colour R = brightness (cliff-foot shadow, plateau lift), B = projection blend,
+    # A = cliff weight.
+    m = new_material(path, name)
+    def coord(i, y):
+        return expr(m, unreal.MaterialExpressionTextureCoordinate, -1300, y, coordinate_index=i)
+    def sample(tex, uv, y):
+        t = expr(m, unreal.MaterialExpressionTextureSample, -1050, y, texture=tex)
+        mel.connect_material_expressions(uv, "", t, "UVs")
+        return t
+    g = sample(ground_tex or load(WHITE), coord(0, -300), -300)
+    ca = sample(cliff_tex or load(WHITE), coord(1, 0), 0)
+    cb = sample(cliff_tex or load(WHITE), coord(2, 300), 300)
+    vc = expr(m, unreal.MaterialExpressionVertexColor, -1050, 600)
+    tint = vector(m, "Tint", -1050, -500, (0.85, 0.8, 0.85, 1))
+    gt = binop(m, unreal.MaterialExpressionMultiply, g, "RGB", tint, "", -800, -350)
+    cl = expr(m, unreal.MaterialExpressionLinearInterpolate, -800, 100)
+    mel.connect_material_expressions(cb, "RGB", cl, "A")
+    mel.connect_material_expressions(ca, "RGB", cl, "B")
+    mel.connect_material_expressions(vc, "B", cl, "Alpha")
+    clb = expr(m, unreal.MaterialExpressionMultiply, -600, 100, const_b=1.25)
+    mel.connect_material_expressions(cl, "", clb, "A")
+    mix = expr(m, unreal.MaterialExpressionLinearInterpolate, -400, -100)
+    mel.connect_material_expressions(gt, "", mix, "A")
+    mel.connect_material_expressions(clb, "", mix, "B")
+    mel.connect_material_expressions(vc, "A", mix, "Alpha")
+    bright = expr(m, unreal.MaterialExpressionMultiply, -400, 300, const_b=1.25)
+    mel.connect_material_expressions(vc, "R", bright, "A")
+    bc = binop(m, unreal.MaterialExpressionMultiply, mix, "", bright, "", -200, 0)
+    mel.connect_material_property(bc, "", unreal.MaterialProperty.MP_BASE_COLOR)
+    mel.connect_material_property(scalar(m, "Roughness", -200, 300, 0.9), "", unreal.MaterialProperty.MP_ROUGHNESS)
+    m.set_editor_property("two_sided", True)
+    mel.recompile_material(m)
+    return m
+
+
 def make_mi(parent, path, name, textures, scalars=None):
     full = path + "/" + name
     if eal.does_asset_exist(full):
@@ -389,9 +426,16 @@ def main():
     if os.path.exists(gpath):
         ground = load(import_file(gpath, "/Game/SC2/Textures", "T_Ground")[0])
     build_ground_material(mats, "M_Ground", ground)
+    cliff = None
+    cpath = os.path.join(EXPORT, "Textures", "Cliff_Diffuse.png")
+    if os.path.exists(cpath):
+        cliff = load(import_file(cpath, "/Game/SC2/Textures", "T_Cliff")[0])
+        cliff.set_editor_property("address_y", unreal.TextureAddress.TA_CLAMP)
+        eal.save_loaded_asset(cliff)
+    build_terrain_material(mats, "M_Terrain", ground, cliff)
     for m in (m_unit, m_unit2, m_add, m_blend):
         eal.save_loaded_asset(m)
-    for n in ("M_FX", "M_FXRing", "M_Ground", "M_FXParticle", "M_FXSpriteAdd", "M_FXSpriteBlend"):
+    for n in ("M_FX", "M_FXRing", "M_Ground", "M_Terrain", "M_FXParticle", "M_FXSpriteAdd", "M_FXSpriteBlend"):
         eal.save_asset(mats + "/" + n)
     import_fx(manifest)
     if os.environ.get("BS_FX_ONLY") == "1":

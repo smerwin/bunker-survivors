@@ -99,6 +99,8 @@ struct FBSEnemy
 	float X = 0, Y = 0, Z = 0, Yaw = 0, Hp = 0, MaxHp = 0;
 	float Retarget = 0, Cd = 0, HitAt = -1, SlowUntil = 0, Radius = 0, Life = 0, BurrowT = 0, Sx = 0, Sy = 0, Flash = 0;
 	bool bPendingHit = false, bBurrowed = false, bBurrowing = false, bAttacking = false;
+	TArray<FVector2D> Route;                  // lane terrain: waypoints through the Y (or up a ramp to a ledge)
+	bool bHighRoute = false, bPerched = false;
 	FBSTarget Target, HitTarget;
 	FString Anim, ModelKey, DeathKey;
 	ABSModelActor* Actor = nullptr;
@@ -274,6 +276,8 @@ private:
 	void UpdateProjectiles(float Dt);
 	void UpdateReinforcements(float Dt);
 	void UpdateSquad(float Dt);
+	void BuildTerrain();                      // the lane chokepoint's ground mesh (BSTerrain heights)
+	bool StepGround(float& X, float& Y, float Mx, float My) const;
 	void UpdateStructures(float Dt);
 	TSharedPtr<FBSTrooper> JoinSquad(const FBSInfantryDef* Def, float Hp, float X, float Y, ABSModelActor* Actor);
 	void KillTrooper(const FBSInfantryDef* Def, float X, float Y, float Yaw, ABSModelActor* Actor, bool bStim);
@@ -328,6 +332,7 @@ private:
 	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> AllMeshes;
 	UPROPERTY() TObjectPtr<UPointLightComponent> MuzzleLight;
 	UPROPERTY() TObjectPtr<UStaticMeshComponent> Ground;
+	UPROPERTY() TObjectPtr<class UProceduralMeshComponent> Terrain;
 
 	TArray<FBSTarget> Targets;
 	TArray<FBSProjectile> Projectiles;

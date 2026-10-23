@@ -770,7 +770,7 @@ window.BS = window.BS || {};
           const mx = nx * sp * dt + e.sx * 0.8, my = ny * sp * dt + e.sy * 0.8;
           // Cliffs: ground units steer around them; flyers ignore them.
           if (d.flying) { e.x += mx; e.y += my; } else this.stepGround(e, mx, my);
-          e.x = clamp(e.x, -21, 21);
+          if (this.mode === 'lane') e.x = clamp(e.x, -21, 21);
           if (!d.flying) e.z = BS.Terrain.height(e.x, e.y);
           // Face the way it is heading, not the way the crowd shoves it, and turn at a creature's pace.
           const turn = (d.radius >= 0.9 ? 3 : 8) * dt;
