@@ -1,8 +1,9 @@
 # Bunker Survivors - Pixel Streaming launcher.
 # Starts Epic's signalling/web server bound to this PC's Tailscale address and the packaged game streaming to it,
 # then prints the link to open on a phone or desktop browser that is on the same tailnet.
-#   powershell -ExecutionPolicy Bypass -File Unreal\stream.ps1 [-Port 8650] [-Bind <ip>] [-Stop]
-param([int]$Port = 8650, [string]$Bind = "", [switch]$Stop)
+#   powershell -ExecutionPolicy Bypass -File Unreal\stream.ps1 [-Port 8650] [-Bind <ip>] [-Lite] [-Stop]
+#   -Lite: 540p, 30 fps, ~3 Mbit/s with forward error correction, for weak wifi.
+param([int]$Port = 8650, [string]$Bind = "", [switch]$Lite, [switch]$Stop)
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $infra = Join-Path $root "PixelStreaming"
 $game = Join-Path $root "Packaged\Windows\BunkerSurvivors.exe"
@@ -36,9 +37,17 @@ Start-Sleep -Seconds 2
 
 # 2. The game, rendering offscreen and streaming. The browser can resize it (MatchViewportRes) so a portrait phone
 #    gets a portrait stream and a desktop gets landscape; the game picks lane or arena layout from that.
-Start-Process -FilePath $game -ArgumentList @("-PixelStreamingConnectionURL=ws://127.0.0.1:8888", "-RenderOffscreen", "-ResX=720", "-ResY=1280", "-ForceRes",
-  "-PixelStreamingAllowPixelStreamingCommands", "-PixelStreamingEncoderCodec=H264", "-PixelStreamingWebRTCMaxBitrate=12000000", "-PixelStreamingWebRTCFps=60",
+# Pixel Streaming 2 reads its settings under the older names (-PixelStreamingWebRTCFps etc.); PixelStreaming2* is rejected.
+$fps = if ($Lite) { 30 } else { 60 }
+$maxBr = if ($Lite) { 3000000 } else { 12000000 }
+$startBr = if ($Lite) { 1500000 } else { 6000000 }
+$gameArgs = @("-PixelStreamingConnectionURL=ws://127.0.0.1:8888", "-RenderOffscreen", "-ResX=$(if ($Lite) { 540 } else { 720 })", "-ResY=$(if ($Lite) { 960 } else { 1280 })", "-ForceRes",
+  "-PixelStreamingAllowPixelStreamingCommands", "-PixelStreamingEncoderCodec=H264",
+  "-PixelStreamingWebRTCMaxBitrate=$maxBr", "-PixelStreamingWebRTCStartBitrate=$startBr",
+  "-PixelStreamingWebRTCFps=$fps",
   "-Unattended", "-NoSplash", "-log", "-abslog=`"$(Join-Path $logs 'game.log')`"")
+if ($Lite) { $gameArgs += @("-BSStreamMinRes=540", "-PixelStreamingWebRTCEnableFlexFec=true", "-PixelStreamingWebRTCMinBitrate=500000") }
+Start-Process -FilePath $game -ArgumentList $gameArgs
 
 $url = "http://${Bind}:$Port/?MatchViewportRes=true&AutoConnect=true&AutoPlayVideo=true&HoveringMouse=true&StartVideoMuted=false"
 ""

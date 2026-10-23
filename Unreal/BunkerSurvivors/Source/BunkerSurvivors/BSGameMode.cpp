@@ -142,7 +142,9 @@ void ABSGameMode::Tick(float Dt)
 		if (W > 0 && H > 0)
 		{
 			const float Short = (float)FMath::Min(W, H), Long = (float)FMath::Max(W, H);
-			float Scale = Short < 720.f ? 720.f / Short : 1.f;
+			static float MinShort = 720.f;
+			static bool bReadMin = FParse::Value(FCommandLine::Get(), TEXT("BSStreamMinRes="), MinShort);   // -BSStreamMinRes=540 for weak networks
+			float Scale = Short < MinShort ? MinShort / Short : 1.f;
 			if (Long * Scale > 1920.f) Scale = 1920.f / Long;
 			const int32 TW = FMath::Max(16, FMath::RoundToInt(W * Scale / 16.f) * 16);
 			const int32 TH = FMath::Max(16, FMath::RoundToInt(H * Scale / 16.f) * 16);
