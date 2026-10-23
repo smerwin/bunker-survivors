@@ -16,3 +16,4 @@ Unreal/PixelStreaming/
 *.log
 Unreal/**/Content/Probe/
 server/vendor/
+__pycache__/

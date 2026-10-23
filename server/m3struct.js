@@ -4,17 +4,41 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const https = require('https');
 
 const XML_URL = 'https://raw.githubusercontent.com/SC2Mapster/m3addon/master/structures.xml';
 const XML_PATH = path.join(__dirname, 'vendor', 'm3addon-structures.xml');
 
+function download(url, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    https.get(url, res => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects < 5) {
+        res.resume();
+        return resolve(download(new URL(res.headers.location, url).href, redirects + 1));
+      }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode + ' for ' + url)); }
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    }).on('error', reject);
+  });
+}
+
+// Makes sure the structure description is on disk (one small download, the first time only). Call before any
+// effect is extracted: M3Layout reads the file synchronously.
+async function ensureStructures() {
+  if (fs.existsSync(XML_PATH)) return XML_PATH;
+  console.log('Downloading the M3 structure description from ' + XML_URL);
+  const xml = await download(XML_URL);
+  if (!/<structure\s+name=/.test(xml.toString('utf8', 0, 4096))) throw new Error('unexpected content from ' + XML_URL);
+  fs.mkdirSync(path.dirname(XML_PATH), { recursive: true });
+  fs.writeFileSync(XML_PATH, xml);
+  return XML_PATH;
+}
+
 function loadXml() {
-  if (!fs.existsSync(XML_PATH)) {
-    fs.mkdirSync(path.dirname(XML_PATH), { recursive: true });
-    console.log('Downloading the M3 structure description from ' + XML_URL);
-    execFileSync('curl', ['-sfL', '-o', XML_PATH, XML_URL]);
-  }
+  if (!fs.existsSync(XML_PATH)) throw new Error('M3 structure description missing: call ensureStructures() first (' + XML_PATH + ')');
   return fs.readFileSync(XML_PATH, 'utf8');
 }
 
@@ -138,4 +162,4 @@ class M3File {
   str(ref) { return this.deref(ref)[0] || ''; }
 }
 
-module.exports = { M3Layout, M3File };
+module.exports = { M3Layout, M3File, ensureStructures };

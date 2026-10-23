@@ -2,7 +2,7 @@
 // the Unreal game replays with its own sprite renderer. Animated emitter properties are sampled per sequence.
 // Usage: node m3fx.js <m3 path> [sequence name]   (prints the JSON)
 'use strict';
-const { M3Layout, M3File } = require('./m3struct');
+const { M3Layout, M3File, ensureStructures } = require('./m3struct');
 
 const SD_NAMES = ['sdev', 'sd2v', 'sd3v', 'sd4q', 'sdcc', 'sdr3', 'unknownRef8', 'sds6', 'sdu6', 'unknownRef11', 'sdu3', 'sdfg', 'sdmb'];
 const FPS = 30;
@@ -182,7 +182,6 @@ function extractFx(sc2, m3Path, seqName) {
       const z = qrot(w.q, { x: 0, y: 0, z: 1 }), x = qrot(w.q, { x: 1, y: 0, z: 0 });
       axis.push([r3(z.x), r3(z.y), r3(z.z), r3(x.x), r3(x.y), r3(x.z)]);
     }
-    const same = collapse;
     const bursts = anim.keys(p.partEmit).filter(([, v]) => v > 0).map(([t, v]) => [t / 1000, v]);
     const flags = p.flags >>> 0;
     return {
@@ -191,7 +190,7 @@ function extractFx(sc2, m3Path, seqName) {
       cols: flipUv ? (p.numberOfColumns || layerCols || 1) : 1, rows: flipUv ? (p.numberOfRows || layerRows || 1) : 1,
       frames: [p.phase1StartImageIndex, p.phase1EndImageIndex, p.phase2StartImageIndex, p.phase2EndImageIndex, r3(p.relativePhase1Length)],
       randFrame: !!(flags & 0x10000), maxParticles: p.maxParticles, type: p.particleType, lengthWidth: r3(p.lengthWidthRatio),
-      pos: same(pos), axis: same(axis),
+      pos: collapse(pos), axis: collapse(axis),
       rate: sampled(anim, p.emissionRate, dur, r3), bursts,
       speed: [sampled(anim, p.emissionSpeed1, dur, r3), sampled(anim, p.emissionSpeed2, dur, r3), !!p.randomizeWithEmissionSpeed2],
       angle: [sampled(anim, p.emissionAngleX, dur, r3), sampled(anim, p.emissionAngleY, dur, r3)],
@@ -217,7 +216,9 @@ module.exports = { extractFx, extractFxVariants };
 
 if (require.main === module) {
   const { SC2Assets, findInstall } = require('./sc2');
-  const sc2 = new SC2Assets(findInstall(process.env.SC2_DIR));
-  const fx = extractFx(sc2, process.argv[2], process.argv[3]);
-  console.log(JSON.stringify(fx, null, process.env.PRETTY ? 1 : 0));
+  ensureStructures().then(() => {
+    const sc2 = new SC2Assets(findInstall(process.env.SC2_DIR));
+    const fx = extractFx(sc2, process.argv[2], process.argv[3]);
+    console.log(JSON.stringify(fx, null, process.env.PRETTY ? 1 : 0));
+  }).catch(e => { console.error(e.message); process.exit(1); });
 }
