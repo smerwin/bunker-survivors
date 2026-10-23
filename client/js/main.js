@@ -14,6 +14,7 @@ window.BS = window.BS || {};
 
   async function boot() {
     renderer = new BS.Renderer($('gl'), $('fx'), { maxDpr: touch ? 1.5 : 2, animEvery: touch ? 2 : 1 });
+    window.renderer = renderer;
     try {
       const st = await fetch('/api/status').then(r => r.json());
       $('status').textContent = 'STARCRAFT II ' + st.sc2Version + ' LINKED  ' + st.hostname.toUpperCase();

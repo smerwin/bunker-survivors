@@ -565,7 +565,10 @@ bool ABSGame::DropTank()
 	if (Minerals < Cost) { Toast(TEXT("Not enough minerals")); return false; }
 	Minerals -= Cost;
 	TSharedPtr<FBSTank> T = MakeShared<FBSTank>();
-	const FVector2D Slot = TankSlots[Tanks.Num()];
+	// First slot no living tank is using (a replacement for a destroyed tank goes where the old one stood).
+	const FVector2D* Free = TankSlots.FindByPredicate([this](const FVector2D& S) { return !Tanks.ContainsByPredicate([&S](const TSharedPtr<FBSTank>& K) { return !K->bDead && FVector2D::Distance(FVector2D(K->X, K->Y), S) < 0.5f; }); });
+	if (!Free) { Minerals += Cost; Toast(TEXT("No room for more tanks")); return false; }
+	const FVector2D Slot = *Free;
 	T->X = Slot.X; T->Y = Slot.Y;
 	T->Med = FVector(Slot.X, Mode == EBSMode::Lane ? -16.f : -28.f, 5.5f);
 	T->Medivac = AcquireModel(TEXT("medivac"));

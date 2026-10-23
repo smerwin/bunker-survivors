@@ -221,7 +221,7 @@ window.BS = window.BS || {};
     setCameraMode(mode) {
       const c = this.cam;
       if (mode === 'lane') {
-        Object.assign(c, { tx: 0, ty: this.height > this.width ? 2.4 : 4.5, dist: 22, pitch: 60 * DEG, yaw: 0, minDist: 10, maxDist: 36, bounds: { x0: -8, x1: 8, y0: -4, y1: 20 } });
+        Object.assign(c, { tx: 0, ty: this.height > this.width ? 3.6 : 4.5, dist: this.height > this.width ? 28 : 22, pitch: 60 * DEG, yaw: 0, minDist: 10, maxDist: 36, bounds: { x0: -8, x1: 8, y0: -4, y1: 20 } });
         c.fov = (this.height > this.width ? 55 : 42) * DEG;
       } else {
         Object.assign(c, { tx: 0, ty: 0, dist: 30, pitch: 56 * DEG, yaw: 0, minDist: 10, maxDist: 60, bounds: { x0: -18, x1: 18, y0: -18, y1: 18 } });
@@ -277,60 +277,102 @@ window.BS = window.BS || {};
       return [ray[0] + (ray[3] - ray[0]) * t, ray[1] + (ray[4] - ray[1]) * t];
     }
 
-    // ---- Ground -------------------------------------------------------------------------------
+    // ---- Ground ------------------------------------------------------------------------------------
+    // A height grid (flat in the arena; the lane's Y-shaped chokepoint from terrain.js) textured with SC2's Char
+    // ground on the flats and Char cliff rock on the faces (projected from the side, dark rock grading to a glowing base).
     initGround() {
       const gl = this.gl;
-      const vs = 'attribute vec3 a_pos; attribute vec2 a_uv; uniform mat4 u_vp; varying vec2 v_uv; varying vec3 v_pos;' +
-        'void main(){ v_uv = a_uv; v_pos = a_pos; gl_Position = u_vp * vec4(a_pos, 1.0); }';
-      const fs = 'precision mediump float; uniform sampler2D u_tex; uniform vec2 u_center; uniform vec2 u_scale; uniform float u_radius; uniform float u_creep;' +
-        'varying vec2 v_uv; varying vec3 v_pos;' +
-        'void main(){ vec3 c = texture2D(u_tex, v_uv).rgb;' +
-        ' vec2 d2 = (v_pos.xy - u_center) * u_scale; float d = length(d2);' +
-        ' float fog = smoothstep(u_radius * 0.6, u_radius, d);' +
+      this.gl.getExtension('OES_element_index_uint');
+      const vs = 'attribute vec3 a_pos; attribute vec3 a_nrm; attribute float a_ao; uniform mat4 u_vp; varying vec3 v_pos; varying vec3 v_nrm; varying float v_ao;' +
+        'void main(){ v_pos = a_pos; v_nrm = a_nrm; v_ao = a_ao; gl_Position = u_vp * vec4(a_pos, 1.0); }';
+      const fs = 'precision mediump float; uniform sampler2D u_tex; uniform sampler2D u_cliff; uniform float u_hasCliff; uniform float u_h;' +
+        ' uniform vec2 u_center; uniform vec2 u_scale; uniform float u_radius; uniform float u_creep;' +
+        ' varying vec3 v_pos; varying vec3 v_nrm; varying float v_ao;' +
+        'void main(){ vec3 n = normalize(v_nrm);' +
+        ' vec3 g = texture2D(u_tex, v_pos.xy / 6.0).rgb;' +
         ' float v = 0.92 + 0.08 * sin(v_pos.x * 1.3 + 0.5) * sin(v_pos.y * 1.1);' +
-        ' vec3 creep = vec3(0.45, 0.2, 0.5);' +
         ' float cr = smoothstep(u_creep - 6.0, u_creep + 6.0, v_pos.y) * 0.45;' +
-        ' c = mix(c * v, c * creep * 1.6, cr);' +
+        ' g = mix(g * v, g * vec3(0.45, 0.2, 0.5) * 1.6, cr);' +
+        ' float cliff = smoothstep(0.12, 0.38, 1.0 - n.z) * u_hasCliff;' +
+        ' float vv = clamp(1.0 - v_pos.z / u_h, 0.03, 0.97) * 0.92;' +
+        ' vec3 cx = texture2D(u_cliff, vec2(v_pos.y * 0.22, vv)).rgb, cy = texture2D(u_cliff, vec2(v_pos.x * 0.22, vv)).rgb;' +
+        ' float wx = abs(n.x) / (abs(n.x) + abs(n.y) + 1e-4);' +
+        ' vec3 c = mix(g, mix(cy, cx, wx) * 1.25, cliff);' +
+        // Lit from the upper left; low ground at the foot of a cliff sits a little in shadow.
+        ' float lit = 0.62 + 0.5 * max(dot(n, normalize(vec3(-0.45, -0.35, 0.82))), 0.0);' +
+        ' c *= lit * (1.0 + 0.16 * smoothstep(u_h * 0.7, u_h, v_pos.z)) * v_ao;' +
+        ' vec2 d2 = (v_pos.xy - u_center) * u_scale; float fog = smoothstep(u_radius * 0.6, u_radius, length(d2));' +
         ' c *= (1.0 - 0.92 * fog);' +
         ' gl_FragColor = vec4(c, 1.0); }';
-      const compile = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+      const compile = (type, src) => { const sh = gl.createShader(type); gl.shaderSource(sh, src); gl.compileShader(sh); if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh)); return sh; };
       const prog = gl.createProgram();
       gl.attachShader(prog, compile(gl.VERTEX_SHADER, vs)); gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fs));
       gl.linkProgram(prog);
       if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+      const U = name => gl.getUniformLocation(prog, name);
       this.ground = {
-        prog, buf: gl.createBuffer(),
-        a_pos: gl.getAttribLocation(prog, 'a_pos'), a_uv: gl.getAttribLocation(prog, 'a_uv'),
-        u_vp: gl.getUniformLocation(prog, 'u_vp'), u_tex: gl.getUniformLocation(prog, 'u_tex'),
-        u_center: gl.getUniformLocation(prog, 'u_center'), u_scale: gl.getUniformLocation(prog, 'u_scale'),
-        u_radius: gl.getUniformLocation(prog, 'u_radius'), u_creep: gl.getUniformLocation(prog, 'u_creep'),
-        count: 0, center: [0, 8], scale: [1, 0.7], radius: 30, creep: 24,
+        prog, vbuf: gl.createBuffer(), ibuf: gl.createBuffer(), count: 0,
+        a_pos: gl.getAttribLocation(prog, 'a_pos'), a_nrm: gl.getAttribLocation(prog, 'a_nrm'), a_ao: gl.getAttribLocation(prog, 'a_ao'),
+        u_vp: U('u_vp'), u_tex: U('u_tex'), u_cliff: U('u_cliff'), u_hasCliff: U('u_hasCliff'), u_h: U('u_h'),
+        u_center: U('u_center'), u_scale: U('u_scale'), u_radius: U('u_radius'), u_creep: U('u_creep'),
+        center: [0, 8], scale: [1, 0.7], radius: 30, creep: 24, cliffs: false,
       };
       this.setGroundShape('lane');
+      const repeat = t => { gl.bindTexture(gl.TEXTURE_2D, t); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT); };
       this.viewer.load(BS.GROUND_TEXTURE, this.solver).then(tex => {
         if (!tex || !tex.webglResource) return;
-        gl.bindTexture(gl.TEXTURE_2D, tex.webglResource);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+        repeat(tex.webglResource);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
         gl.bindTexture(gl.TEXTURE_2D, null);
         this.groundTex = tex.webglResource;
       }).catch(e => console.warn('ground texture failed', e));
+      const img = new Image();
+      img.onload = () => {
+        const t = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, t);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        this.cliffTex = t;
+      };
+      img.src = '/fxtex/' + BS.CLIFF_TEXTURE;
     }
     setGroundShape(mode) {
       const gl = this.gl, g = this.ground;
-      const tile = 6;
+      BS.Terrain.setMode(mode);
       let x0, x1, y0, y1;
-      if (mode === 'lane') { x0 = -22; x1 = 22; y0 = -16; y1 = 48; g.center = [0, 9]; g.scale = [1.0, 0.62]; g.radius = 32; g.creep = 26; }
+      if (mode === 'lane') { x0 = -24; x1 = 24; y0 = -18; y1 = 50; g.center = [0, 9]; g.scale = [1.0, 0.62]; g.radius = 34; g.creep = 28; }
       else { x0 = -50; x1 = 50; y0 = -50; y1 = 50; g.center = [0, 0]; g.scale = [1, 1]; g.radius = 40; g.creep = 1000; }
-      const v = new Float32Array([
-        x0, y0, 0, x0 / tile, y0 / tile, x1, y0, 0, x1 / tile, y0 / tile, x1, y1, 0, x1 / tile, y1 / tile,
-        x0, y0, 0, x0 / tile, y0 / tile, x1, y1, 0, x1 / tile, y1 / tile, x0, y1, 0, x0 / tile, y1 / tile,
-      ]);
-      gl.bindBuffer(gl.ARRAY_BUFFER, g.buf);
-      gl.bufferData(gl.ARRAY_BUFFER, v, gl.STATIC_DRAW);
-      g.count = 6;
+      g.cliffs = BS.Terrain.active;
+      // Fine grid where the cliffs are, a single quad otherwise.
+      const step = g.cliffs ? 0.3 : (x1 - x0);
+      const nx = Math.round((x1 - x0) / step) + 1, ny = Math.round((y1 - y0) / step) + 1;
+      const hgt = new Float32Array(nx * ny);
+      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) hgt[j * nx + i] = BS.Terrain.height(x0 + i * step, y0 + j * step);
+      const v = new Float32Array(nx * ny * 7);
+      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+        const k = j * nx + i, hx = (hgt[j * nx + Math.min(i + 1, nx - 1)] - hgt[j * nx + Math.max(i - 1, 0)]) / (2 * step),
+          hy = (hgt[Math.min(j + 1, ny - 1) * nx + i] - hgt[Math.max(j - 1, 0) * nx + i]) / (2 * step);
+        const l = Math.hypot(hx, hy, 1);
+        // Low ground at the foot of a cliff sits in shadow, which outlines the channel.
+        const sdf = g.cliffs ? BS.Terrain.lowSdf(x0 + i * step, y0 + j * step) : -9;
+        const ao = sdf < 0 ? 1 - 0.38 * Math.max(0, 1 + sdf / 1.6) : 1;
+        v.set([x0 + i * step, y0 + j * step, hgt[k], -hx / l, -hy / l, 1 / l, ao], k * 7);
+      }
+      const big = nx * ny > 65535, idx = big ? new Uint32Array((nx - 1) * (ny - 1) * 6) : new Uint16Array((nx - 1) * (ny - 1) * 6);
+      let o = 0;
+      for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
+        const a = j * nx + i, b = a + 1, c = a + nx, d = c + 1;
+        idx[o++] = a; idx[o++] = b; idx[o++] = d; idx[o++] = a; idx[o++] = d; idx[o++] = c;
+      }
+      gl.bindBuffer(gl.ARRAY_BUFFER, g.vbuf); gl.bufferData(gl.ARRAY_BUFFER, v, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.ibuf); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+      g.count = idx.length; g.indexType = big ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
     }
     drawGround() {
       const gl = this.gl, g = this.ground;
@@ -340,19 +382,23 @@ window.BS = window.BS || {};
       // isolate our pass completely and let the viewer re-enable what it needs afterwards.
       for (let i = 0; i < this.maxAttribs; i++) gl.disableVertexAttribArray(i);
       gl.useProgram(g.prog);
-      gl.bindBuffer(gl.ARRAY_BUFFER, g.buf);
-      gl.enableVertexAttribArray(g.a_pos); gl.vertexAttribPointer(g.a_pos, 3, gl.FLOAT, false, 20, 0);
-      gl.enableVertexAttribArray(g.a_uv); gl.vertexAttribPointer(g.a_uv, 2, gl.FLOAT, false, 20, 12);
+      gl.bindBuffer(gl.ARRAY_BUFFER, g.vbuf);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.ibuf);
+      gl.enableVertexAttribArray(g.a_pos); gl.vertexAttribPointer(g.a_pos, 3, gl.FLOAT, false, 28, 0);
+      gl.enableVertexAttribArray(g.a_nrm); gl.vertexAttribPointer(g.a_nrm, 3, gl.FLOAT, false, 28, 12);
+      gl.enableVertexAttribArray(g.a_ao); gl.vertexAttribPointer(g.a_ao, 1, gl.FLOAT, false, 28, 24);
       gl.uniformMatrix4fv(g.u_vp, false, this.scene.camera.viewProjectionMatrix);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.groundTex); gl.uniform1i(g.u_tex, 0);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.cliffTex || this.groundTex); gl.uniform1i(g.u_cliff, 1);
+      gl.uniform1f(g.u_hasCliff, g.cliffs && this.cliffTex ? 1 : 0); gl.uniform1f(g.u_h, BS.Terrain.H);
       gl.uniform2f(g.u_center, g.center[0], g.center[1]); gl.uniform2f(g.u_scale, g.scale[0], g.scale[1]);
       gl.uniform1f(g.u_radius, g.radius); gl.uniform1f(g.u_creep, g.creep);
       gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.CULL_FACE);
-      gl.drawArrays(gl.TRIANGLES, 0, g.count);
-      // Let the viewer rebind its own shader/texture/attribute state.
-      gl.disableVertexAttribArray(g.a_pos); gl.disableVertexAttribArray(g.a_uv);
-      gl.bindBuffer(gl.ARRAY_BUFFER, null);
-      gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.drawElements(gl.TRIANGLES, g.count, g.indexType, 0);
+      gl.disableVertexAttribArray(g.a_pos); gl.disableVertexAttribArray(g.a_nrm); gl.disableVertexAttribArray(g.a_ao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, null);
       gl.useProgram(null);
       this.viewer.webgl.currentShader = null;
     }
@@ -377,6 +423,7 @@ window.BS = window.BS || {};
       this.corpseScene.renderOpaque();
       this.corpseScene.renderTranslucent();
       this.gl.clear(this.gl.DEPTH_BUFFER_BIT);
+      if (this.ground && this.ground.cliffs) { this.gl.colorMask(false, false, false, false); this.drawGround(); this.gl.colorMask(true, true, true, true); }
       this.scene.startFrame();
       this.scene.renderOpaque();
       this.scene.renderTranslucent();

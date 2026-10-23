@@ -94,6 +94,8 @@ window.BS = window.BS || {};
 
   // Ground texture (a StarCraft II Char tileset).
   BS.GROUND_TEXTURE = 'assets/textures/charex2_1.dds';
+  // Cliff faces of the lane's chokepoint (Char cliff rock, dark at the top, glowing at the base).
+  BS.CLIFF_TEXTURE = 'assets/textures/charex1cliff0_diffuse_00.png';
 
   const S = 'assets/sounds/';
   BS.SOUNDS = {

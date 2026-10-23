@@ -32,6 +32,7 @@ window.BS = window.BS || {};
       this.up = { stim: 0, weapons: 0, vehicle: 0, neosteel: 0, plating: 0, hisec: 0, medivac: 0 };
       this.ab = { stimUntil: 0, stimCd: 0, strikeCd: 0, repairCd: 0, yamatoCd: 0 };
       this.station = null;
+      BS.Terrain.setMode(this.mode);
       this.layout();
       this.bunker.handle = this.r.spawn('bunker', 0, 0, 0, this.bunker.yaw).setTeam(1);
       this.bunker.handle.play(/^stand$/i, true);
@@ -134,8 +135,10 @@ window.BS = window.BS || {};
       if (this.tanks.length >= this.tankMax) return this.toast('No room for more tanks');
       const cost = this.tankCost();
       if (this.minerals < cost) return this.toast('Not enough minerals');
+      // First slot no living tank is using (a replacement for a destroyed tank goes where the old one stood).
+      const slot = this.tankSlots.find(sl => !this.tanks.some(t => !t.dead && Math.hypot(t.x - sl[0], t.y - sl[1]) < 0.5));
+      if (!slot) return this.toast('No room for more tanks');
       this.minerals -= cost;
-      const slot = this.tankSlots[this.tanks.length];
       const t = { x: slot[0], y: slot[1], hp: d.hp, maxHp: d.hp, armor: d.armor, cd: 0, state: 'incoming', t: 0, radius: d.radius, handle: null, dead: false, flash: 0,
         mx: slot[0], my: this.mode === 'lane' ? -16 : -28, mz: 5.5 };
       t.medivac = this.r.spawn('medivac', t.mx, t.my, t.mz, Math.PI / 2).setTeam(1);
@@ -274,14 +277,24 @@ window.BS = window.BS || {};
       let x, y;
       if (at) { x = at[0] + rnd(-0.6, 0.6); y = at[1] + rnd(-0.6, 0.6); }
       else if (this.mode === 'lane') {
-        if (ang === 1 || ang === 2) { x = (ang === 1 ? 1 : -1) * rnd(10, 13); y = rnd(17, 23); }
+        if (ang === 1 || ang === 2) {
+          // Somewhere down the arm (see terrain.js), not on the cliffs beside it.
+          const s = ang === 1 ? 1 : -1, t = rnd(0.55, 0.85), off = rnd(-2.2, 2.2);
+          const A = BS.Terrain.arm, dx = A.bx - A.ax, dy = A.by - A.ay, L = Math.hypot(dx, dy);
+          x = s * (A.ax + dx * t + off * dy / L); y = A.ay + dy * t - off * dx / L;
+        }
         else { x = rnd(-4.6, 4.6); y = rnd(27, 31); }
       } else { const rr = rnd(25, 28); x = Math.cos(ang + rnd(-0.35, 0.35)) * rr; y = Math.sin(ang + rnd(-0.35, 0.35)) * rr; }
       let model = d.model, death = d.death;
       if (d.variants && Math.random() < 0.45) { const v = pick(d.variants); model = v; if (BS.EXTRA_MODELS[v + 'Death']) death = v + 'Death'; }
-      const z = d.flying ? d.fly : 0;
+      const z = d.flying ? d.fly : BS.Terrain.height(x, y);
       const e = { type, def: d, x, y, z, yaw: Math.atan2(-y, -x), hp: 0, maxHp: 0, radius: d.radius, life: d.life || 0, cd: rnd(0, d.cd), retarget: 0,
         target: null, hitAt: -1, pendingHit: false, slowUntil: 0, burrowed: false, burrowT: 0, attacking: false, anim: '', flash: 0, sx: 0, sy: 0, model, death };
+      // Lane terrain: ground zerg follow the Y; some ranged ones climb a ramp to a ledge over the bunker.
+      if (!d.flying && !at) {
+        const high = this.mode === 'lane' && ['acid', 'spine', 'bullet'].includes(d.projectile) && Math.random() < 0.4;
+        e.route = BS.Terrain.route(x, y, high); e.highRoute = high;
+      }
       e.hp = e.maxHp = d.hp * (1 + (this.hard ? 0.025 : 0.02) * Math.max(0, this.wave - 10));   // late waves get tougher
       e.handle = this.r.spawn(model, x, y, z, e.yaw).setTeam(3);
       if (d.scale) e.handle.setScale(d.scale);
@@ -343,11 +356,13 @@ window.BS = window.BS || {};
       }
     }
     corpse(key, x, y, z, yaw, hold, scale, terran) {
-      this.fx.play(key, x, y, Math.max(z, 0), yaw, scale || 1);
+      this.fx.play(key, x, y, Math.max(z, BS.Terrain.height(x, y)), yaw, scale || 1);
       // Corpses render in their own pass behind the living (see Renderer.frame), so they never cover live zerg.
-      const h = this.r.spawn(key, x, y, Math.min(z, 0), yaw, { corpse: true }).setTeam(terran ? 1 : 3);
+      const gz = BS.Terrain.height(x, y);
+      z = Math.min(z, gz);
+      const h = this.r.spawn(key, x, y, z, yaw, { corpse: true }).setTeam(terran ? 1 : 3);
       if (scale) h.setScale(scale);
-      const c = { h, t: 0, x, y, z: Math.min(z, 0), yaw, sink: !/^bunker/.test(key), hold: hold || 3.5 };
+      const c = { h, t: 0, x, y, z, yaw, sink: !/^bunker/.test(key), hold: hold || 3.5 };
       const len = h.playRandom(/^death/i, false);
       c.hold = c.sink ? clamp(Math.min(len || 3, 4), 2.5, 4) : Math.max(hold, Math.min(len || 8, 8));
       if (z > 0.5) c.hold = Math.max(c.hold, 2);
@@ -482,7 +497,8 @@ window.BS = window.BS || {};
           if (!e.burrowed && reach <= range - 1) { e.burrowed = true; e.burrowT = 1; this.playAnim(e, 'burrow'); }
           else if (e.burrowed) e.burrowT -= dt;
         }
-        const canAttack = reach <= range && !(d.burrows && (!e.burrowed || e.burrowT > 0));
+        const high = BS.Terrain.onHigh(e.x, e.y);
+        const canAttack = reach <= range + (high ? 1 : 0) && !(d.burrows && (!e.burrowed || e.burrowT > 0)) && !(e.route && e.route.length && e.highRoute);
         if (canAttack) {
           e.attacking = true;
           e.yaw = Math.atan2(dy, dx);
@@ -505,15 +521,31 @@ window.BS = window.BS || {};
               if (d.cleave) for (const o of targets) if (o !== tg && dist(tg.x, tg.y, o.x, o.y) - o.radius < d.cleave) this.damageDefender(o, dmg * 0.5);
             }
           }
+        } else if (e.perched) {
+          e.attacking = false;
+          this.playAnim(e, 'stand');           // holding the ledge, waiting for something in range
         } else if (!(d.burrows && e.burrowed)) {
           e.attacking = false;
           this.playAnim(e, 'walk');
-          const sp = d.speed * (slowed ? 0.5 : 1), nx = dx / (dd || 1), ny = dy / (dd || 1);
-          e.x += nx * sp * dt + e.sx * 0.8; e.y += ny * sp * dt + e.sy * 0.8;
-          if (this.mode === 'lane') { const half = 5.2 + Math.max(0, e.y - 4) * 0.75; e.x = clamp(e.x, -half, half); }   // the lane fans out to the north
+          // Head for the next waypoint of the route through the Y, then straight for the target.
+          let gx = t.x, gy = t.y;
+          if (e.route && e.route.length) {
+            [gx, gy] = e.route[0];
+            if (Math.hypot(gx - e.x, gy - e.y) < 0.9) { e.route.shift(); if (!e.route.length && e.highRoute) e.perched = true; }
+          }
+          const gd = Math.hypot(gx - e.x, gy - e.y) || 1;
+          const sp = d.speed * (slowed ? 0.5 : 1), nx = (gx - e.x) / gd, ny = (gy - e.y) / gd;
+          const mx = nx * sp * dt + e.sx * 0.8, my = ny * sp * dt + e.sy * 0.8;
+          // Cliffs: slide along them instead of walking through.
+          if (BS.Terrain.walkable(e.x + mx, e.y + my)) { e.x += mx; e.y += my; }
+          else if (BS.Terrain.walkable(e.x + mx, e.y)) e.x += mx;
+          else if (BS.Terrain.walkable(e.x, e.y + my)) e.y += my;
+          e.x = clamp(e.x, -21, 21);
+          if (!d.flying) e.z = BS.Terrain.height(e.x, e.y);
           // Face the way it is heading, not the way the crowd shoves it, and turn at a creature's pace.
           const turn = (d.radius >= 0.9 ? 3 : 8) * dt;
           e.yaw += clamp(angDelta(e.yaw, Math.atan2(ny, nx)), -turn, turn);
+          if (e.perched) this.playAnim(e, 'stand');
         }
       }
     }
@@ -551,12 +583,13 @@ window.BS = window.BS || {};
           if (u.type === 'firebat') target = list.find(e => e.def.light) || target;
         }
         u.cd += d.cd;
-        const dmg = d.dmg + this.up.weapons;
+        const miss = BS.Terrain.onHigh(target.x, target.y) && Math.random() < 0.3;   // firing up at the high ground
+        const dmg = miss ? 0 : d.dmg + this.up.weapons;
         const ang = Math.atan2(target.y, target.x);
         const slit = this.bunkerSlit(ang);
         const hx = target.x, hy = target.y, hz = target.z + target.def.height * 0.5;
         if (u.type === 'marine') {
-          this.hurtEnemy(target, dmg);
+          if (dmg) this.hurtEnemy(target, dmg);
           // A little spread along the slit; three-round bursts with SC2's muzzle mesh and impact sparks.
           const k = rnd(-0.18, 0.18), sx = slit[0] - Math.sin(ang) * k, sy = slit[1] + Math.cos(ang) * k, aim = Math.atan2(hy - sy, hx - sx);
           for (let r = 0; r < 3; r++) {
@@ -566,7 +599,7 @@ window.BS = window.BS || {};
           }
           BS.audio.play('marineFire', { vol: 0.3, gap: 0.09 });
         } else if (u.type === 'firebat') {
-          for (const v of this.enemiesInRange(hx, hy, d.splash, pred)) this.hurtEnemy(v, dmg + (v.def.light ? d.dmgLight : 0));
+          if (dmg) for (const v of this.enemiesInRange(hx, hy, d.splash, pred)) this.hurtEnemy(v, dmg + (v.def.light ? d.dmgLight : 0));
           this.fx.play('firebatLaunch', slit[0], slit[1], slit[2], ang, 1.2);
           BS.audio.play('firebatFire', { vol: 0.45, gap: 0.3 });
         } else {
@@ -722,7 +755,7 @@ window.BS = window.BS || {};
             BS.audio.play('tankHit', { vol: 0.6, gap: 0.1 });
             this.shake = Math.min(1, this.shake + 0.1);
           } else if (p.kind === 'grenade') {
-            if (p.target && p.target.hp > 0) { p.target.slowUntil = this.time + p.def.slow; p.target.anim = ''; this.hurtEnemy(p.target, p.dmg + (p.target.def.armored ? p.def.dmgArmored : 0)); }
+            if (p.target && p.target.hp > 0 && p.dmg) { p.target.slowUntil = this.time + p.def.slow; p.target.anim = ''; this.hurtEnemy(p.target, p.dmg + (p.target.def.armored ? p.def.dmgArmored : 0)); }
           } else if (p.kind === 'rocket') {
             if (p.target && p.target.hp > 0) this.hurtEnemy(p.target, p.dmg);
             BS.audio.play('bansheeHit', { vol: 0.35, gap: 0.1 });
