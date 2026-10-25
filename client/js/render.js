@@ -231,10 +231,43 @@ window.BS = window.BS || {};
         if (!model) throw new Error('model failed: ' + key);
         // Particle-only effect models have no mesh; the viewer cannot draw them (and errors trying).
         if (!model.batches || !model.batches.length || !model.arrayBuffer) throw new Error('model has no drawable geometry: ' + key);
+        this.fixGlowCones(model);
         return model;
       });
       this.models.set(key, p);
       return p;
+    }
+    // SC2 light cones (a medivac's engine lights) are additive-with-alpha materials with no texture: an emissive colour,
+    // faded along the cone by a gradient alpha mask. The viewer draws that blend mode opaque and ignores layer colours,
+    // so they came out as solid black cones. Draw them additive, with a texture baked from the colour and the gradient.
+    fixGlowCones(model) {
+      const gl = this.gl;
+      for (const mat of (model.materials && model.materials[1]) || []) {
+        const L = mat.layers, em = L && L[4], am = L && L[8];
+        if (!em || mat.blendMode !== 3 || L[0].active || em.active || !am.active || !em.layer || !em.layer.color) continue;
+        const c = em.layer.color.initValue;          // stored BGRA
+        if (!c) continue;
+        mat.blendMode = 2;                             // additive
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => {
+          const cv = document.createElement('canvas'); cv.width = img.width; cv.height = img.height;
+          const x = cv.getContext('2d'); x.drawImage(img, 0, 0);
+          const d = x.getImageData(0, 0, cv.width, cv.height), p = d.data;
+          for (let i = 0; i < p.length; i += 4) {
+            const k = p[i + 3] / 255 * 0.7;            // the mask's alpha, a little softer than full strength
+            p[i] = c[2] * k; p[i + 1] = c[1] * k; p[i + 2] = c[0] * k; p[i + 3] = 255;
+          }
+          const tex = gl.createTexture();
+          gl.bindTexture(gl.TEXTURE_2D, tex);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, d);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          gl.bindTexture(gl.TEXTURE_2D, null);
+          Object.assign(em, { active: 1, texture: { texture: { webglResource: tex }, wrapS: gl.CLAMP_TO_EDGE, wrapT: gl.CLAMP_TO_EDGE },
+            textureUnit: 5, op: 2, colorChannels: 0, uvCoordinate: am.uvCoordinate, invert: 0, clampResult: 0, teamColorMode: 0 });
+        };
+        img.src = '/fxtex/' + am.source.replace(/\.dds$/i, '.png');
+      }
     }
     async preload(keys, onProgress) {
       let done = 0;

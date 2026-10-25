@@ -196,6 +196,22 @@ function convertM3(sc2, m3Path, options) {
       else if (blend === 1) mat.alphaMode = 'BLEND';
       else { mat.alphaMode = 'BLEND'; mat.extras.additive = true; }
       if (sm.flags & MAT_TWO_SIDED) mat.doubleSided = true;
+      // A light cone (a medivac's engine lights): additive, no texture, an emissive colour faded along the cone by a
+      // gradient alpha mask. Bake colour x mask into a texture so engines that only read textures draw it as a glow.
+      const em = refFirst(sm.emissiveLayer), amPath = layerPath(sm.alphaMaskLayer);
+      if (opts.textures && blend >= 2 && !diffuse && !emissive && amPath && em && em.color && em.color.initValue) {
+        const c = em.color.initValue, buf = sc2.read(amPath);           // colours are stored BGRA
+        try {
+          const img = buf && decodeDDS(buf);
+          if (img) {
+            const p = img.data;
+            for (let i = 0; i < p.length; i += 4) { const k = p[i + 3] / 255 * 0.7; p[i] = c[2] * k; p[i + 1] = c[1] * k; p[i + 2] = c[0] * k; p[i + 3] = 255; }
+            const png = encodePNG(img);
+            mat.pbrMetallicRoughness.baseColorTexture = { index: g.image(png, 'glow_' + path.basename(amPath, '.dds')) };
+            mat.extras.glow = true;
+          }
+        } catch (e) { report.badTextures.push(amPath + ' (' + e.message + ')'); }
+      }
       if (opts.textures) {
         const d = loadTexture(sc2, diffuse, 'diffuse', texCache, report);
         if (d) mat.pbrMetallicRoughness.baseColorTexture = { index: g.image(d, path.basename(diffuse, '.dds')) };
