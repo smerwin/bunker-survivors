@@ -751,7 +751,7 @@ void ABSGame::UpdateSquad(float Dt)
 		const FBSInfantryDef* D = M.Def;
 		auto Pred = [D](const FBSEnemy& E) { return !(D->bGroundOnly && E.Def->bFlying); };
 		// Morale: when a third of the group around it has just been killed, the group falls back level with the bunker.
-		if (!M.bBoarding && M.RetreatUntil <= Time && Forward(M))
+		if (!M.bBoarding && !bStim && M.RetreatUntil <= Time && Forward(M))
 		{
 			int32 Lost = 0, Near = 0;
 			for (const FVector& K : SquadDeaths) Lost += Dist2(K.X, K.Y, M.X, M.Y) < 3.5f * 3.5f;
@@ -764,13 +764,29 @@ void ABSGame::UpdateSquad(float Dt)
 		}
 		float Gx = M.Spot.X, Gy = M.Spot.Y;
 		if (M.bBoarding) { Gx = (M.X < 0 ? -1 : 1) * (Hs + 0.3f); Gy = 0.4f; }
-		else if (M.RetreatUntil > Time)
+		else if (M.RetreatUntil > Time && !bStim)
 		{
 			if (!Forward(M)) { Gx = M.X; Gy = M.Y; }                                   // back on the line: hold and fire
 			else if (bLane) { Gx = FMath::Clamp(M.X, -6.f, 6.f); Gx = (Gx < 0 ? -1 : 1) * FMath::Max(FMath::Abs(Gx), Hs + 0.8f); Gy = 0.4f; }
 			else { const float A = FMath::Atan2(M.Y, M.X); Gx = FMath::Cos(A) * 2.8f; Gy = FMath::Sin(A) * 2.8f; }
 		}
 		else if (EnemiesInRange(M.X, M.Y, D->Range, Pred).Num()) { Gx = M.X; Gy = M.Y; }   // hold and fire
+		else if (bStim)
+		{
+			// Stimmed: the whole squad charges the nearest zerg until it is in range, no bounding, no falling back.
+			const FBSEnemy* Th = nullptr; float Nearest = 1e9f;
+			for (const TSharedPtr<FBSEnemy>& E : Enemies)
+			{
+				if (!E->Alive() || !Pred(*E) || Dist2(0, 0, E->X, E->Y) > 24 * 24) continue;
+				const float Dd = Dist2(M.X, M.Y, E->X, E->Y);
+				if (Dd < Nearest) { Nearest = Dd; Th = E.Get(); }
+			}
+			if (Th)
+			{
+				const float A = FMath::Atan2(M.Y - Th->Y, M.X - Th->X), R = D->Range * 0.85f + Th->Radius;
+				Gx = Th->X + FMath::Cos(A) * R; Gy = Th->Y + FMath::Sin(A) * R;
+			}
+		}
 		else
 		{
 			// Advance on the nearest zerg that is attacking our position from beyond our reach.
@@ -793,10 +809,10 @@ void ABSGame::UpdateSquad(float Dt)
 		const float Dx = Wp.X - M.X, Dy = Wp.Y - M.Y, Dd = FMath::Max(0.001f, FMath::Sqrt(Dx * Dx + Dy * Dy));
 		if (Far > 0.12f)
 		{
-			const float Sp = FMath::Min(Dd, 3.15f * Dt), Ox = M.X, Oy = M.Y;
+			const float Sp = FMath::Min(Dd, 3.15f * (bStim ? 1.5f : 1.f) * Dt), Ox = M.X, Oy = M.Y;
 			StepGround(M.X, M.Y, Dx / Dd * Sp, Dy / Dd * Sp);
 			if (M.X != Ox || M.Y != Oy) M.Yaw = FMath::Atan2(M.Y - Oy, M.X - Ox);
-			if (M.Actor && M.Anim != TEXT("walk")) { M.Anim = TEXT("walk"); M.Actor->Play(WalkNames, true, 1.2f); }
+			if (M.Actor && M.Anim != TEXT("walk")) { M.Anim = TEXT("walk"); M.Actor->Play(WalkNames, true, bStim ? 1.8f : 1.2f); }
 			if (M.Actor) M.Actor->SetSim(M.X, M.Y, BSTerrain::Height(M.X, M.Y), M.Yaw);
 			continue;
 		}
@@ -975,7 +991,8 @@ bool ABSGame::CallAirStrike()
 		B.X = B.Post.X * 0.5f; B.Y = (bLane ? -16.f : -34.f) - i * 1.2f; B.Z = BSDefs::BansheeFly + 1.5f; B.Yaw = PI / 2; B.Cd = 0.3f + i * 0.2f;
 		B.Actor = AcquireModel(TEXT("banshee"));
 		if (B.Actor) { B.Actor->SetTeamColor(TerranColor); B.Actor->Play(WalkNames, true); }
-		Banshees.Add(B);
+		B.Hp = B.MaxHp = BSDefs::BansheeHp;
+		Banshees.Add(MakeShared<FBSBanshee>(B));
 	}
 	Toast(TEXT("Banshees inbound"));
 	return true;
@@ -1010,8 +1027,8 @@ void ABSGame::YamatoImpact(const FVector& At, float Dmg)
 {
 	auto Any = [](const FBSEnemy& X) { return X.Alive(); };
 	TArray<TSharedPtr<FBSEnemy>> Hit = EnemiesInRange(At.X, At.Y, BSDefs::YamatoRadius, Any);
-	if (Hit.Num()) HurtEnemy(Hit[0], Dmg - BSDefs::YamatoSplash);
-	for (const TSharedPtr<FBSEnemy>& V : Hit) if (V->Alive()) HurtEnemy(V, BSDefs::YamatoSplash);
+	if (Hit.Num()) HurtEnemy(Hit[0], Dmg - BSDefs::YamatoSplash, true);
+	for (const TSharedPtr<FBSEnemy>& V : Hit) if (V->Alive()) HurtEnemy(V, BSDefs::YamatoSplash, true);
 	if (!PlayFx(TEXT("yamatoImpact"), FVector(At.X, At.Y, 0.3f), 0, 1.2f))
 	{
 		EmitExplosion(FVector(At.X, At.Y, 0.4f), BSDefs::YamatoRadius, FLinearColor(1, 0.72f, 0.35f), FLinearColor(0.85f, 0.2f, 0.04f), 34);
@@ -1052,10 +1069,10 @@ FVector ABSGame::BunkerSlit(float Ang) const
 }
 
 // SC2's marine muzzle flash is a small animated mesh (the particles only add sparks).
-void ABSGame::MuzzleMesh(const FVector& At, float Yaw, float Delay)
+void ABSGame::MuzzleMesh(const FVector& At, float Yaw, float Delay, float Scale)
 {
 	if (!Assets->Model(TEXT("fxMuzzle"))) return;
-	FBSFlash F; F.A = AcquireModel(TEXT("fxMuzzle")); F.P = At; F.Yaw = Yaw; F.Delay = Delay; F.Life = 0.09f;
+	FBSFlash F; F.A = AcquireModel(TEXT("fxMuzzle")); F.P = At; F.Yaw = Yaw; F.Delay = Delay; F.Life = 0.09f; F.Scale = Scale;
 	if (!F.A) return;
 	F.A->SetSim(0, 0, -1000, 0);
 	Flashes.Add(F);
@@ -1091,6 +1108,7 @@ bool ABSGame::UseStim()
 		else M->Hp -= M->Def->StimHp;
 	}
 	Ab.StimUntil = Time + BSDefs::StimDuration; Ab.StimCd = BSDefs::StimCooldown;
+	for (const TSharedPtr<FBSTrooper>& M : Squad) { M->RetreatUntil = 0; if (M->Anim == TEXT("walk")) M->Anim.Reset(); }   // galvanised: the squad goes forward
 	PlaySound(BSSounds::Stim, 0.9f);
 	Floater(0, 0, 3, TEXT("STIM!"), FLinearColor(1, 0.83f, 0.3f));
 	if (Squad.Num())
@@ -1278,24 +1296,55 @@ void ABSGame::UpdateMechs(float Dt)
 	}
 }
 
+// Muzzles of a mech's ground or air weapons, in sim space: its weapon bones (goliath autocannons and missile racks,
+// thor/odin arm cannons and shoulder pods), or their rest-pose spots (model space: x right, y up, z forward).
+TArray<FVector> ABSGame::MechMuzzles(const FBSMech& M, bool bAir) const
+{
+	struct FMz { const TCHAR* Bone; float Rx, Ry, Rz; };
+	const FString& Kind = M.Def->Key;
+	TArray<FMz> L;
+	if (Kind == TEXT("goliath"))
+		L = bAir ? TArray<FMz>{ { TEXT("Ref_Weapon_02"), -0.82f, 2.15f, 0.32f }, { TEXT("Ref_Weapon_05"), 0.85f, 2.15f, 0.32f }, { TEXT("Ref_Weapon_04"), -0.83f, 2.31f, 0.29f }, { TEXT("Ref_Weapon_07"), 0.86f, 2.31f, 0.29f } }
+			: TArray<FMz>{ { TEXT("Ref_Weapon"), -0.83f, 1.56f, 0.87f }, { TEXT("Ref_Weapon_01"), 0.89f, 1.56f, 0.87f } };
+	else if (Kind == TEXT("thor"))
+		L = bAir ? TArray<FMz>{ { TEXT("Ref_Weapon_01"), -1.49f, 4.2f, -0.91f }, { TEXT("Ref_Weapon_04"), 1.5f, 4.31f, -0.76f }, { TEXT("Ref_Weapon_02"), -0.93f, 4.52f, -0.87f }, { TEXT("Ref_Weapon_03"), 0.86f, 4.63f, -0.81f } }
+			: TArray<FMz>{ { TEXT("Ref_Weapon_07"), -2.14f, 1.69f, 1.83f }, { TEXT("Ref_Weapon_05"), 2.15f, 1.68f, 1.84f }, { TEXT("Ref_Weapon_08"), -2.18f, 1.17f, 1.83f }, { TEXT("Ref_Weapon_06"), 2.21f, 1.17f, 1.83f } };
+	else
+		L = bAir ? TArray<FMz>{ { TEXT("Ref_Weapon_01"), -1.14f, 5.02f, -0.97f }, { TEXT("Ref_Weapon_04"), 1.42f, 4.88f, -0.75f }, { TEXT("Ref_Weapon_02"), -0.73f, 5.27f, -1.4f }, { TEXT("Ref_Weapon_03"), 1.13f, 5.13f, -1.28f } }
+			: TArray<FMz>{ { TEXT("Ref_Weapon_07"), -2.22f, 2.27f, 1.4f }, { TEXT("Ref_Weapon_05"), 2.24f, 2.47f, 1.83f }, { TEXT("Ref_Weapon_08"), -2.25f, 1.76f, 1.51f }, { TEXT("Ref_Weapon_06"), 2.27f, 1.98f, 1.99f } };
+	const float H = BSTerrain::Height(M.X, M.Y), Cs = FMath::Cos(M.Yaw), Sn = FMath::Sin(M.Yaw);
+	TArray<FVector> Out;
+	for (const FMz& Z : L)
+	{
+		const FName Bone(Z.Bone);
+		if (M.Actor && M.Actor->Mesh && M.Actor->Mesh->GetBoneIndex(Bone) != INDEX_NONE)
+		{
+			const FVector Wp = M.Actor->Mesh->GetBoneLocation(Bone);
+			Out.Add(FVector(Wp.Y / BSSpace::UnitsPerMetre, Wp.X / BSSpace::UnitsPerMetre, Wp.Z / BSSpace::UnitsPerMetre));
+		}
+		else Out.Add(FVector(M.X + Cs * Z.Rz + Sn * Z.Rx, M.Y + Sn * Z.Rz - Cs * Z.Rx, H + Z.Ry));
+	}
+	return Out;
+}
+
 // One volley: goliath autocannons and hellfire missiles, thor arm cannons and javelin barrage, odin heavy cannons
-// and missile salvos.
+// and missile salvos. Every shot flashes at its own muzzle.
 void ABSGame::MechFire(FBSMech& M, const TSharedPtr<FBSEnemy>& Target, bool bAir, float Dmg)
 {
 	const FBSMechDef* D = M.Def;
 	const FString& Kind = D->Key;
-	const float H = BSTerrain::Height(M.X, M.Y), Ang = M.Aim, Cs = FMath::Cos(Ang), Sn = FMath::Sin(Ang);
-	const float Mz = H + (Kind == TEXT("odin") ? 4.f : Kind == TEXT("thor") ? 3.f : 1.4f);
+	const float Ang = M.Aim;
 	const int32 Shots = bAir ? D->AShots : D->GShots;
 	const FVector Hit(Target->X, Target->Y, Target->Z + Target->Def->Height * 0.5f);
 	if (M.Actor) M.Actor->Play(TEXT("attack"), false);
+	const TArray<FVector> Mz = MechMuzzles(M, bAir);
 	if (Kind == TEXT("goliath") && !bAir)
 	{
 		for (int32 k = 0; k < Shots; k++)
 		{
-			const float Off = k ? 0.35f : -0.35f;
-			const FVector Muzzle(M.X + Cs * 0.7f - Sn * Off, M.Y + Sn * 0.7f + Cs * Off, Mz);
-			PlayFx(TEXT("marineLaunch"), Muzzle, Ang, 2.f, k * 0.12f);
+			const FVector& Muzzle = Mz[k % Mz.Num()];
+			PlayFx(TEXT("marineLaunch"), Muzzle, Ang, 2.2f, k * 0.12f);
+			MuzzleMesh(Muzzle, Ang, k * 0.12f, 1.6f);
 			PlayFx(TEXT("marineImpact"), Hit + FVector(Rnd(-0.2f, 0.2f), Rnd(-0.2f, 0.2f), 0), Ang + PI, 1.6f, k * 0.12f + 0.04f);
 			HurtEnemy(Target, Dmg);
 		}
@@ -1303,23 +1352,23 @@ void ABSGame::MechFire(FBSMech& M, const TSharedPtr<FBSEnemy>& Target, bool bAir
 		return;
 	}
 	const TCHAR* Trail = nullptr; const TCHAR* Impact = nullptr; const TCHAR* Launch = nullptr;
-	float Splash = 0, Scale = 1, Arc = bAir ? 0.8f : 0.4f;
-	if (Kind == TEXT("goliath")) { Trail = TEXT("goliathAirMissile"); Impact = TEXT("goliathAirImpact"); }
+	float Splash = 0, Scale = 1, Arc = bAir ? 0.8f : 0.4f, LaunchScale = 1, FlashScale = 0;
+	if (Kind == TEXT("goliath")) { Trail = TEXT("goliathAirMissile"); Impact = TEXT("goliathAirImpact"); Launch = TEXT("vikingLaunch"); }
 	else if (Kind == TEXT("thor"))
 	{
 		if (bAir) { Trail = TEXT("thorShoulderMissile"); Impact = TEXT("thorShoulderImpact"); Launch = TEXT("thorShoulderLaunch"); Splash = D->ASplash; }
-		else { Trail = TEXT("thorArmMissile"); Impact = TEXT("thorArmImpact"); Launch = TEXT("thorArmLaunch"); }
+		else { Trail = TEXT("thorArmMissile"); Impact = TEXT("thorArmImpact"); Launch = TEXT("thorArmLaunch"); FlashScale = 2.2f; }
 	}
 	else
 	{
-		if (bAir) { Trail = TEXT("thorShoulderMissile"); Impact = TEXT("odinShoulderImpact"); Launch = TEXT("thorShoulderLaunch"); Splash = D->ASplash; }
-		else { Impact = TEXT("tankImpact"); Launch = TEXT("tankLaunch"); Splash = D->GSplash; Scale = 1.6f; Arc = 3; }
+		if (bAir) { Trail = TEXT("thorShoulderMissile"); Impact = TEXT("odinShoulderImpact"); Launch = TEXT("thorShoulderLaunch"); Splash = D->ASplash; LaunchScale = 1.4f; }
+		else { Impact = TEXT("tankImpact"); Launch = TEXT("tankLaunch"); Splash = D->GSplash; Scale = 1.6f; Arc = 3; LaunchScale = 1.6f; FlashScale = 3; }
 	}
 	for (int32 k = 0; k < Shots; k++)
 	{
-		const float Off = (k - (Shots - 1) * 0.5f) * 0.45f;
-		const FVector Muzzle(M.X + Cs * 0.6f - Sn * Off, M.Y + Sn * 0.6f + Cs * Off, Mz);
-		if (Launch) PlayFx(Launch, Muzzle, Ang, Scale, k * 0.08f);
+		const FVector& Muzzle = Mz[k % Mz.Num()];
+		if (Launch) PlayFx(Launch, Muzzle, Ang, LaunchScale, k * 0.08f);
+		if (FlashScale > 0) MuzzleMesh(Muzzle, Ang, k * 0.08f, FlashScale);
 		FBSProjectile P; P.Kind = EBSProjKind::Missile; P.bFriendly = true; P.From = Muzzle; P.To = Hit; P.T = -k * 0.08f;
 		P.Dur = 0.45f + (Arc > 2 ? 0.15f : 0.f); P.Arc = Arc; P.Dmg = Dmg; P.TargetEnemy = Target; P.ImpactFx = Impact; P.ImpactScale = Scale;
 		P.Splash = Splash; P.SplashAir = bAir ? 1 : 0;
@@ -1387,7 +1436,7 @@ void ABSGame::UpdateBc(float Dt)
 	for (int32 i = 0; i < B.Turrets.Num(); i++)
 	{
 		FBSBcTurret& Tu = B.Turrets[i];
-		Tu.Cd -= Dt;
+		Tu.Cd -= Dt * (B.AcidUntil > Time ? 0.7f : 1.f);        // devourer acid slows the batteries
 		if (Tu.Cd > 0) continue;
 		FVector At(B.X + (i % 2 ? 1.6f : -1.6f), B.Y + (1 - i / 2) * 1.8f, B.Sz - 0.3f);
 		if (B.Actor && B.Actor->Mesh && B.Actor->Mesh->GetBoneIndex(Tu.Bone) != INDEX_NONE)
@@ -1396,10 +1445,12 @@ void ABSGame::UpdateBc(float Dt)
 			At = FVector(Wp.Y / BSSpace::UnitsPerMetre, Wp.X / BSSpace::UnitsPerMetre, Wp.Z / BSSpace::UnitsPerMetre);
 		}
 		TSharedPtr<FBSEnemy> E = Tu.Target.Pin();
-		if (!E || !E->Alive() || FMath::Sqrt(Dist2(At.X, At.Y, E->X, E->Y)) - E->Radius > BSDefs::BcRange)
+		// Point defence first: scourge and devourers closing on the ship are picked before anything else.
+		if (!E || !E->Alive() || FMath::Sqrt(Dist2(At.X, At.Y, E->X, E->Y)) - E->Radius > BSDefs::BcRange || (Tu.Shots == 0 && !E->Def->bAntiAir))
 		{
 			TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(At.X, At.Y, BSDefs::BcRange, Any);
-			E = L.Num() ? L[FMath::RandRange(0, FMath::Min(4, L.Num()) - 1)] : nullptr;
+			const TSharedPtr<FBSEnemy>* Threat = L.FindByPredicate([](const TSharedPtr<FBSEnemy>& X) { return X->Def->bAntiAir; });
+			E = Threat ? *Threat : L.Num() ? L[FMath::RandRange(0, FMath::Min(4, L.Num()) - 1)] : nullptr;
 			Tu.Target = E; Tu.Shots = 0;
 		}
 		if (!E) { Tu.Cd = 0.2f; continue; }
@@ -1461,7 +1512,8 @@ bool ABSGame::CallVikings()
 		V.Z = BSDefs::VikingFly + 1.5f; V.Yaw = PI / 2; V.Cd = 0.4f + i * 0.2f;
 		V.Actor = AcquireModel(TEXT("vikingfighter"));
 		if (V.Actor) { V.Actor->SetTeamColor(TerranColor); V.Actor->Play(WalkNames, true); }
-		VikingWing.Add(V);
+		V.Hp = V.MaxHp = BSDefs::VikingHp;
+		VikingWing.Add(MakeShared<FBSBanshee>(V));
 	}
 	Toast(TEXT("Viking wing inbound"));
 	return true;
@@ -1472,7 +1524,7 @@ void ABSGame::UpdateVikings(float Dt)
 	const float HomeY = Mode == EBSMode::Lane ? -20.f : -36.f;
 	for (int32 i = VikingWing.Num() - 1; i >= 0; i--)
 	{
-		FBSBanshee& V = VikingWing[i];
+		FBSBanshee& V = *VikingWing[i];
 		V.T += Dt;
 		if (V.State == FBSBanshee::In)
 		{
@@ -1486,7 +1538,7 @@ void ABSGame::UpdateVikings(float Dt)
 			V.X = V.Post.X + FMath::Sin(V.T * 0.8f + i) * 1.2f; V.Y = V.Post.Y + FMath::Sin(V.T * 1.6f + i) * 0.6f; V.Z = BSDefs::VikingFly + 0.2f * FMath::Sin(V.T * 2 + i);
 			TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(V.X, V.Y, BSDefs::VikingRange, [](const FBSEnemy& E) { return E.Def->bFlying; });
 			if (L.Num()) V.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(V.Yaw, FMath::Atan2(L[0]->Y - V.Y, L[0]->X - V.X)), -4 * Dt, 4 * Dt);
-			V.Cd -= Dt;
+			V.Cd -= Dt * (V.AcidUntil > Time ? 0.7f : 1.f);
 			if (V.Cd <= 0 && L.Num())
 			{
 				V.Cd = BSDefs::VikingCd;
@@ -1555,7 +1607,7 @@ void ABSGame::UpdateNukes(float Dt)
 		if (!PlayFx(TEXT("nuke"), FVector(Done.X, Done.Y, BSTerrain::Height(Done.X, Done.Y)), 0, 1.6f))
 			EmitExplosion(FVector(Done.X, Done.Y, 0.5f), BSDefs::NukeRadius, FLinearColor(1, 0.85f, 0.5f), FLinearColor(0.9f, 0.3f, 0.05f), 60);
 		for (const TSharedPtr<FBSEnemy>& E : EnemiesInRange(Done.X, Done.Y, BSDefs::NukeRadius, Any))
-			HurtEnemy(E, FMath::Sqrt(Dist2(Done.X, Done.Y, E->X, E->Y)) < BSDefs::NukeRadius * 0.5f ? BSDefs::NukeDmg : BSDefs::NukeDmg * 0.5f);
+			HurtEnemy(E, FMath::Sqrt(Dist2(Done.X, Done.Y, E->X, E->Y)) < BSDefs::NukeRadius * 0.5f ? BSDefs::NukeDmg : BSDefs::NukeDmg * 0.5f, true);
 		PlaySound(BSSounds::Explosion, 1.f); PlaySound(BSSounds::TankHit, 0.9f);
 		Shake = 1;
 	}
@@ -1583,20 +1635,25 @@ void ABSGame::StartWave()
 	Wave++;
 	const int32 Wv = Wave;
 	float Budget = (20 + 10 * Wv + 0.45f * Wv * Wv) * (bHard ? 1.15f : 1.f);
+	// Late game: every high-tech card unlocked brings stranger zerg, and more of them. Guardians come for the mechs;
+	// scourge and devourers only when there is Terran air to hunt.
+	const int32 Tier = LateTier();
+	const bool bAirUp = AirPresence();
+	auto Wt = [&](const FBSZergDef* D) { return D->Weight * (D->Late ? 0.6f + 0.4f * Tier : 1.f) * (D->bPreferMech && Mechs.Num() ? 2.f : 1.f) * (D->bAntiAir && !bAirUp ? 0.f : 1.f); };
 	TArray<const FBSZergDef*> Types;
 	for (const FBSZergDef& D : BSDefs::Zerg())
-		if (D.Budget > 0 && Wv >= FMath::CeilToInt(D.Unlock * (bHard ? 0.85f : 1.f))) Types.Add(&D);
+		if (D.Budget > 0 && Wv >= FMath::CeilToInt(D.Unlock * (bHard ? 0.85f : 1.f)) && (!D.Late || Tier >= D.Late)) Types.Add(&D);
 	TArray<FString> List;
 	for (int32 Guard = 0; Budget > 0 && Guard < 400; Guard++)
 	{
 		float Total = 0;
-		for (const FBSZergDef* D : Types) if (D->Budget <= Budget) Total += D->Weight;
+		for (const FBSZergDef* D : Types) if (D->Budget <= Budget) Total += Wt(D);
 		if (Total <= 0) break;
 		float Roll = FMath::FRand() * Total;
 		for (const FBSZergDef* D : Types)
 		{
 			if (D->Budget > Budget) continue;
-			Roll -= D->Weight;
+			Roll -= Wt(D);
 			if (Roll <= 0) { List.Add(D->Key); Budget -= D->Budget; break; }
 		}
 	}
@@ -1631,8 +1688,16 @@ void ABSGame::StartWave()
 		const int32 N = FMath::Min(Left, 6 + FMath::RandRange(0, 10));
 		const float T = 0.5f + Rnd(0.f, Spread);
 		const float Ang = PackAng(0.55f);
-		for (int32 k = 0; k < N; k++) { SpawnQueue.Add({ T + k * 0.04f, TEXT("zergling"), Ang }); Added++; }
+		// Late game: some of the swarm are winged zerglings that hop straight over the mesa.
+		for (int32 k = 0; k < N; k++) { SpawnQueue.Add({ T + k * 0.04f, Tier && FMath::FRand() < FMath::Min(0.5f, 0.15f * Tier) ? TEXT("wingling") : TEXT("zergling"), Ang }); Added++; }
 		Left -= N;
+	}
+	// Late game: overlords drop zerglings behind our lines, and nydus worms breach there.
+	if (Tier)
+	{
+		const int32 DropsN = FMath::FRand() < 0.4f + 0.1f * Tier ? 1 + FMath::FloorToInt(FMath::FRand() * (1 + Tier / 2.f)) : 0;
+		for (int32 i = 0; i < DropsN; i++) { SpawnQueue.Add({ 4 + Rnd(0.f, Spread), TEXT("overlord"), 0.f }); Added++; }
+		if (Tier >= 2 && FMath::FRand() < 0.25f + 0.08f * Tier) { SpawnQueue.Add({ 6 + Rnd(0.f, Spread * 0.6f), TEXT("nydus"), 0.f }); Added++; }
 	}
 	SpawnQueue.Sort([](const FBSSpawn& A, const FBSSpawn& B) { return A.T < B.T; });
 	Tele.Spawned = Added;
@@ -1649,7 +1714,11 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 	const FBSZergDef* D = BSDefs::FindZerg(Type);
 	if (!D) return nullptr;
 	float X, Y;
+	const bool bLane = Mode == EBSMode::Lane;
+	const float SideS = FMath::RandBool() ? 1.f : -1.f, Ar = FMath::FRand() * 2 * PI;
 	if (At) { X = At->X + Rnd(-0.6f, 0.6f); Y = At->Y + Rnd(-0.6f, 0.6f); }
+	else if (D->bTransport) { X = bLane ? SideS * 23 : FMath::Cos(Ar) * 27; Y = bLane ? Rnd(-3, 6) : FMath::Sin(Ar) * 27; }          // overlords come in from a flank
+	else if (D->bNydus) { const float R = Rnd(5.5f, 8); X = bLane ? SideS * Rnd(2.5f, 4.5f) : FMath::Cos(Ar) * R; Y = bLane ? Rnd(-8.5f, -7) : FMath::Sin(Ar) * R; }   // behind our lines
 	else if (Mode == EBSMode::Lane)
 	{
 		const int32 Side = FMath::RoundToInt(Ang);         // 0 north, 1 north-east, 2 north-west
@@ -1667,7 +1736,7 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 	E->Hp = E->MaxHp = D->Hp * (1 + (bHard ? 0.025f : 0.02f) * FMath::Max(0, Wave - 10));   // late waves get tougher
 	E->Cd = Rnd(0, D->Cd); E->Radius = D->Radius; E->Life = D->Life;
 	// Lane terrain: ground zerg follow the Y; some ranged ones climb a ramp to a ledge over the bunker.
-	if (!D->bFlying && !At)
+	if (!D->bFlying && !At && !D->bHops && !D->bNydus)
 	{
 		const bool bRanged = D->Projectile == EBSProjectile::Acid || D->Projectile == EBSProjectile::Spine || D->Projectile == EBSProjectile::Bullet;
 		E->bHighRoute = Mode == EBSMode::Lane && bRanged && FMath::FRand() < 0.4f;
@@ -1693,8 +1762,209 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 		E->Actor->SetSim(X, Y, E->Z, E->Yaw);
 	}
 	PlayEnemyAnim(*E, TEXT("walk"));
+	E->Seed = Rnd(0, 10);
+	if (D->bTransport)
+	{
+		const float A2 = FMath::FRand() * 2 * PI;
+		E->Exit = FVector2D(X, Y); E->Cargo = 5 + LateTier();
+		E->Drop = bLane ? FVector2D(Rnd(-4, 4), Rnd(-6.5f, -3)) : FVector2D(FMath::Cos(A2) * Rnd(4, 6.5f), FMath::Sin(A2) * Rnd(4, 6.5f));
+	}
+	if (D->bNydus)
+	{
+		E->Z = BSTerrain::Height(X, Y) - 3;
+		static const TCHAR* Kinds[] = { TEXT("zergling"), TEXT("zergling"), TEXT("wingling"), TEXT("roach"), TEXT("hydralisk") };
+		for (int32 i = 0; i < 6 + 2 * LateTier(); i++) E->CargoList.Add(Kinds[FMath::RandRange(0, 4)]);
+		PlayFx(TEXT("nydusBirth"), FVector(X, Y, BSTerrain::Height(X, Y)), 0, 1.4f);
+		Toast(TEXT("Nydus worm breaching behind our lines!"));
+	}
 	Enemies.Add(E);
 	return E;
+}
+
+// Gone without a kill (an overlord flying off, a nydus worm burrowing away).
+void ABSGame::Despawn(const TSharedPtr<FBSEnemy>& E)
+{
+	E->Hp = 0;
+	Enemies.Remove(E);
+	ReleaseModel(E->Actor); E->Actor = nullptr;
+	if (Focus.Pin() == E) Focus.Reset();
+}
+
+// Overlord drop: fly to a point behind our lines, unload zerglings one by one, fly back out. Badly hurt, it drops the
+// cargo wherever it is.
+void ABSGame::UpdateOverlord(const TSharedPtr<FBSEnemy>& EP, float Dt)
+{
+	FBSEnemy& E = *EP;
+	enum { In, Unload, Out };
+	if (E.State == Unload)
+	{
+		E.UnloadT -= Dt;
+		if (E.UnloadT <= 0 && E.Cargo > 0) { E.Cargo--; E.UnloadT = 0.2f; const FVector2D At(E.X, E.Y); SpawnEnemy(TEXT("zergling"), 0, &At); }
+		if (E.Cargo <= 0) { E.State = Out; PlayEnemyAnim(E, TEXT("walk")); }
+		return;
+	}
+	const FVector2D G = E.State == Out ? E.Exit : E.Drop;
+	const float Dx = G.X - E.X, Dy = G.Y - E.Y, Dd = FMath::Sqrt(Dx * Dx + Dy * Dy);
+	if (Dd < 0.3f || (E.State == In && E.Hp < E.MaxHp * 0.5f))
+	{
+		if (E.State == In) { E.State = Unload; E.UnloadT = 0.4f; PlayEnemyAnim(E, TEXT("stand")); PlaySound(TEXT("overlordUnload"), 0.6f); Toast(TEXT("Overlord dropping zerglings behind our lines")); }
+		else Despawn(EP);
+		return;
+	}
+	const float S = FMath::Min(Dd, E.Def->Speed * Dt);
+	E.X += Dx / Dd * S; E.Y += Dy / Dd * S;
+	E.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(E.Yaw, FMath::Atan2(Dy, Dx)), -2 * Dt, 2 * Dt);
+	PlayEnemyAnim(E, TEXT("walk"));
+}
+
+// Nydus worm: rises out of the ground, disgorges its cargo, then sinks back unless it is killed first.
+void ABSGame::UpdateNydus(const TSharedPtr<FBSEnemy>& EP, float Dt)
+{
+	FBSEnemy& E = *EP;
+	enum { Birth, Open, Close };
+	E.T += Dt;
+	const float Gz = BSTerrain::Height(E.X, E.Y);
+	if (E.State == Birth)
+	{
+		E.Z = Gz - 3 * (1 - FMath::Clamp(E.T / 1.6f, 0.f, 1.f));
+		if (E.T >= 1.6f) { E.State = Open; E.T = 0; PlayEnemyAnim(E, TEXT("stand")); PlaySound(TEXT("nydusUnload"), 0.8f); }
+		return;
+	}
+	if (E.State == Open)
+	{
+		E.SpawnT -= Dt;
+		if (E.SpawnT <= 0 && E.CargoList.Num()) { E.SpawnT = 0.8f; const FVector2D At(E.X + Rnd(-1, 1), E.Y + Rnd(-1, 1)); const FString K = E.CargoList[0]; E.CargoList.RemoveAt(0); SpawnEnemy(K, 0, &At); }
+		if (!E.CargoList.Num() && E.T > 14) { E.State = Close; E.T = 0; }
+		return;
+	}
+	E.Z = Gz - 3 * FMath::Clamp(E.T / 1.6f, 0.f, 1.f);
+	if (E.T >= 1.6f) Despawn(EP);
+}
+
+// Defiler (alternating dark swarm and plague) and viper (abduct) spells.
+void ABSGame::CastSpell(FBSEnemy& E, const FBSTarget& T)
+{
+	const FBSZergDef* D = E.Def;
+	E.Anim = TEXT("spell"); E.CastUntil = Time + 1;
+	if (E.Actor) E.Actor->Play(TEXT("spell"), false);
+	if (D->Spell == TEXT("abduct"))
+	{
+		// Yank the nearest trooper outside, goliath or thor out of position toward the viper.
+		TSharedPtr<FBSTrooper> BestT; TSharedPtr<FBSMech> BestM; float Bd = (D->Range + 1) * (D->Range + 1);
+		for (const TSharedPtr<FBSTrooper>& M : Squad) if (!M->bDead && Dist2(E.X, E.Y, M->X, M->Y) < Bd) { Bd = Dist2(E.X, E.Y, M->X, M->Y); BestT = M; }
+		for (const TSharedPtr<FBSMech>& M : Mechs) if (!M->bDead && M->Def->Key != TEXT("odin") && Dist2(E.X, E.Y, M->X, M->Y) < Bd) { Bd = Dist2(E.X, E.Y, M->X, M->Y); BestM = M; BestT.Reset(); }
+		if (!BestT && !BestM) { E.Cd = 1; return; }
+		const float Ox = BestT ? BestT->X : BestM->X, Oy = BestT ? BestT->Y : BestM->Y, Oz = BSTerrain::Height(Ox, Oy) + 1;
+		const float A = FMath::Atan2(Oy - E.Y, Ox - E.X);
+		AddFx(EBSFxKind::Tracer, FVector(E.X, E.Y, E.Z), FVector(Ox, Oy, Oz), 0.6f, 0.06f, FLinearColor(0.55f, 0.25f, 1.f), 14);
+		PlayFx(TEXT("viperTongueImpact"), FVector(Ox, Oy, Oz), A);
+		FBSAbduct Ab2; Ab2.Trooper = BestT; Ab2.Mech = BestM; Ab2.Fx = Ox; Ab2.Fy = Oy; Ab2.Tx = E.X + FMath::Cos(A) * 1.5f; Ab2.Ty = E.Y + FMath::Sin(A) * 1.5f;
+		Abductions.Add(Ab2);
+		PlaySound(TEXT("viperAbduct"), 0.7f);
+		Floater(Ox, Oy, Oz + 1, TEXT("ABDUCTED"), FLinearColor(0.75f, 0.55f, 1.f));
+		return;
+	}
+	E.NextSpell = E.NextSpell == 1 ? 2 : E.NextSpell == 2 ? 1 : FMath::RandRange(1, 2);
+	if (E.NextSpell == 1)
+	{
+		// Dark swarm over the zerg pressing the defiler's target: ranged fire into it does a quarter damage.
+		const float Dd = FMath::Max(0.001f, FMath::Sqrt(Dist2(E.X, E.Y, T.X, T.Y))), K = FMath::Min(3.5f, Dd) / Dd;
+		FBSSwarm Sw; Sw.X = T.X + (E.X - T.X) * K; Sw.Y = T.Y + (E.Y - T.Y) * K; Sw.Until = Time + 8;
+		Sw.Fx = PlayFx(TEXT("darkSwarm"), FVector(Sw.X, Sw.Y, BSTerrain::Height(Sw.X, Sw.Y)), 0, 1.3f);
+		Swarms.Add(Sw);
+		Toast(TEXT("Dark swarm"));
+	}
+	else
+	{
+		// Plague: everything of ours near the target bleeds 75 over 5 s, but it cannot kill.
+		for (const FBSTarget& O : Targets)
+		{
+			if (FMath::Sqrt(Dist2(T.X, T.Y, O.X, O.Y)) - O.Radius > 2.5f) continue;
+			const float Until = Time + 5;
+			switch (O.Kind)
+			{
+			case FBSTarget::Bunker: Bunker.PlagueUntil = Until; break;
+			case FBSTarget::Tank: if (auto P = O.TankRef.Pin()) P->PlagueUntil = Until; break;
+			case FBSTarget::Scv: if (auto P = O.ScvRef.Pin()) P->PlagueUntil = Until; break;
+			case FBSTarget::Trooper: if (auto P = O.TrooperRef.Pin()) P->PlagueUntil = Until; break;
+			case FBSTarget::Structure: if (auto P = O.StructureRef.Pin()) P->PlagueUntil = Until; break;
+			case FBSTarget::Mech: if (auto P = O.MechRef.Pin()) P->PlagueUntil = Until; break;
+			default: break;
+			}
+			PlayFx(TEXT("plague"), FVector(O.X, O.Y, BSTerrain::Height(O.X, O.Y) + 0.5f), 0);
+		}
+		PlaySound(TEXT("plague"), 0.7f);
+		Toast(TEXT("Plague!"));
+	}
+}
+
+void ABSGame::UpdateSpells(float Dt)
+{
+	for (int32 i = Swarms.Num() - 1; i >= 0; i--) if (Time > Swarms[i].Until) { StopFx(Swarms[i].Fx); Swarms.RemoveAt(i); }
+	auto Bleed = [this, Dt](float& Hp, float Until, float& Flash) { if (Until > Time && Hp > 1) { Hp = FMath::Max(1.f, Hp - 15 * Dt); Flash = FMath::Max(Flash, 0.4f); } };
+	Bleed(Bunker.Hp, Bunker.PlagueUntil, Bunker.Flash);
+	for (auto& P : Tanks) Bleed(P->Hp, P->PlagueUntil, P->Flash);
+	for (auto& P : Scvs) Bleed(P->Hp, P->PlagueUntil, P->Flash);
+	for (auto& P : Squad) Bleed(P->Hp, P->PlagueUntil, P->Flash);
+	for (auto& P : Structures) Bleed(P->Hp, P->PlagueUntil, P->Flash);
+	for (auto& P : Mechs) Bleed(P->Hp, P->PlagueUntil, P->Flash);
+	for (int32 i = Abductions.Num() - 1; i >= 0; i--)
+	{
+		FBSAbduct& A = Abductions[i];
+		A.T += Dt;
+		const float K = FMath::Clamp(A.T / 0.6f, 0.f, 1.f);
+		TSharedPtr<FBSTrooper> Tr = A.Trooper.Pin(); TSharedPtr<FBSMech> Me = A.Mech.Pin();
+		if ((Tr && Tr->bDead) || (Me && Me->bDead) || (!Tr && !Me)) { Abductions.RemoveAt(i); continue; }
+		float& X = Tr ? Tr->X : Me->X; float& Y = Tr ? Tr->Y : Me->Y;
+		X = A.Fx + (A.Tx - A.Fx) * K; Y = A.Fy + (A.Ty - A.Fy) * K;
+		if (K >= 1) { if (Me) Me->bReady = false; Abductions.RemoveAt(i); }        // a mech walks back to its post
+	}
+}
+
+// Terran air the scourge and devourers go for.
+void ABSGame::BuildAirTargets()
+{
+	AirTargets.Reset();
+	if (Bc.IsValid() && Bc->bOnStation && !Bc->bDead)
+	{
+		FBSTarget T; T.Kind = FBSTarget::Bc; T.BcRef = Bc; T.X = Bc->X; T.Y = Bc->Y; T.Z = Bc->Sz; T.Radius = 2.4f; T.bArmored = true;
+		AirTargets.Add(T);
+	}
+	for (const TSharedPtr<FBSBanshee>& V : VikingWing)
+		if (!V->bDead && V->State != FBSBanshee::In)
+		{
+			FBSTarget T; T.Kind = FBSTarget::Air; T.AirRef = V; T.bViking = true; T.X = V->X; T.Y = V->Y; T.Z = V->Z; T.Radius = 0.6f; T.bArmored = true;
+			AirTargets.Add(T);
+		}
+	for (const TSharedPtr<FBSBanshee>& B : Banshees)
+		if (!B->bDead)
+		{
+			FBSTarget T; T.Kind = FBSTarget::Air; T.AirRef = B; T.X = B->X; T.Y = B->Y; T.Z = B->Z; T.Radius = 0.6f; T.bLight = true;
+			AirTargets.Add(T);
+		}
+}
+
+void ABSGame::KillAir(const FBSTarget& T)
+{
+	if (T.Kind == FBSTarget::Bc)
+	{
+		TSharedPtr<FBSBattlecruiser> B = T.BcRef.Pin();
+		B->bDead = true;
+		ReleaseModel(B->Actor); B->Actor = nullptr;
+		Corpse(TEXT("battlecruiserDeath"), B->X, B->Y, B->Sz, B->Yaw, 5, 0.75f, true);
+		PlaySound(BSSounds::Explosion, 1.f);
+		Shake = 1;
+		Bc.Reset();
+		Toast(TEXT("Battlecruiser lost!"));
+		return;
+	}
+	TSharedPtr<FBSBanshee> A = T.AirRef.Pin();
+	A->bDead = true;
+	ReleaseModel(A->Actor); A->Actor = nullptr;
+	Corpse(T.bViking ? TEXT("vikingDeath") : TEXT("bansheeDeath"), A->X, A->Y, A->Z, A->Yaw, 5, 1, true);
+	PlaySound(BSSounds::Explosion, 0.6f);
+	if (T.bViking) { VikingWing.Remove(A); Toast(TEXT("Viking down")); }
+	else { Banshees.Remove(A); Toast(TEXT("Banshee down")); }
 }
 
 void ABSGame::PlayEnemyAnim(FBSEnemy& E, const FString& Kind)
@@ -1716,6 +1986,7 @@ void ABSGame::PlayEnemyAnim(FBSEnemy& E, const FString& Kind)
 	}
 	else if (Kind == TEXT("stand")) E.Actor->Play(StandNames, true);
 	else if (Kind == TEXT("burrow")) E.Actor->Play(TEXT("burrow"), false);
+	else if (Kind == TEXT("spell")) E.Actor->Play(TEXT("spell"), false);
 }
 
 // ---- Combat helpers ---------------------------------------------------------------------------------------
@@ -1816,6 +2087,18 @@ void ABSGame::DamageDefender(const FBSTarget& T, float Dmg)
 		M->Hp -= FMath::Max(0.5f, Dmg - M->Def->Armor); M->Flash = 1;
 		if (M->Hp <= 0 && !M->bDead) KillMech(M);
 	}
+	else if (T.Kind == FBSTarget::Bc)
+	{
+		TSharedPtr<FBSBattlecruiser> B = T.BcRef.Pin();
+		B->Hp -= FMath::Max(0.5f, Dmg - B->Armor); B->Flash = 1;
+		if (B->Hp <= 0 && !B->bDead) KillAir(T);
+	}
+	else if (T.Kind == FBSTarget::Air)
+	{
+		TSharedPtr<FBSBanshee> A = T.AirRef.Pin();
+		A->Hp -= FMath::Max(0.5f, Dmg); A->Flash = 1;
+		if (A->Hp <= 0 && !A->bDead) KillAir(T);
+	}
 	else if (T.Kind == FBSTarget::Structure)
 	{
 		TSharedPtr<FBSStructure> S = T.StructureRef.Pin();
@@ -1824,9 +2107,12 @@ void ABSGame::DamageDefender(const FBSTarget& T, float Dmg)
 	}
 }
 
-void ABSGame::HurtEnemy(const TSharedPtr<FBSEnemy>& E, float Dmg)
+void ABSGame::HurtEnemy(const TSharedPtr<FBSEnemy>& E, float Dmg, bool bSplash)
 {
 	if (!E || !E->Alive()) return;
+	// Dark swarm: ground zerg under a cloud take a quarter from shots (blasts and flame still get through).
+	if (!bSplash && !E->Def->bFlying)
+		for (const FBSSwarm& Sw : Swarms) if (Dist2(Sw.X, Sw.Y, E->X, E->Y) < Sw.R * Sw.R) { Dmg *= 0.25f; break; }
 	E->Hp -= FMath::Max(0.5f, Dmg - E->Def->Armor);
 	E->Flash = 1;
 	if (E->Hp <= 0) KillEnemy(E, false);
@@ -1841,7 +2127,8 @@ void ABSGame::KillEnemy(const TSharedPtr<FBSEnemy>& E, bool bSuicide)
 	if (D->bSuicide && !bSuicide) BanelingBlast(*E, true);
 	Enemies.Remove(E);
 	ReleaseModel(E->Actor); E->Actor = nullptr;
-	Corpse(E->DeathKey.IsEmpty() ? D->Death : E->DeathKey, E->X, E->Y, E->Z, E->Yaw, D->DeathHold, D->Scale);
+	if (D->Death.IsEmpty()) PlayFx(TEXT("nydusBirth"), FVector(E->X, E->Y, BSTerrain::Height(E->X, E->Y)), 0, 1.6f);      // the nydus worm has no death model
+	else Corpse(E->DeathKey.IsEmpty() ? D->Death : E->DeathKey, E->X, E->Y, E->Z, E->Yaw, D->DeathHold, D->Scale);
 }
 
 void ABSGame::BanelingBlast(const FBSEnemy& E, bool bFromDeath)
@@ -1945,7 +2232,9 @@ void ABSGame::Step(float Dt)
 		else SpawnQueue.Add({ SpawnTimer + 2, S.Type, S.Ang });
 	}
 	BuildTargets();
+	BuildAirTargets();
 	UpdateEnemies(Dt);
+	UpdateSpells(Dt);
 	UpdateBunker(Dt);
 	UpdateTanks(Dt);
 	UpdateScvs(Dt);
@@ -1993,28 +2282,53 @@ void ABSGame::UpdateEnemies(float Dt)
 		if (!E.Alive()) continue;
 		const FBSZergDef* D = E.Def;
 		if (E.Life > 0) { E.Life -= Dt; if (E.Life <= 0) { KillEnemy(EP, true); Kills--; continue; } }
+		if (D->bTransport) { UpdateOverlord(EP, Dt); continue; }
+		if (D->bNydus) { UpdateNydus(EP, Dt); continue; }
 		E.Retarget -= Dt;
+		const TArray<FBSTarget>& Pool = D->bAntiAir ? AirTargets : Targets;       // scourge and devourers hunt Terran air
 		if (!E.Target.IsValid(Bunker) || E.Retarget <= 0)
 		{
 			const FBSTarget* BestT = nullptr; float Bd = 1e9f;
-			for (const FBSTarget& T : Targets)
+			for (const FBSTarget& T : Pool)
 			{
 				if (T.Kind == FBSTarget::Scv && FMath::FRand() < 0.5f) continue;
-				const float Dd = FMath::Sqrt(Dist2(E.X, E.Y, T.X, T.Y)) - T.Radius;
+				const float Dd = FMath::Sqrt(Dist2(E.X, E.Y, T.X, T.Y)) - T.Radius - (D->bPreferMech && T.Kind == FBSTarget::Mech ? 12.f : 0.f);
 				if (Dd < Bd) { Bd = Dd; BestT = &T; }
 			}
 			if (BestT) E.Target = *BestT; else E.Target = FBSTarget();
 			E.Retarget = Rnd(0.5f, 0.8f);
 		}
-		if (E.Target.Kind == FBSTarget::None) continue;
-		// Refresh the target position (tanks and SCVs move).
-		for (const FBSTarget& T : Targets) if (T.Same(E.Target)) { E.Target.X = T.X; E.Target.Y = T.Y; break; }
+		if (E.Target.Kind == FBSTarget::None)
+		{
+			// Nothing in the air to hunt: hang back out of reach up the lane until something flies.
+			if (D->bAntiAir)
+			{
+				const float A = FMath::Atan2(E.Y, E.X);
+				const float Gx = Mode == EBSMode::Lane ? FMath::Clamp(E.X, -6.f, 6.f) : FMath::Cos(A) * 13, Gy = Mode == EBSMode::Lane ? 12.f : FMath::Sin(A) * 13;
+				const float Gd = FMath::Sqrt(Dist2(Gx, Gy, E.X, E.Y));
+				if (Gd > 0.5f)
+				{
+					const float S = FMath::Min(Gd, D->Speed * Dt);
+					E.X += (Gx - E.X) / Gd * S; E.Y += (Gy - E.Y) / Gd * S;
+					E.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(E.Yaw, FMath::Atan2(Gy - E.Y, Gx - E.X)), -3 * Dt, 3 * Dt);
+				}
+				PlayEnemyAnim(E, TEXT("walk"));
+			}
+			continue;
+		}
+		// Refresh the target position (tanks, SCVs and air support move).
+		for (const FBSTarget& T : Pool) if (T.Same(E.Target)) { E.Target.X = T.X; E.Target.Y = T.Y; E.Target.Z = T.Z; break; }
 		const FBSTarget& T = E.Target;
 		const float Dx = T.X - E.X, Dy = T.Y - E.Y, Dd = FMath::Sqrt(Dx * Dx + Dy * Dy);
 		const float Reach = Dd - T.Radius - E.Radius;
 		const float Range = D->Range + (T.Kind == FBSTarget::Bunker ? 0.2f : 0);
 		const bool bSlowed = E.SlowUntil > Time;
-		if (D->bSuicide && Reach <= Range) { BanelingBlast(E, false); KillEnemy(EP, true); continue; }
+		if (D->bSuicide && Reach <= Range)
+		{
+			if (D->bAntiAir) { DamageDefender(T, D->Dmg); PlayFx(TEXT("mutaliskImpact"), FVector(E.X, E.Y, E.Z), E.Yaw, 1.6f); PlaySound(TEXT("scourgeHit"), 0.6f, 0.1f); }
+			else BanelingBlast(E, false);
+			KillEnemy(EP, true); continue;
+		}
 		if (D->bBurrows)
 		{
 			if (!E.bBurrowed && Reach <= Range - 1) { E.bBurrowed = true; E.BurrowT = 1.0f; PlayEnemyAnim(E, TEXT("burrow")); }
@@ -2027,7 +2341,7 @@ void ABSGame::UpdateEnemies(float Dt)
 			E.bAttacking = true;
 			E.Yaw = FMath::Atan2(Dy, Dx);
 			if (D->AttackAnims.Num()) PlayEnemyAnim(E, TEXT("attack"));
-			else if (!D->bBurrows) PlayEnemyAnim(E, TEXT("stand"));
+			else if (!D->bBurrows && E.CastUntil <= Time) PlayEnemyAnim(E, TEXT("stand"));
 			E.Cd -= Dt * (bSlowed ? 0.8f : 1.f);
 			if (E.Cd <= 0)
 			{
@@ -2036,12 +2350,13 @@ void ABSGame::UpdateEnemies(float Dt)
 				E.HitAt = Time + Cd * D->HitFrac;
 				E.HitTarget = T;
 				if (!D->SoundAttack.IsEmpty()) PlaySound(D->SoundAttack, 0.35f, 0.15f);
-				if (D->Projectile != EBSProjectile::None)
+				if (!D->Spell.IsEmpty()) CastSpell(E, T);
+				else if (D->Projectile != EBSProjectile::None)
 				{
 					FBSProjectile P;
 					P.bFriendly = false; P.ZDef = D; P.TargetDef = T; P.Source = EP;
 					P.From = FVector(E.X, E.Y, E.Z + D->Height * 0.6f);
-					P.To = FVector(T.X, T.Y, 1.0f);
+					P.To = FVector(T.X, T.Y, T.Z >= 0 ? T.Z : 1.0f);
 					P.Dur = FMath::Max(0.15f, Cd * D->HitFrac);
 					P.Dmg = D->Dmg;
 					switch (D->Projectile)
@@ -2052,6 +2367,8 @@ void ABSGame::UpdateEnemies(float Dt)
 					case EBSProjectile::Glaive: P.Kind = EBSProjKind::Glaive; P.Bounces = 3; P.ImpactFx = TEXT("mutaliskImpact"); AddProjectileModel(P, TEXT("projMutalisk"), TEXT("mutaliskMissile")); if (!P.Model) AddProjectileVisual(P, FLinearColor(0.6f, 1, 0.3f), 0.25f); break;
 					case EBSProjectile::Brood: P.Kind = EBSProjKind::Brood; AddProjectileVisual(P, FLinearColor(0.9f, 0.6f, 0.3f), 0.4f); P.Arc = 3; break;
 					case EBSProjectile::Spines: P.Kind = EBSProjKind::Spines; break;
+					case EBSProjectile::Guardian: P.Kind = EBSProjKind::Guardian; P.Arc = 2; P.ImpactFx = TEXT("roachImpact"); AddProjectileModel(P, nullptr, TEXT("guardianMissile"), 1.2f); if (!P.Trail) AddProjectileVisual(P, FLinearColor(0.7f, 1, 0.4f), 0.35f); break;
+					case EBSProjectile::Spores: P.Kind = EBSProjKind::Spores; P.ImpactFx = TEXT("acidSpores"); AddProjectileModel(P, nullptr, TEXT("devourerMissile")); if (!P.Trail) AddProjectileVisual(P, FLinearColor(0.6f, 1, 0.2f), 0.3f); break;
 					default: break;
 					}
 					Projectiles.Add(P);
@@ -2099,10 +2416,15 @@ void ABSGame::UpdateEnemies(float Dt)
 			const float Sp = D->Speed * (bSlowed ? 0.5f : 1.f);
 			const float Nx = (Gx - E.X) / Gd, Ny = (Gy - E.Y) / Gd;
 			const float Mx = Nx * Sp * Dt + E.Sx * 0.8f, My = Ny * Sp * Dt + E.Sy * 0.8f;
-			// Cliffs: ground units steer around them; flyers ignore them.
-			if (D->bFlying) { E.X += Mx; E.Y += My; } else StepGround(E.X, E.Y, Mx, My);
+			// Cliffs: ground units steer around them; flyers ignore them, and winged zerglings hop straight over.
+			if (D->bFlying || D->bHops) { E.X += Mx; E.Y += My; } else StepGround(E.X, E.Y, Mx, My);
 			if (Mode == EBSMode::Lane) E.X = FMath::Clamp(E.X, -21.f, 21.f);
-			if (!D->bFlying) E.Z = BSTerrain::Height(E.X, E.Y);
+			if (D->bHops)
+			{
+				const float Gz = BSTerrain::Height(E.X, E.Y);
+				E.Z = FMath::Max(Gz, E.Z + (Gz - E.Z) * FMath::Min(1.f, Dt * 5)) + FMath::Abs(FMath::Sin(Time * 7 + E.Seed)) * 0.06f;
+			}
+			else if (!D->bFlying) E.Z = BSTerrain::Height(E.X, E.Y);
 			if (E.bPerched) PlayEnemyAnim(E, TEXT("stand"));
 			// Face the way it is heading, not the way the crowd shoves it (big units were turning round and backing up),
 			// and turn at a creature's pace instead of snapping.
@@ -2200,7 +2522,7 @@ void ABSGame::FireInfantry(const FBSInfantryDef* D, const FVector& Muzzle, const
 	}
 	else if (D->Key == TEXT("firebat"))
 	{
-		if (DmgBase > 0) for (auto& V : EnemiesInRange(Target->X, Target->Y, D->Splash, Pred)) HurtEnemy(V, DmgBase + (V->Def->bLight ? D->DmgLight : 0));
+		if (DmgBase > 0) for (auto& V : EnemiesInRange(Target->X, Target->Y, D->Splash, Pred)) HurtEnemy(V, DmgBase + (V->Def->bLight ? D->DmgLight : 0), true);
 		EmitFlame(Muzzle, FVector(Target->X, Target->Y, 0.4f));
 		MuzzleFlash = 1;
 		PlaySound(BSSounds::FirebatFire, 0.45f, 0.3f);
@@ -2369,7 +2691,7 @@ void ABSGame::UpdateBanshees(float Dt)
 	const float HomeY = Mode == EBSMode::Lane ? -18.f : -36.f;
 	for (int32 i = Banshees.Num() - 1; i >= 0; i--)
 	{
-		FBSBanshee& B = Banshees[i];
+		FBSBanshee& B = *Banshees[i];
 		B.T += Dt;
 		if (B.State == FBSBanshee::In)
 		{
@@ -2385,7 +2707,7 @@ void ABSGame::UpdateBanshees(float Dt)
 		{
 			TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(B.X, B.Y, BSDefs::BansheeRange, [](const FBSEnemy& E) { return !E.Def->bFlying; });
 			if (L.Num()) B.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(B.Yaw, FMath::Atan2(L[0]->Y - B.Y, L[0]->X - B.X)), -4 * Dt, 4 * Dt);
-			B.Cd -= Dt;
+			B.Cd -= Dt * (B.AcidUntil > Time ? 0.7f : 1.f);
 			if (B.Cd <= 0 && L.Num())
 			{
 				B.Cd = BSDefs::BansheeCd;
@@ -2458,7 +2780,7 @@ void ABSGame::UpdateProjectiles(float Dt)
 				{
 					const float Dd = FMath::Sqrt(Dist2(Done.To.X, Done.To.Y, E->X, E->Y)) - E->Radius;
 					const float Mult = Dd <= BSDefs::TankSplash1 ? 1 : Dd <= BSDefs::TankSplash2 ? 0.5f : Dd <= BSDefs::TankSplash3 ? 0.25f : 0;
-					if (Mult > 0) HurtEnemy(E, (Done.Dmg + (E->Def->bArmored ? Done.DmgArmored : 0)) * Mult);
+					if (Mult > 0) HurtEnemy(E, (Done.Dmg + (E->Def->bArmored ? Done.DmgArmored : 0)) * Mult, true);
 				}
 				if (!bImpactFx)
 				{
@@ -2494,7 +2816,7 @@ void ABSGame::UpdateProjectiles(float Dt)
 				{
 					const int8 Air = Done.SplashAir;
 					for (const TSharedPtr<FBSEnemy>& V : EnemiesInRange(Done.To.X, Done.To.Y, Done.Splash, [Air](const FBSEnemy& E) { return Air < 0 || E.Def->bFlying == (Air == 1); }))
-						HurtEnemy(V, Done.Dmg);
+						HurtEnemy(V, Done.Dmg, true);
 				}
 				else if (TSharedPtr<FBSEnemy> TE = Done.TargetEnemy.Pin()) HurtEnemy(TE, Done.Dmg);
 				if (!bImpactFx) AddFx(EBSFxKind::Flash, Done.To, Done.To, 0.15f, 0.5f * Done.ImpactScale, FLinearColor(1, 0.75f, 0.4f), 10);
@@ -2531,6 +2853,11 @@ void ABSGame::UpdateProjectiles(float Dt)
 			{
 				if (Done.Kind == EBSProjKind::Glaive) Dmg = Done.Dmg;
 				DamageDefender(Tg, Dmg);
+				if (D->Acid > 0)                    // devourer acid: the target fires slower for a while
+				{
+					if (auto B = Tg.BcRef.Pin()) B->AcidUntil = Time + D->Acid;
+					if (auto A = Tg.AirRef.Pin()) A->AcidUntil = Time + D->Acid;
+				}
 				if (Done.Kind == EBSProjKind::Glaive && Done.Bounces > 0)
 				{
 					// The glaive ricochets to the nearest defender it has not hit yet, losing a third of its punch each time.
@@ -2574,7 +2901,7 @@ void ABSGame::UpdateVisuals(float Dt)
 	{
 		FBSFlash& F = Flashes[i];
 		if (F.Delay > 0) { F.Delay -= Dt; continue; }
-		if (!F.bShown) { F.bShown = true; F.A->SetSim(F.P.X, F.P.Y, F.P.Z, F.Yaw); F.A->PlayRandomWithPrefix(TEXT("stand"), false); }
+		if (!F.bShown) { F.bShown = true; F.A->SetScale(F.Scale); F.A->SetSim(F.P.X, F.P.Y, F.P.Z, F.Yaw); F.A->PlayRandomWithPrefix(TEXT("stand"), false); }
 		F.Life -= Dt;
 		if (F.Life <= 0) { ReleaseModel(F.A); Flashes.RemoveAtSwap(i); }
 	}
@@ -2789,7 +3116,7 @@ FString ABSGame::DebugState() const
 	FString Str;
 	for (const TSharedPtr<FBSStructure>& S : Structures) Str += FString::Printf(TEXT("%s:%d:%.0f "), S->bSam ? TEXT("sam") : TEXT("sensor"), S->bReady ? 1 : 0, S->Hp);
 	FString Ban;
-	for (const FBSBanshee& Bn : Banshees) Ban += FString::Printf(TEXT("%d@%.1f,%.1f "), (int32)Bn.State, Bn.X, Bn.Y);
+	for (const TSharedPtr<FBSBanshee>& Bn : Banshees) Ban += FString::Printf(TEXT("%d@%.1f,%.1f "), (int32)Bn->State, Bn->X, Bn->Y);
 	return FString::Printf(TEXT("t=%.1f wave=%d enemies=%d kills=%d minerals=%.0f bunker=%.0f/%.0f units=%d tanks=%d scvs=%d over=%d squad=[%s] structures=[%s] banshees=[%s] radar=%d rails=%d bunkerActor[%s]"),
 		Time, Wave, Enemies.Num(), Kills, Minerals, Bunker.Hp, Bunker.MaxHp, Bunker.Units.Num(), Tanks.Num(), Scvs.Num(), bOver ? 1 : 0, *Out, *Str, *Ban, SensorUp() ? 1 : 0, Up.bRails ? 1 : 0, *B);
 }

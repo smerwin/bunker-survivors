@@ -25,6 +25,22 @@ window.BS = window.BS || {};
     broodlordDeath: U + 'zerg/broodlorddeath/broodlorddeath_00.m3',
     infested: U + 'zerg/infestedmarine/infestedmarine.m3',
     infestedDeath: U + 'zerg/infestedmarinedeathragdoll/infestedmarinedeathragdoll.m3',
+    // Late-game zerg (they join once the player starts unlocking high tech).
+    wingling: U + 'zerg/zerglingupgrade/zerglingupgrade.m3',
+    winglingDeath: U + 'zerg/zerglingupgradedeath/zerglingupgradedeath.m3',
+    guardian: U + 'zerg/guardian/guardian.m3',
+    guardianDeath: U + 'zerg/guardiandeath/guardiandeath.m3',
+    devourer: U + 'zerg/devourer/devourer.m3',
+    devourerDeath: U + 'zerg/devourerex3_death/devourerex3_death.m3',
+    scourge: U + 'zerg/scourge/scourge.m3',
+    scourgeDeath: U + 'zerg/scourgedeath/scourgedeath.m3',
+    defiler: U + 'zerg/defiler/defiler.m3',
+    defilerDeath: U + 'zerg/defiler_ex3_death/defiler_ex3_death_00.m3',
+    viper: U + 'zerg/viper_primal_collection/viper_primal_collection.m3',
+    viperDeath: U + 'zerg/viper_primal_collection_deathragdoll/viper_primal_collection_deathragdoll.m3',
+    overlord: U + 'zerg/overlordtransport/overlordtransport.m3',
+    overlordDeath: U + 'zerg/overlordtranportdeath/overlordtranportdeath.m3',
+    nydus: U + 'zerg/nydusworm/nydusworm.m3',
     // Terran
     bunker: 'assets/buildings/terran/bunker/bunker.m3',
     bunkerDeath: 'assets/buildings/terran/bunkerdeath/bunkerdeath.m3',
@@ -54,6 +70,10 @@ window.BS = window.BS || {};
     odinDeath: U + 'terran/odindeath/odindeath.m3',
     battlecruiser: U + 'terran/battlecruiser/battlecruiser.m3',
     vikingfighter: U + 'terran/vikingfighter/vikingfighter.m3',
+    // Air support can now be shot down (scourge, devourers).
+    battlecruiserDeath: U + 'terran/battlecruiserdeath/battlecruiserdeath_00.m3',
+    bansheeDeath: U + 'terran/bansheedeath/bansheedeath.m3',
+    vikingDeath: U + 'terran/vikingfighterdeath/vikingfighterdeath_00.m3',
     // Effects (particle-only effect models cannot be drawn by the viewer, so only mesh-based ones are listed)
     fxMuzzle: 'assets/effects/terran/marineweaponlaunch/marineweaponlaunch.m3',
   };
@@ -108,6 +128,11 @@ window.BS = window.BS || {};
   // The wraith's laser hit (its beam is an M3 ribbon, which neither build reads, so the games draw the beam themselves).
   laserImpact: [E + 'terran/wraithlasermissileimpact/wraithlasermissileimpact.m3'],
   samMissile: [E + 'terran/missileturretmissile/missileturretmissile.m3', null, true], samImpact: [E + 'terran/missileturretmissileimpact/missileturretmissileimpact.m3'],
+  // Late-game zerg.
+  guardianMissile: [E + 'zerg/guardianmissile/guardianmissile.m3', null, true],      // its hit is a sprite with no particles: the roach's acid splash stands in
+  devourerMissile: [E + 'zerg/devourermissile/devourermissile.m3', null, true], acidSpores: [E + 'zerg/devourer_acidspores_impact/devourer_acidspores_impact.m3'],
+  darkSwarm: [E + 'zerg/defiler_darkswarm_aoe/defiler_darkswarm_aoe.m3', null, true], plague: [E + 'zerg/defiler_plague/defiler_plague.m3'],
+  nydusBirth: [E + 'zerg/nyduscreepspoutbirth/nyduscreepspoutbirth.m3'], viperTongueImpact: [E + 'zerg/vipertongueimpact/vipertongueimpact.m3'],
   };
   // Every death model also carries its blood/acid burst: the plain "Death" one (the numbered sequences are SC2's
   // damage-type variants, which blow body parts up; m3fx falls back to them only when there is no plain one).
@@ -162,6 +187,14 @@ window.BS = window.BS || {};
     ultraliskAttack: [S + 'zerg/ultralisk/ultralisk_attacklaunch0.wav'],
     ultraliskDeath: [S + 'zerg/ultralisk/ultralisk_death0.wav'],
     explosion: [S + 'siegetank_explosion_add_01.wav', S + 'siegetank_explosion_add_02.wav'],
+    guardianFire: [1, 2, 3, 4, 5].map(i => S + 'primalguardian_d_launch_0' + i + '.wav'),
+    scourgeHit: [0, 1, 2, 3, 4, 5].map(i => S + 'zerg/scourge/scourge_attacklaunch' + i + '.wav'),
+    devourerDeath: [0, 1, 2].map(i => S + 'devourer_deathvox0' + i + '.wav'),
+    overlordDeath: [0, 1, 2].map(i => S + 'zerg/overlord/overlord_death' + i + '.wav'),
+    overlordUnload: [S + 'zerg/overlord/overlord_unload0.wav'],
+    nydusUnload: [S + 'zerg/nydusworm/nydusworm_unload00.wav', S + 'zerg/nydusworm/nydusworm_unload01.wav'],
+    viperAbduct: [1, 2, 3].map(i => S + 'ac_viper_attackimpact_0' + i + '.wav'),
+    plague: [0, 1, 2].map(i => S + 'zerg/infestor/infestor_plagueattackimpact' + i + '.wav'),
   };
 
   // Zerg attackers. hp/armor/damage/cooldown/range/speed are SC2 values; bounty and budget are ours.
@@ -169,7 +202,7 @@ window.BS = window.BS || {};
   // variants: strain/skin models mixed in for variety; impactFx: SC2 effect where a melee blow lands.
   BS.ZERG = {
     zergling: { name: 'Zergling', model: 'zergling', death: 'zerglingDeath', hp: 30, armor: 0, dmg: 5, cd: 0.497, range: 0.1, speed: 4.13, radius: 0.375, light: true, bounty: 4, budget: 2, unlock: 1, weight: 12, hitFrac: 0.45, attackSeq: /^attack/i, soundAttack: 'zerglingAttack', soundDeath: 'zerglingDeath', height: 0.8,
-      variants: ['zerglingWinged', 'zerglingRaptor', 'zerglingSwarmling', 'zerglingPrimal', 'zerglingPrimalWinged'], impactFx: 'zerglingImpact' },
+      variants: ['zerglingRaptor', 'zerglingSwarmling', 'zerglingPrimal'], impactFx: 'zerglingImpact' },
     baneling: { name: 'Baneling', model: 'baneling', death: 'banelingDeath', hp: 30, armor: 0, dmg: 16, dmgLight: 19, dmgStructure: 80, cd: 1, range: 0.25, speed: 3.5, radius: 0.375, light: true, suicide: true, splash: 2.2, bounty: 10, budget: 4, unlock: 3, weight: 5, soundDeath: 'banelingDeath', height: 0.8,
       variants: ['banelingSplitter', 'banelingHunter', 'banelingPrimal'] },
     roach: { name: 'Roach', model: 'roach', death: 'roachDeath', hp: 145, armor: 1, dmg: 16, cd: 1.43, range: 4, speed: 3.15, radius: 0.625, armored: true, bounty: 22, budget: 7, unlock: 5, weight: 5, hitFrac: 0.35, attackSeq: /^attack$/i, projectile: 'acid', soundAttack: 'roachFire', soundDeath: 'roachDeath', height: 0.9,
@@ -185,6 +218,17 @@ window.BS = window.BS || {};
       variants: ['ultraliskRemastered'], impactFx: 'ultraliskImpact' },
     broodlord: { name: 'Brood Lord', model: 'broodlord', death: 'broodlordDeath', hp: 225, armor: 1, dmg: 20, cd: 1.79, range: 6, speed: 1.97, radius: 1.0, armored: true, flying: true, fly: 3.4, broodlings: true, bounty: 120, budget: 34, unlock: 18, weight: 1.2, hitFrac: 0.3, projectile: 'brood', height: 1.6,
       variants: ['broodlordEx1', 'broodlordPrimal'] },
+    // Late game: these join the waves once high tech starts unlocking (late = how many tech cards must be unlocked);
+    // the more cards, the more of them. See Game.startWave.
+    wingling: { name: 'Winged Zergling', model: 'wingling', death: 'winglingDeath', hp: 35, armor: 0, dmg: 5, cd: 0.4, range: 0.1, speed: 5.6, radius: 0.375, light: true, hops: true, bounty: 5, budget: 2, unlock: 1, late: 1, weight: 5, hitFrac: 0.45, attackSeq: /^attack/i, soundAttack: 'zerglingAttack', soundDeath: 'zerglingDeath', height: 0.8, impactFx: 'zerglingImpact' },
+    guardian: { name: 'Guardian', model: 'guardian', death: 'guardianDeath', hp: 150, armor: 2, dmg: 20, cd: 2, range: 9, speed: 2.2, radius: 1.0, armored: true, flying: true, fly: 3.8, prefer: 'mech', bounty: 60, budget: 20, unlock: 1, late: 1, weight: 2.5, hitFrac: 0.4, attackSeq: /^attack$/i, projectile: 'guardian', soundAttack: 'guardianFire', height: 1.4 },
+    devourer: { name: 'Devourer', model: 'devourer', death: 'devourerDeath', hp: 250, armor: 2, dmg: 15, cd: 2, range: 6, speed: 2.8, radius: 1.0, armored: true, flying: true, fly: 4.4, antiAir: true, acid: 6, bounty: 60, budget: 18, unlock: 1, late: 2, weight: 2, hitFrac: 0.4, attackSeq: /^attack$/i, projectile: 'spores', soundDeath: 'devourerDeath', height: 1.4 },
+    scourge: { name: 'Scourge', model: 'scourge', death: 'scourgeDeath', hp: 25, armor: 0, dmg: 110, cd: 1, range: 0.2, speed: 6.5, radius: 0.4, light: true, flying: true, fly: 4.6, antiAir: true, suicide: true, bounty: 8, budget: 3, unlock: 1, late: 2, weight: 4, hitFrac: 0, height: 0.6 },
+    defiler: { name: 'Defiler', model: 'defiler', death: 'defilerDeath', hp: 80, armor: 1, dmg: 0, cd: 8, range: 9, speed: 2.6, radius: 0.6, spell: 'defiler', bounty: 50, budget: 14, unlock: 1, late: 2, weight: 2, hitFrac: 0, height: 1.2 },
+    viper: { name: 'Viper', model: 'viper', death: 'viperDeath', hp: 150, armor: 1, dmg: 0, cd: 11, range: 9, speed: 4, radius: 0.75, flying: true, fly: 4, spell: 'abduct', bounty: 50, budget: 16, unlock: 1, late: 3, weight: 1.5, hitFrac: 0, height: 1.4 },
+    // Not bought from the wave budget: special events scheduled by startWave.
+    overlord: { name: 'Overlord', model: 'overlord', death: 'overlordDeath', hp: 400, armor: 1, dmg: 0, cd: 1, range: 0, speed: 3, radius: 1.0, armored: true, flying: true, fly: 4.2, transport: true, bounty: 25, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2 },
+    nydus: { name: 'Nydus Worm', model: 'nydus', death: null, hp: 450, armor: 1, dmg: 0, cd: 1, range: 0, speed: 0, radius: 1.3, armored: true, nydus: true, bounty: 60, budget: 0, unlock: 999, weight: 0, hitFrac: 0, height: 3 },
     broodling: { name: 'Broodling', model: 'zergling', death: 'zerglingDeath', scale: 0.55, hp: 30, armor: 0, dmg: 4, cd: 0.46, range: 0.1, speed: 4.13, radius: 0.25, light: true, life: 8, bounty: 1, budget: 0, unlock: 999, weight: 0, hitFrac: 0.45, attackSeq: /^attack/i, height: 0.5, impactFx: 'zerglingImpact' },
   };
 
@@ -200,7 +244,7 @@ window.BS = window.BS || {};
     scv: { hp: 45, repairRate: 13.8, speed: 3.94, radius: 0.375, cost: 50, max: 4 },
     tank: { hp: 175, armor: 1, dmg: 40, dmgArmored: 30, cd: 2.14, range: 13, minRange: 2, splash: [0.47, 0.78, 1.25], radius: 0.9, cost: 300, costStep: 100, maxLane: 4, maxArena: 4 },
     // Air strike: four banshees hover over the lane (and its ledges) and fire missiles at passing zerg.
-    banshee: { count: 4, dmg: 12, shots: 2, cd: 1.1, range: 6, speed: 9, fly: 2.4, hover: 14, cost: 200, cooldown: 32 },
+    banshee: { hp: 140, count: 4, dmg: 12, shots: 2, cd: 1.1, range: 6, speed: 9, fly: 2.4, hover: 14, cost: 200, cooldown: 32 },
     // Troops standing behind the bunker (ejected, or recruited while it is full).
     squad: { max: 48 },
     // Missile turrets: anti-air only, like SC2 (12 x2, range 7).
@@ -214,12 +258,12 @@ window.BS = window.BS || {};
     odin: { hp: 1500, armor: 2, radius: 2.2, cost: 2500, max: 1, speed: 2, gDmg: 60, gShots: 2, gCd: 1.1, gRange: 16, gSplash: 1.2, aDmg: 15, aShots: 6, aCd: 2, aRange: 16, aSplash: 0.8 },
     // Battlecruiser on station: hovers over the lane out of reach; laser batteries at air and ground, Yamato on its own.
     // Six laser turrets on its hardpoints (Ref_Weapon bones), each picking its own target and firing two-shot bursts.
-    bc: { cost: 1500, laserG: 8, laserA: 5, turretCd: 1.5, burst: 2, burstGap: 0.12, range: 10, yamato: 240, yamatoCd: 20, missiles: 6, missileCd: 6, missileDmg: 20,
+    bc: { hp: 1200, armor: 3, cost: 1500, laserG: 8, laserA: 5, turretCd: 1.5, burst: 2, burstGap: 0.12, range: 10, yamato: 240, yamatoCd: 20, missiles: 6, missileCd: 6, missileDmg: 20,
       turrets: ['Ref_Weapon 10', 'Ref_Weapon 13', 'Ref_Weapon 12', 'Ref_Weapon 15', 'Ref_Weapon 24', 'Ref_Weapon 25'] },
     // A ghost calls a tactical nuke on the densest pack well away from the bunker.
     nuke: { cost: 400, cooldown: 45, dmg: 300, radius: 7, delay: 3, minDist: 9 },
     // Four viking fighters patrol overhead hunting air for a while.
-    vikings: { cost: 300, cooldown: 35, count: 4, dmg: 10, shots: 2, cd: 1.4, range: 9, hover: 20, fly: 4.2, speed: 9 },
+    vikings: { hp: 135, cost: 300, cooldown: 35, count: 4, dmg: 10, shots: 2, cd: 1.4, range: 9, hover: 20, fly: 4.2, speed: 9 },
     yamato: { dmg: 240, splash: 120, radius: 3, cost: 300, cooldown: 40 },
     stim: { duration: 11, cooldown: 13 },
     repair: { cost: 75, cooldown: 20, amount: 150 },

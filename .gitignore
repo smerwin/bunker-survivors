@@ -17,3 +17,5 @@ Unreal/PixelStreaming/
 Unreal/**/Content/Probe/
 server/vendor/
 __pycache__/
+# Epic sample scripts the Pixel Streaming plugin copies into the project (Unreal Engine licence, not ours)
+Unreal/BunkerSurvivors/Samples/

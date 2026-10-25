@@ -22,7 +22,7 @@ namespace
 		};
 		{
 			FBSZergDef& D = Add(TEXT("zergling"), TEXT("Zergling"), TEXT("zergling"), TEXT("zerglingDeath"), TEXT("btn-unit-zerg-zergling"));
-			D.Variants = { TEXT("zerglingWinged"), TEXT("zerglingRaptor"), TEXT("zerglingSwarmling"), TEXT("zerglingPrimal"), TEXT("zerglingPrimalWinged") };
+			D.Variants = { TEXT("zerglingRaptor"), TEXT("zerglingSwarmling"), TEXT("zerglingPrimal") };      // winged ones are the hoppers below
 			D.ImpactFx = TEXT("zerglingImpact");
 			D.Hp = 30; D.Dmg = 5; D.Cd = 0.497f; D.Range = 0.1f; D.Speed = 4.13f; D.Radius = 0.375f; D.bLight = true;
 			D.Bounty = 4; D.Budget = 2; D.Unlock = 1; D.Weight = 12; D.HitFrac = 0.45f; D.AttackAnims = { TEXT("attack"), TEXT("attack 01") };
@@ -80,6 +80,53 @@ namespace
 			D.Variants = { TEXT("broodlordEx1"), TEXT("broodlordPrimal") };
 			D.Hp = 225; D.Armor = 1; D.Dmg = 20; D.Cd = 1.79f; D.Range = 6; D.Speed = 1.97f; D.Radius = 1.0f; D.bArmored = true; D.bFlying = true; D.Fly = 3.4f; D.bBroodlings = true;
 			D.Bounty = 120; D.Budget = 34; D.Unlock = 18; D.Weight = 1.2f; D.HitFrac = 0.3f; D.Projectile = EBSProjectile::Brood; D.Height = 1.6f;
+		}
+		// Late game: these join the waves once high tech starts unlocking (Late = tech cards needed); the more cards, the
+		// more of them. See ABSGame::StartWave.
+		{
+			FBSZergDef& D = Add(TEXT("wingling"), TEXT("Winged Zergling"), TEXT("wingling"), TEXT("winglingDeath"), TEXT("btn-unit-zerg-zergling"));
+			D.ImpactFx = TEXT("zerglingImpact");
+			D.Hp = 35; D.Dmg = 5; D.Cd = 0.4f; D.Range = 0.1f; D.Speed = 5.6f; D.Radius = 0.375f; D.bLight = true; D.bHops = true;
+			D.Bounty = 5; D.Budget = 2; D.Late = 1; D.Weight = 5; D.HitFrac = 0.45f; D.AttackAnims = { TEXT("attack"), TEXT("attack 01") };
+			D.SoundAttack = TEXT("zerglingAttack"); D.SoundDeath = TEXT("zerglingDeath"); D.Height = 0.8f;
+		}
+		{
+			FBSZergDef& D = Add(TEXT("guardian"), TEXT("Guardian"), TEXT("guardian"), TEXT("guardianDeath"), TEXT("btn-unit-zerg-guardian"));
+			D.Hp = 150; D.Armor = 2; D.Dmg = 20; D.Cd = 2; D.Range = 9; D.Speed = 2.2f; D.Radius = 1.0f; D.bArmored = true; D.bFlying = true; D.Fly = 3.8f; D.bPreferMech = true;
+			D.Bounty = 60; D.Budget = 20; D.Late = 1; D.Weight = 2.5f; D.HitFrac = 0.4f; D.AttackAnims = { TEXT("attack") };
+			D.Projectile = EBSProjectile::Guardian; D.SoundAttack = TEXT("guardianFire"); D.Height = 1.4f;
+		}
+		{
+			FBSZergDef& D = Add(TEXT("devourer"), TEXT("Devourer"), TEXT("devourer"), TEXT("devourerDeath"), TEXT("btn-unit-zerg-devourer"));
+			D.Hp = 250; D.Armor = 2; D.Dmg = 15; D.Cd = 2; D.Range = 6; D.Speed = 2.8f; D.Radius = 1.0f; D.bArmored = true; D.bFlying = true; D.Fly = 4.4f; D.bAntiAir = true; D.Acid = 6;
+			D.Bounty = 60; D.Budget = 18; D.Late = 2; D.Weight = 2; D.HitFrac = 0.4f; D.AttackAnims = { TEXT("attack") };
+			D.Projectile = EBSProjectile::Spores; D.SoundDeath = TEXT("devourerDeath"); D.Height = 1.4f;
+		}
+		{
+			FBSZergDef& D = Add(TEXT("scourge"), TEXT("Scourge"), TEXT("scourge"), TEXT("scourgeDeath"), TEXT("btn-unit-zerg-scourge"));
+			D.Hp = 25; D.Dmg = 110; D.Cd = 1; D.Range = 0.2f; D.Speed = 6.5f; D.Radius = 0.4f; D.bLight = true; D.bFlying = true; D.Fly = 4.6f; D.bAntiAir = true; D.bSuicide = true;
+			D.Bounty = 8; D.Budget = 3; D.Late = 2; D.Weight = 4; D.HitFrac = 0; D.Height = 0.6f;
+		}
+		{
+			FBSZergDef& D = Add(TEXT("defiler"), TEXT("Defiler"), TEXT("defiler"), TEXT("defilerDeath"), TEXT("btn-unit-zerg-defiler"));
+			D.Hp = 80; D.Armor = 1; D.Dmg = 0; D.Cd = 8; D.Range = 9; D.Speed = 2.6f; D.Radius = 0.6f; D.Spell = TEXT("defiler");
+			D.Bounty = 50; D.Budget = 14; D.Late = 2; D.Weight = 2; D.HitFrac = 0; D.Height = 1.2f;
+		}
+		{
+			FBSZergDef& D = Add(TEXT("viper"), TEXT("Viper"), TEXT("viper"), TEXT("viperDeath"), TEXT("btn-unit-zerg-viper"));
+			D.Hp = 150; D.Armor = 1; D.Dmg = 0; D.Cd = 11; D.Range = 9; D.Speed = 4; D.Radius = 0.75f; D.bFlying = true; D.Fly = 4; D.Spell = TEXT("abduct");
+			D.Bounty = 50; D.Budget = 16; D.Late = 3; D.Weight = 1.5f; D.HitFrac = 0; D.Height = 1.4f;
+		}
+		// Not bought from the wave budget: special events scheduled by StartWave.
+		{
+			FBSZergDef& D = Add(TEXT("overlord"), TEXT("Overlord"), TEXT("overlord"), TEXT("overlordDeath"), TEXT("btn-unit-zerg-overlord"));
+			D.Hp = 400; D.Armor = 1; D.Dmg = 0; D.Cd = 1; D.Range = 0; D.Speed = 3; D.Radius = 1.0f; D.bArmored = true; D.bFlying = true; D.Fly = 4.2f; D.bTransport = true;
+			D.Bounty = 25; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0; D.SoundDeath = TEXT("overlordDeath"); D.Height = 2;
+		}
+		{
+			FBSZergDef& D = Add(TEXT("nydus"), TEXT("Nydus Worm"), TEXT("nydus"), TEXT(""), TEXT("btn-building-zerg-nydusworm"));
+			D.Hp = 450; D.Armor = 1; D.Dmg = 0; D.Cd = 1; D.Range = 0; D.Speed = 0; D.Radius = 1.3f; D.bArmored = true; D.bNydus = true;
+			D.Bounty = 60; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0; D.Height = 3;
 		}
 		{
 			FBSZergDef& D = Add(TEXT("broodling"), TEXT("Broodling"), TEXT("zergling"), TEXT("zerglingDeath"), TEXT("btn-unit-zerg-zergling"));

@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 
-enum class EBSProjectile : uint8 { None, Acid, Spine, Bullet, Glaive, Spines, Brood };
+enum class EBSProjectile : uint8 { None, Acid, Spine, Bullet, Glaive, Spines, Brood, Guardian, Spores };
 
 struct FBSZergDef
 {
@@ -21,6 +21,12 @@ struct FBSZergDef
 	FString ImpactFx;                 // SC2 effect played where a melee hit lands
 	EBSProjectile Projectile = EBSProjectile::None;
 	FString SoundAttack, SoundDeath;
+	// Late game (joins once Late tech cards are unlocked): winged zerglings hop over cliffs, scourge and devourers hunt
+	// Terran air, guardians single out mechs, defilers and vipers cast; overlords and nydus worms are special events.
+	int32 Late = 0;
+	bool bHops = false, bAntiAir = false, bPreferMech = false, bTransport = false, bNydus = false;
+	float Acid = 0;                   // devourer: seconds the target fires slower
+	FString Spell;                    // "defiler" (dark swarm / plague) or "abduct" (viper)
 };
 
 struct FBSInfantryDef
@@ -87,6 +93,7 @@ namespace BSDefs
 	// target, firing two-shot bursts), missile pods, and a Yamato cannon on its own.
 	constexpr float BcLaserG = 8, BcLaserA = 5, BcTurretCd = 1.5f, BcBurstGap = 0.12f, BcRange = 10, BcYamato = 240, BcYamatoCd = 20, BcMissileCd = 6, BcMissileDmg = 20;
 	constexpr int32 BcCost = 1500, BcMissiles = 6, BcBurst = 2;
+	constexpr float BcHp = 1200, BcArmor = 3, BansheeHp = 140, VikingHp = 135;   // scourge and devourers can shoot air support down
 	// A ghost calls a tactical nuke on the densest pack well away from the bunker.
 	constexpr float NukeDmg = 300, NukeRadius = 7, NukeDelay = 3, NukeMinDist = 9, NukeCooldown = 45;
 	constexpr int32 NukeCost = 400;

@@ -151,6 +151,20 @@ When the bunker is full, new recruits stand behind it, up to 48.
 | Battlecruiser (1500) | every tree maxed | Parks nose-south over the fork of the lane: six laser turrets on its hardpoints pick their own targets, plus missile pods and an automatic Yamato. |
 | Odin (2500) | the battlecruiser on station | Heavy artillery from behind the bunker. |
 
+**The Swarm answers.** Every tech card you unlock brings stranger zerg into the waves, and more of them:
+
+| Zerg | What it does |
+| --- | --- |
+| Winged zergling | Hops straight over the cliffs and the mesa instead of following the lane. |
+| Guardian | Flying artillery that outranges most of your guns and goes for the mechs first. |
+| Scourge, devourer | Only come when you have air: scourge fly into the battlecruiser, vikings and banshees and explode; devourer acid makes them fire slower. Air support can now be shot down (the battlecruiser can be bought again). |
+| Defiler | Casts dark swarm (zerg under it take a quarter damage from shots; blasts and flame still work) and plague (your units bleed, but it cannot kill). |
+| Viper | Abducts a trooper, goliath or thor, yanking it out toward the swarm. |
+| Overlord drop | Flies in from a flank and drops zerglings behind your lines (early, if badly hurt). |
+| Nydus worm | Breaches behind the bunker and disgorges zerg until it is killed or sinks away. |
+
+**Stimpacks** send the soldiers standing outside charging at the nearest zerg until they are in range.
+
 To try them without the grind, open the game with `?tech=max` (for example `http://localhost:8642/?mode=lane&tech=max`):
 it researches everything and banks minerals.
 

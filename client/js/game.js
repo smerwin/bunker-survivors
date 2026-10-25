@@ -14,6 +14,15 @@ window.BS = window.BS || {};
   // The SC2 bunker's four firing slits (Attach_Weapon, 02, 04, 06) in model space.
   const BUNKER_SLITS = [[-0.60, -0.01], [-0.04, 0.58], [0.55, 0.03], [0.01, -0.56]];
   const SLIT_Z = 0.6;
+  // Mech weapon bones and their rest-pose positions (model space: x right, y up, z forward) for the fallback.
+  const MECH_MUZZLES = {
+    goliath: { g: [['Ref_Weapon', [-0.83, 1.56, 0.87]], ['Ref_Weapon 01', [0.89, 1.56, 0.87]]],
+               a: [['Ref_Weapon 02', [-0.82, 2.15, 0.32]], ['Ref_Weapon 05', [0.85, 2.15, 0.32]], ['Ref_Weapon 04', [-0.83, 2.31, 0.29]], ['Ref_Weapon 07', [0.86, 2.31, 0.29]]] },
+    thor: { g: [['Ref_Weapon 07', [-2.14, 1.69, 1.83]], ['Ref_Weapon 05', [2.15, 1.68, 1.84]], ['Ref_Weapon 08', [-2.18, 1.17, 1.83]], ['Ref_Weapon 06', [2.21, 1.17, 1.83]]],
+            a: [['Ref_Weapon 01', [-1.49, 4.2, -0.91]], ['Ref_Weapon 04', [1.5, 4.31, -0.76]], ['Ref_Weapon 02', [-0.93, 4.52, -0.87]], ['Ref_Weapon 03', [0.86, 4.63, -0.81]]] },
+    odin: { g: [['Ref_Weapon 07', [-2.22, 2.27, 1.4]], ['Ref_Weapon 05', [2.24, 2.47, 1.83]], ['Ref_Weapon 08', [-2.25, 1.76, 1.51]], ['Ref_Weapon 06', [2.27, 1.98, 1.99]]],
+            a: [['Ref_Weapon 01', [-1.14, 5.02, -0.97]], ['Ref_Weapon 04', [1.42, 4.88, -0.75]], ['Ref_Weapon 02', [-0.73, 5.27, -1.4]], ['Ref_Weapon 03', [1.13, 5.13, -1.28]]] },
+  };
 
   class Game {
     constructor(renderer, opts) {
@@ -32,7 +41,8 @@ window.BS = window.BS || {};
       this.up = { stim: 0, weapons: 0, vehicle: 0, neosteel: 0, plating: 0, hisec: 0, medivac: 0, rails: 0 };
       this.ab = { stimUntil: 0, stimCd: 0, strikeCd: 0, repairCd: 0, yamatoCd: 0 };
       this.techUnlocked = {}; this.techCd = { nuke: 0, vikings: 0 };
-      this.mechs = []; this.bc = null; this.vikingWing = []; this.nukes = []; this.beams = [];
+      this.swarms = []; this.abductions = []; this.airTgs = [];      // late-game zerg: dark swarm clouds, viper pulls
+      this.mechs = []; this.bc = null; this.vikingWing = []; this.nukes = [];
       this.station = null;
       BS.Terrain.setMode(this.mode);
       this.layout();
@@ -238,7 +248,7 @@ window.BS = window.BS || {};
         if (m.dead) continue;
         const d = m.def, pred = e => !(d.groundOnly && e.def.flying);
         // Morale: when too many of its neighbours have just been killed, the group falls back level with the bunker.
-        if (!m.boarding && m.retreatUntil <= this.time && forward(m)) {
+        if (!m.boarding && !stim && m.retreatUntil <= this.time && forward(m)) {
           const lost = this.squadDeaths.filter(k => dist(k.x, k.y, m.x, m.y) < 3.5).length;
           const near = Q.filter(o => !o.dead && dist(o.x, o.y, m.x, m.y) < 3.5);
           if (lost >= 2 && lost >= (lost + near.length) / 3) {      // a third of the group gone
@@ -248,12 +258,22 @@ window.BS = window.BS || {};
         }
         let gx = m.spot[0], gy = m.spot[1];
         if (m.boarding) { gx = (m.x < 0 ? -1 : 1) * (hs + 0.3); gy = 0.4; }
-        else if (m.retreatUntil > this.time) {
+        else if (m.retreatUntil > this.time && !stim) {
           if (!forward(m)) { gx = m.x; gy = m.y; }                                    // back on the line: hold and fire
           else if (lane) { gx = clamp(m.x, -6, 6); gx = (gx < 0 ? -1 : 1) * Math.max(Math.abs(gx), hs + 0.8); gy = 0.4; }
           else { const a = Math.atan2(m.y, m.x); gx = Math.cos(a) * 2.8; gy = Math.sin(a) * 2.8; }
         }
         else if (this.enemiesInRange(m.x, m.y, d.range, pred).length) { gx = m.x; gy = m.y; }   // hold and fire
+        else if (stim) {
+          // Stimmed: the whole squad charges the nearest zerg until it is in range, no bounding, no falling back.
+          let th = null, best = 1e9;
+          for (const e of this.enemies) {
+            if (e.hp <= 0 || !pred(e) || dist(0, 0, e.x, e.y) > 24) continue;
+            const dd = dist(m.x, m.y, e.x, e.y);
+            if (dd < best) { best = dd; th = e; }
+          }
+          if (th) { const a = Math.atan2(m.y - th.y, m.x - th.x), r = d.range * 0.85 + th.radius; gx = th.x + Math.cos(a) * r; gy = th.y + Math.sin(a) * r; }
+        }
         else {
           // Advance on the nearest zerg that is attacking our position from beyond our reach.
           let th = null, best = 1e9;
@@ -269,10 +289,10 @@ window.BS = window.BS || {};
         [gx, gy] = this.roundBunker(m, gx, gy);
         const dx = gx - m.x, dy = gy - m.y, dd = Math.hypot(dx, dy) || 1;
         if (far > 0.12) {
-          const sp = Math.min(dd, 3.15 * dt), ox = m.x, oy = m.y;
+          const sp = Math.min(dd, 3.15 * (stim ? 1.5 : 1) * dt), ox = m.x, oy = m.y;
           this.stepGround(m, dx / dd * sp, dy / dd * sp);
           if (m.x !== ox || m.y !== oy) m.yaw = Math.atan2(m.y - oy, m.x - ox);
-          if (m.anim !== 'walk') { m.anim = 'walk'; m.handle.play(/^walk/i, true, 1.2); }
+          if (m.anim !== 'walk') { m.anim = 'walk'; m.handle.play(/^walk/i, true, stim ? 1.8 : 1.2); }
           m.handle.setPos(m.x, m.y, BS.Terrain.height(m.x, m.y)).setYaw(m.yaw);
           continue;
         }
@@ -522,17 +542,29 @@ window.BS = window.BS || {};
         m.handle.setPos(m.x, m.y, BS.Terrain.height(m.x, m.y)).setYaw(m.yaw);
       }
     }
+    // Muzzles of a mech's ground or air weapons, in world space: its weapon bones (goliath autocannons and missile racks,
+    // thor/odin arm cannons and shoulder pods), or their rest-pose spots if the model has not posed yet.
+    muzzles(m, air) {
+      const M = MECH_MUZZLES[m.kind][air ? 'a' : 'g'], out = [];
+      const h = BS.Terrain.height(m.x, m.y), cs = Math.cos(m.yaw), sn = Math.sin(m.yaw);
+      for (const [bone, [rx, ry, rz]] of M) {
+        const w = m.handle.boneWorld(bone);
+        out.push(w || [m.x + cs * rz + sn * rx, m.y + sn * rz - cs * rx, h + ry]);
+      }
+      return out;
+    }
     // One volley: goliath autocannons and hellfire missiles, thor arm cannons and javelin barrage, odin heavy cannons
-    // and missile salvos.
+    // and missile salvos. Every shot flashes at its own muzzle.
     mechFire(m, target, air, dmg) {
-      const D = m.def, h = BS.Terrain.height(m.x, m.y), ang = m.aim, cs = Math.cos(ang), sn = Math.sin(ang);
-      const mz = h + (m.kind === 'odin' ? 4 : m.kind === 'thor' ? 3 : 1.4), shots = air ? D.aShots : D.gShots;
+      const D = m.def, ang = m.aim, shots = air ? D.aShots : D.gShots;
       const hx = target.x, hy = target.y, hz = target.z + target.def.height * 0.5;
       m.handle.play(/^attack/i, false); m.anim = 'attack';
+      const mz = this.muzzles(m, air);
       if (m.kind === 'goliath' && !air) {
         for (let k = 0; k < shots; k++) {
-          const off = k ? 0.35 : -0.35, sx = m.x + cs * 0.7 - sn * off, sy = m.y + sn * 0.7 + cs * off;
-          this.fx.play('marineLaunch', sx, sy, mz, ang, 2, k * 0.12);
+          const [sx, sy, sz] = mz[k % mz.length];
+          this.fx.play('marineLaunch', sx, sy, sz, ang, 2.2, k * 0.12);
+          this.flashes.push({ x: sx, y: sy, z: sz, yaw: ang, delay: k * 0.12, life: 0.09, scale: 1.6 });
           this.fx.play('marineImpact', hx + rnd(-0.2, 0.2), hy + rnd(-0.2, 0.2), hz, ang + Math.PI, 1.6, k * 0.12 + 0.04);
           this.hurtEnemy(target, dmg);
         }
@@ -540,17 +572,18 @@ window.BS = window.BS || {};
         return;
       }
       const look = {
-        goliath: { trail: 'goliathAirMissile', impact: 'goliathAirImpact', launch: null, splash: 0 },
+        goliath: { trail: 'goliathAirMissile', impact: 'goliathAirImpact', launch: 'vikingLaunch', splash: 0 },
         thor: air ? { trail: 'thorShoulderMissile', impact: 'thorShoulderImpact', launch: 'thorShoulderLaunch', splash: D.aSplash }
-                  : { trail: 'thorArmMissile', impact: 'thorArmImpact', launch: 'thorArmLaunch', splash: 0 },
-        odin: air ? { trail: 'thorShoulderMissile', impact: 'odinShoulderImpact', launch: 'thorShoulderLaunch', splash: D.aSplash }
-                  : { trail: null, impact: 'tankImpact', launch: 'tankLaunch', splash: D.gSplash, scale: 1.6, arc: 3 },
+                  : { trail: 'thorArmMissile', impact: 'thorArmImpact', launch: 'thorArmLaunch', flash: 2.2, splash: 0 },
+        odin: air ? { trail: 'thorShoulderMissile', impact: 'odinShoulderImpact', launch: 'thorShoulderLaunch', launchScale: 1.4, splash: D.aSplash }
+                  : { trail: null, impact: 'tankImpact', launch: 'tankLaunch', launchScale: 1.6, flash: 3, splash: D.gSplash, scale: 1.6, arc: 3 },
       }[m.kind];
       const pred = e => !!e.def.flying === air;
       for (let k = 0; k < shots; k++) {
-        const off = (k - (shots - 1) / 2) * 0.45, sx = m.x + cs * 0.6 - sn * off, sy = m.y + sn * 0.6 + cs * off;
-        if (look.launch) this.fx.play(look.launch, sx, sy, mz, ang, look.scale || 1, k * 0.08);
-        const p = { kind: 'missile', friendly: true, fx: sx, fy: sy, fz: mz, tx: hx, ty: hy, tz: hz, t: -k * 0.08, dur: 0.45 + (look.arc ? 0.15 : 0), arc: look.arc || (air ? 0.8 : 0.4),
+        const [sx, sy, sz] = mz[k % mz.length], delay = k * 0.08;
+        this.fx.play(look.launch, sx, sy, sz, ang, look.launchScale || 1, delay);
+        if (look.flash) this.flashes.push({ x: sx, y: sy, z: sz, yaw: ang, delay, life: 0.1, scale: look.flash });
+        const p = { kind: 'missile', friendly: true, fx: sx, fy: sy, fz: sz, tx: hx, ty: hy, tz: hz, t: -delay, dur: 0.45 + (look.arc ? 0.15 : 0), arc: look.arc || (air ? 0.8 : 0.4),
           dmg, target, impact: look.impact, impactScale: look.scale || 1, splash: look.splash, pred };
         if (look.trail) this.projectileModel(p, null, look.trail);
         this.projectiles.push(p);
@@ -576,7 +609,7 @@ window.BS = window.BS || {};
       const lane = this.mode === 'lane';
       // On station over the tip of the mesa where the lane forks (the bottom of the V), nose to the south, a little scaled
       // down: it overlooks both arms and the stem without hiding the lane.
-      this.bc = { x: 0, y: lane ? -24 : -34, z: 10, sx: 0, sy: lane ? 13 : 0, sz: lane ? 6.5 : 8, yaw: Math.PI / 2, state: 'in', cdM: 3, cdY: 5, t: 0,
+      this.bc = { x: 0, y: lane ? -24 : -34, z: 10, sx: 0, sy: lane ? 13 : 0, sz: lane ? 6.5 : 8, yaw: Math.PI / 2, state: 'in', cdM: 3, cdY: 5, t: 0, hp: D.hp, maxHp: D.hp, armor: D.armor, flash: 0,
         turrets: D.turrets.map((bone, i) => ({ bone, cd: 0.3 + i * 0.2, shots: 0, target: null })) };
       this.bc.handle = this.r.spawn('battlecruiser', this.bc.x, this.bc.y, this.bc.z, this.bc.yaw).setTeam(1).setScale(0.75);
       this.bc.handle.play(/^walk|^fly|^stand/i, true);
@@ -597,22 +630,24 @@ window.BS = window.BS || {};
       }
       b.yaw += clamp(angDelta(b.yaw, -Math.PI / 2), -0.6 * dt, 0.6 * dt);     // swing round to face south
       b.handle.setPos(b.x, b.y, b.sz + 0.25 * Math.sin(b.t * 0.7)).setYaw(b.yaw);
-      // Six laser turrets on the hull's hardpoints, each with its own target, firing two-shot bursts.
+      // Six laser turrets on the hull's hardpoints, each with its own target, firing two-shot bursts (slowed by devourer acid).
+      const acid = b.acidUntil > this.time ? 0.7 : 1;
       b.turrets.forEach((tu, i) => {
-        tu.cd -= dt;
+        tu.cd -= dt * acid;
         if (tu.cd > 0) return;
         const at = b.handle.boneWorld(tu.bone) || [b.x + (i % 2 ? 1.6 : -1.6), b.y + (1 - Math.floor(i / 2)) * 1.8, b.sz - 0.3];
         const t = tu.target;
-        if (!t || t.hp <= 0 || dist(at[0], at[1], t.x, t.y) - t.radius > D.range) {
-          const near = this.enemiesInRange(at[0], at[1], D.range);
-          tu.target = near.length ? near[Math.floor(Math.random() * Math.min(4, near.length))] : null;
+        // Point defence first: scourge and devourers closing on the ship are picked before anything else.
+        if (!t || t.hp <= 0 || dist(at[0], at[1], t.x, t.y) - t.radius > D.range || (tu.shots === 0 && !t.def.antiAir)) {
+          const near = this.enemiesInRange(at[0], at[1], D.range), threat = near.find(e => e.def.antiAir);
+          tu.target = threat || (near.length ? near[Math.floor(Math.random() * Math.min(4, near.length))] : null);
           tu.shots = 0;
         }
         const e = tu.target;
         if (!e) { tu.cd = 0.2; return; }
         this.hurtEnemy(e, e.def.flying ? D.laserA : D.laserG);
         const hit = [e.x + rnd(-0.15, 0.15), e.y + rnd(-0.15, 0.15), e.z + e.def.height * 0.5];
-        this.beams.push({ a: at, b: hit, t: 0, life: 0.14 });
+        this.fx.beam(at, hit, 0.14);
         this.fx.play('laserImpact', hit[0], hit[1], hit[2], Math.atan2(at[1] - hit[1], at[0] - hit[0]), 1.4);
         BS.audio.play('laserHit', { vol: 0.3, gap: 0.1 });
         BS.audio.play('bcFire', { vol: 0.3, gap: 0.3 });
@@ -656,7 +691,7 @@ window.BS = window.BS || {};
       this.minerals -= D.cost; this.techCd.vikings = D.cooldown;
       for (let i = 0; i < D.count; i++) {
         const post = this.strikePosts[i % this.strikePosts.length];
-        const v = { post: [post[0] * 1.2, post[1] + 2], x: post[0] * 0.6, y: (this.mode === 'lane' ? -18 : -34) - i * 1.2, z: D.fly + 1.5, yaw: Math.PI / 2, cd: 0.4 + i * 0.2, state: 'in', t: 0 };
+        const v = { post: [post[0] * 1.2, post[1] + 2], x: post[0] * 0.6, y: (this.mode === 'lane' ? -18 : -34) - i * 1.2, z: D.fly + 1.5, yaw: Math.PI / 2, cd: 0.4 + i * 0.2, state: 'in', t: 0, hp: D.hp, maxHp: D.hp };
         v.handle = this.r.spawn('vikingfighter', v.x, v.y, v.z, v.yaw).setTeam(1);
         v.handle.play(/^walk|^fly|^stand/i, true);
         this.vikingWing.push(v);
@@ -678,7 +713,7 @@ window.BS = window.BS || {};
           v.x = v.post[0] + Math.sin(v.t * 0.8 + i) * 1.2; v.y = v.post[1] + Math.sin(v.t * 1.6 + i) * 0.6; v.z = D.fly + 0.2 * Math.sin(v.t * 2 + i);
           const list = this.enemiesInRange(v.x, v.y, D.range, e => e.def.flying);
           if (list.length) v.yaw += clamp(angDelta(v.yaw, Math.atan2(list[0].y - v.y, list[0].x - v.x)), -4 * dt, 4 * dt);
-          v.cd -= dt;
+          v.cd -= dt * (v.acidUntil > this.time ? 0.7 : 1);
           if (v.cd <= 0 && list.length) {
             v.cd = D.cd;
             for (let k = 0; k < D.shots; k++) {
@@ -732,7 +767,7 @@ window.BS = window.BS || {};
         this.nukes.splice(i, 1);
         this.fx.stop(n.fall);
         this.fx.play('nuke', n.x, n.y, BS.Terrain.height(n.x, n.y), 0, 1.6);
-        for (const e of this.enemiesInRange(n.x, n.y, D.radius)) this.hurtEnemy(e, dist(n.x, n.y, e.x, e.y) < D.radius * 0.5 ? D.dmg : D.dmg * 0.5);
+        for (const e of this.enemiesInRange(n.x, n.y, D.radius)) this.hurtEnemy(e, dist(n.x, n.y, e.x, e.y) < D.radius * 0.5 ? D.dmg : D.dmg * 0.5, true);
         BS.audio.play('explosion', { vol: 1 }); BS.audio.play('tankHit', { vol: 0.9 });
         this.shake = 1;
       }
@@ -747,7 +782,7 @@ window.BS = window.BS || {};
       const lane = this.mode === 'lane';
       for (let i = 0; i < d.count; i++) {
         const post = this.strikePosts[i % this.strikePosts.length];
-        const b = { post, x: post[0] * 0.5, y: (lane ? -16 : -34) - i * 1.2, z: d.fly + 1.5, yaw: Math.PI / 2, cd: 0.3 + i * 0.2, state: 'in', t: 0, anim: '' };
+        const b = { post, x: post[0] * 0.5, y: (lane ? -16 : -34) - i * 1.2, z: d.fly + 1.5, yaw: Math.PI / 2, cd: 0.3 + i * 0.2, state: 'in', t: 0, anim: '', hp: d.hp, maxHp: d.hp };
         b.handle = this.r.spawn('banshee', b.x, b.y, b.z, b.yaw).setTeam(1);
         b.handle.play(/^walk|^fly/i, true);
         this.banshees.push(b);
@@ -761,6 +796,7 @@ window.BS = window.BS || {};
       const troops = this.bunker.units.concat(this.squad.filter(m => !m.dead));
       if (!troops.length) return this.toast('No troops to stim');
       for (const u of troops) { if (u.hp <= u.def.stimHp) this.killTrooper(u, 'stim'); else u.hp -= u.def.stimHp; }
+      for (const m of this.squad) { m.retreatUntil = 0; if (m.anim === 'walk') m.anim = ''; }   // galvanised: the squad goes forward
       this.ab.stimUntil = this.time + T().stim.duration; this.ab.stimCd = T().stim.cooldown;
       BS.audio.play('stim', { vol: 0.9 });
       this.floater(0, 0, 3, 'STIM!', '#ffd34d');
@@ -798,8 +834,8 @@ window.BS = window.BS || {};
     yamatoImpact(x, y) {
       const Y = T().yamato;
       const hit = this.enemiesInRange(x, y, Y.radius);
-      if (hit.length) this.hurtEnemy(hit[0], Y.dmg - Y.splash);
-      for (const v of hit) if (v.hp > 0) this.hurtEnemy(v, Y.splash);
+      if (hit.length) this.hurtEnemy(hit[0], Y.dmg - Y.splash, true);
+      for (const v of hit) if (v.hp > 0) this.hurtEnemy(v, Y.splash, true);
       this.fx.play('yamatoImpact', x, y, 0.3, 0, 1.2);
       BS.audio.play('tankHit', { vol: 0.9 }); BS.audio.play('explosion', { vol: 0.7 });
       this.shake = 1;
@@ -810,13 +846,17 @@ window.BS = window.BS || {};
       this.wave++;
       const w = this.wave;
       let budget = (20 + 10 * w + 0.45 * w * w) * (this.hard ? 1.15 : 1);
-      const types = Object.entries(BS.ZERG).filter(([, d]) => d.budget > 0 && w >= Math.ceil(d.unlock * (this.hard ? 0.85 : 1)));
+      // Late game: every high-tech card unlocked brings stranger zerg, and more of them. Guardians come for the mechs;
+      // scourge and devourers only when there is Terran air to hunt.
+      const tier = this.lateTier(), air = this.airPresence();
+      const wt = d => d.weight * (d.late ? 0.6 + 0.4 * tier : 1) * (d.prefer === 'mech' && this.mechs.length ? 2 : 1) * (d.antiAir && !air ? 0 : 1);
+      const types = Object.entries(BS.ZERG).filter(([, d]) => d.budget > 0 && w >= Math.ceil(d.unlock * (this.hard ? 0.85 : 1)) && (!d.late || tier >= d.late));
       const list = [];
       for (let guard = 0; budget > 0 && guard < 400; guard++) {
-        const total = types.reduce((s, [, d]) => s + (d.budget <= budget ? d.weight : 0), 0);
+        const total = types.reduce((s, [, d]) => s + (d.budget <= budget ? wt(d) : 0), 0);
         if (total <= 0) break;
         let roll = Math.random() * total;
-        for (const [k, d] of types) { if (d.budget > budget) continue; roll -= d.weight; if (roll <= 0) { list.push(k); budget -= d.budget; break; } }
+        for (const [k, d] of types) { if (d.budget > budget) continue; roll -= wt(d); if (roll <= 0) { list.push(k); budget -= d.budget; break; } }
       }
       if (w % 5 === 0) list.push(w >= 10 ? 'ultralisk' : 'roach', 'roach');
       if (this.hard && w % 10 === 0) list.push('ultralisk', 'ultralisk');
@@ -832,8 +872,15 @@ window.BS = window.BS || {};
       packs.forEach((pk, g) => { const t = 0.5 + spread * (g + rnd(0, 0.8)) / packs.length, ang = packAng(0.2); for (const k of pk) this.spawnQueue.push({ t, type: k, ang }); });
       for (let left = swarm; left > 0;) {
         const n = Math.min(left, 6 + Math.floor(Math.random() * 11)), t = 0.5 + rnd(0, spread), ang = packAng(0.55);
-        for (let k = 0; k < n; k++) this.spawnQueue.push({ t: t + k * 0.04, type: 'zergling', ang });
+        // Late game: some of the swarm are winged zerglings that hop straight over the mesa.
+        for (let k = 0; k < n; k++) this.spawnQueue.push({ t: t + k * 0.04, type: tier && Math.random() < Math.min(0.5, 0.15 * tier) ? 'wingling' : 'zergling', ang });
         left -= n;
+      }
+      // Late game: overlords drop zerglings behind our lines, and nydus worms breach there.
+      if (tier) {
+        const drops = Math.random() < 0.4 + 0.1 * tier ? 1 + Math.floor(Math.random() * (1 + tier / 2)) : 0;
+        for (let i = 0; i < drops; i++) this.spawnQueue.push({ t: 4 + rnd(0, spread), type: 'overlord', ang: 0 });
+        if (tier >= 2 && Math.random() < 0.25 + 0.08 * tier) this.spawnQueue.push({ t: 6 + rnd(0, spread * 0.6), type: 'nydus', ang: 0 });
       }
       this.spawnQueue.sort((a, b) => a.t - b.t);
       this.spawnTimer = 0; this.waveTimer = this.waveLen;
@@ -844,7 +891,10 @@ window.BS = window.BS || {};
     spawnEnemy(type, ang, at) {
       const d = BS.ZERG[type];
       let x, y;
+      const lane = this.mode === 'lane', side = Math.random() < 0.5 ? -1 : 1, ar = Math.random() * Math.PI * 2;
       if (at) { x = at[0] + rnd(-0.6, 0.6); y = at[1] + rnd(-0.6, 0.6); }
+      else if (d.transport) { x = lane ? side * 23 : Math.cos(ar) * 27; y = lane ? rnd(-3, 6) : Math.sin(ar) * 27; }        // overlords come in from a flank
+      else if (d.nydus) { const r = rnd(5.5, 8); x = lane ? side * rnd(2.5, 4.5) : Math.cos(ar) * r; y = lane ? rnd(-8.5, -7) : Math.sin(ar) * r; }   // behind our lines
       else if (this.mode === 'lane') {
         if (ang === 1 || ang === 2) {
           // Somewhere down the arm (see terrain.js), not on the cliffs beside it.
@@ -860,7 +910,7 @@ window.BS = window.BS || {};
       const e = { type, def: d, x, y, z, yaw: Math.atan2(-y, -x), hp: 0, maxHp: 0, radius: d.radius, life: d.life || 0, cd: rnd(0, d.cd), retarget: 0,
         target: null, hitAt: -1, pendingHit: false, slowUntil: 0, burrowed: false, burrowT: 0, attacking: false, anim: '', flash: 0, sx: 0, sy: 0, model, death };
       // Lane terrain: ground zerg follow the Y; some ranged ones climb a ramp to a ledge over the bunker.
-      if (!d.flying && !at) {
+      if (!d.flying && !at && !d.hops && !d.nydus) {
         const high = this.mode === 'lane' && ['acid', 'spine', 'bullet'].includes(d.projectile) && Math.random() < 0.4;
         e.route = BS.Terrain.route(x, y, high); e.highRoute = high;
       }
@@ -868,8 +918,134 @@ window.BS = window.BS || {};
       e.handle = this.r.spawn(model, x, y, z, e.yaw).setTeam(3);
       if (d.scale) e.handle.setScale(d.scale);
       this.playAnim(e, 'walk');
+      if (d.hops) e.seed = Math.random() * 10;
+      if (d.transport) {
+        const a2 = Math.random() * Math.PI * 2;
+        e.state = 'in'; e.exit = [x, y]; e.cargo = 5 + this.lateTier();
+        e.drop = lane ? [rnd(-4, 4), rnd(-6.5, -3)] : [Math.cos(a2) * rnd(4, 6.5), Math.sin(a2) * rnd(4, 6.5)];
+      }
+      if (d.nydus) {
+        e.state = 'birth'; e.t = 0; e.spawnT = 0; e.z = BS.Terrain.height(x, y) - 3;
+        e.cargo = []; for (let i = 0; i < 6 + 2 * this.lateTier(); i++) e.cargo.push(pick(['zergling', 'zergling', 'wingling', 'roach', 'hydralisk']));
+        this.fx.play('nydusBirth', x, y, BS.Terrain.height(x, y), 0, 1.4);
+        this.toast('Nydus worm breaching behind our lines!');
+      }
       this.enemies.push(e);
       return e;
+    }
+    // How far into high tech the player is (0-6 tech cards unlocked): drives the late-game zerg.
+    lateTier() { return Object.keys(this.techUnlocked).length; }
+    airPresence() { return !!this.bc || this.vikingWing.length > 0 || this.banshees.length > 0 || !!this.techUnlocked.bc || !!this.techUnlocked.vikings; }
+    // Gone without a kill (an overlord flying off, a nydus worm burrowing away).
+    despawn(e) {
+      e.hp = 0;
+      const i = this.enemies.indexOf(e); if (i >= 0) this.enemies.splice(i, 1);
+      e.handle.release();
+      if (this.focus === e) this.focus = null;
+    }
+    // Overlord drop: fly to a point behind our lines, unload zerglings one by one, fly back out.
+    updateOverlord(e, dt) {
+      const d = e.def;
+      if (e.state === 'unload') {
+        e.unloadT -= dt;
+        if (e.unloadT <= 0 && e.cargo > 0) { e.cargo--; e.unloadT = 0.2; this.spawnEnemy('zergling', 0, [e.x, e.y]); }
+        if (e.cargo <= 0) { e.state = 'out'; this.playAnim(e, 'walk'); }
+        return;
+      }
+      const [gx, gy] = e.state === 'out' ? e.exit : e.drop, dx = gx - e.x, dy = gy - e.y, dd = Math.hypot(dx, dy);
+      if (dd < 0.3 || (e.state === 'in' && e.hp < e.maxHp * 0.5)) {        // badly hurt: drop the cargo where it is
+        if (e.state === 'in') { e.state = 'unload'; e.unloadT = 0.4; this.playAnim(e, 'stand'); BS.audio.play('overlordUnload', { vol: 0.6 }); this.toast('Overlord dropping zerglings behind our lines'); }
+        else this.despawn(e);
+        return;
+      }
+      const s = Math.min(dd, d.speed * dt);
+      e.x += dx / dd * s; e.y += dy / dd * s;
+      e.yaw += clamp(angDelta(e.yaw, Math.atan2(dy, dx)), -2 * dt, 2 * dt);
+      this.playAnim(e, 'walk');
+    }
+    // Nydus worm: rises out of the ground, disgorges its cargo, then sinks back unless it is killed first.
+    updateNydus(e, dt) {
+      e.t += dt;
+      const gz = BS.Terrain.height(e.x, e.y);
+      if (e.state === 'birth') {
+        e.z = gz - 3 * (1 - clamp(e.t / 1.6, 0, 1));
+        if (e.t >= 1.6) { e.state = 'open'; e.t = 0; this.playAnim(e, 'stand'); BS.audio.play('nydusUnload', { vol: 0.8 }); }
+        return;
+      }
+      if (e.state === 'open') {
+        e.spawnT -= dt;
+        if (e.spawnT <= 0 && e.cargo.length) { e.spawnT = 0.8; this.spawnEnemy(e.cargo.shift(), 0, [e.x + rnd(-1, 1), e.y + rnd(-1, 1)]); }
+        if (!e.cargo.length && e.t > 14) { e.state = 'close'; e.t = 0; }
+        return;
+      }
+      e.z = gz - 3 * clamp(e.t / 1.6, 0, 1);
+      if (e.t >= 1.6) this.despawn(e);
+    }
+    // Defiler (alternating dark swarm and plague) and viper (abduct) spells.
+    castSpell(e, t) {
+      const d = e.def;
+      e.anim = 'spell'; e.castUntil = this.time + 1; e.handle.play(/^spell/i, false);
+      if (d.spell === 'abduct') {
+        // Yank the nearest trooper outside, goliath or thor out of position toward the viper.
+        let best = null, bd = d.range + 1;
+        for (const tg of this.tgs) {
+          if (tg.obj.dead || !(tg.kind === 'trooper' || (tg.kind === 'mech' && tg.obj.kind !== 'odin'))) continue;
+          const dd = dist(e.x, e.y, tg.obj.x, tg.obj.y);
+          if (dd < bd) { bd = dd; best = tg; }
+        }
+        if (!best) { e.cd = 1; return; }
+        const o = best.obj, a = Math.atan2(o.y - e.y, o.x - e.x), oz = BS.Terrain.height(o.x, o.y) + 1;
+        this.fx.beam([e.x, e.y, e.z], [o.x, o.y, oz], 0.6, [0.55, 0.25, 1], 0.06);
+        this.fx.play('viperTongueImpact', o.x, o.y, oz, a);
+        this.abductions.push({ o, mech: best.kind === 'mech', fx: o.x, fy: o.y, tx: e.x + Math.cos(a) * 1.5, ty: e.y + Math.sin(a) * 1.5, t: 0 });
+        BS.audio.play('viperAbduct', { vol: 0.7 });
+        this.floater(o.x, o.y, oz + 1, 'ABDUCTED', '#c08cff');
+        return;
+      }
+      e.nextSpell = e.nextSpell === 'swarm' ? 'plague' : e.nextSpell === 'plague' ? 'swarm' : pick(['swarm', 'plague']);
+      if (e.nextSpell === 'swarm') {
+        // Dark swarm over the zerg pressing the defiler's target: ranged fire into it does a quarter damage.
+        const dd = dist(e.x, e.y, t.x, t.y) || 1, x = t.x + (e.x - t.x) / dd * Math.min(3.5, dd), y = t.y + (e.y - t.y) / dd * Math.min(3.5, dd);
+        this.swarms.push({ x, y, r: 3, until: this.time + 8, fx: this.fx.play('darkSwarm', x, y, BS.Terrain.height(x, y), 0, 1.3) });
+        this.toast('Dark swarm');
+      } else {
+        // Plague: everything of ours near the target bleeds 75 over 5 s, but it cannot kill.
+        for (const tg of this.tgs) {
+          if (dist(t.x, t.y, tg.x, tg.y) - tg.radius > 2.5) continue;
+          tg.obj.plagueUntil = this.time + 5;
+          this.fx.play('plague', tg.x, tg.y, BS.Terrain.height(tg.x, tg.y) + 0.5, 0);
+        }
+        BS.audio.play('plague', { vol: 0.7 });
+        this.toast('Plague!');
+      }
+    }
+    updateSpells(dt) {
+      for (let i = this.swarms.length - 1; i >= 0; i--) if (this.time > this.swarms[i].until) { this.fx.stop(this.swarms[i].fx); this.swarms.splice(i, 1); }
+      for (const tg of this.tgs) { const o = tg.obj; if (o.plagueUntil > this.time && o.hp > 1) { o.hp = Math.max(1, o.hp - 15 * dt); o.flash = Math.max(o.flash || 0, 0.4); } }
+      for (let i = this.abductions.length - 1; i >= 0; i--) {
+        const a = this.abductions[i], k = clamp((a.t += dt) / 0.6, 0, 1), o = a.o;
+        if (o.dead) { this.abductions.splice(i, 1); continue; }
+        o.x = a.fx + (a.tx - a.fx) * k; o.y = a.fy + (a.ty - a.fy) * k;
+        if (o.handle) o.handle.setPos(o.x, o.y, BS.Terrain.height(o.x, o.y) + Math.sin(k * Math.PI) * 1.5);
+        if (k >= 1) { if (a.mech) o.state = 'walking'; this.abductions.splice(i, 1); }   // a mech walks back to its post
+      }
+    }
+    // Terran air the scourge and devourers go for.
+    airTargets() {
+      const list = [], b = this.bc;
+      if (b && b.state === 'station' && !b.dead) list.push({ kind: 'bc', obj: b, x: b.x, y: b.y, z: b.sz, radius: 2.4, armored: true });
+      for (const v of this.vikingWing) if (!v.dead && v.state !== 'in') list.push({ kind: 'viking', obj: v, x: v.x, y: v.y, z: v.z, radius: 0.6, armored: true });
+      for (const s of this.banshees) if (!s.dead) list.push({ kind: 'banshee', obj: s, x: s.x, y: s.y, z: s.z, radius: 0.6, light: true });
+      return list;
+    }
+    killAir(o, kind) {
+      o.dead = true;
+      o.handle.release();
+      this.corpse(kind === 'bc' ? 'battlecruiserDeath' : kind === 'viking' ? 'vikingDeath' : 'bansheeDeath', o.x, o.y, kind === 'bc' ? o.sz : o.z, o.yaw, 5, kind === 'bc' ? 0.75 : 1, true);
+      BS.audio.play('explosion', { vol: kind === 'bc' ? 1 : 0.6 });
+      if (kind === 'bc') { this.bc = null; this.shake = 1; this.toast('Battlecruiser lost!'); }
+      else if (kind === 'viking') { this.vikingWing.splice(this.vikingWing.indexOf(o), 1); this.toast('Viking down'); }
+      else { this.banshees.splice(this.banshees.indexOf(o), 1); this.toast('Banshee down'); }
     }
     playAnim(e, kind) {
       if (e.anim === kind) return;
@@ -922,6 +1098,9 @@ window.BS = window.BS || {};
       } else if (tg.kind === 'mech') {
         o.hp -= Math.max(0.5, dmg - o.armor); o.flash = 1;
         if (o.hp <= 0 && !o.dead) this.killMech(o);
+      } else if (tg.kind === 'bc' || tg.kind === 'viking' || tg.kind === 'banshee') {
+        o.hp -= Math.max(0.5, dmg - (o.armor || 0)); o.flash = 1;
+        if (o.hp <= 0 && !o.dead) this.killAir(o, tg.kind);
       } else if (tg.kind === 'structure') {
         o.hp -= Math.max(0.5, dmg - o.armor); o.flash = 1;
         if (o.hp <= 0 && !o.dead) this.destroyStructure(o);
@@ -965,8 +1144,10 @@ window.BS = window.BS || {};
       out.sort((a, b) => a[0] - b[0]);
       return out.map(p => p[1]);
     }
-    hurtEnemy(e, dmg) {
+    // splash: blast and flame damage, which dark swarm does not stop (as in Brood War).
+    hurtEnemy(e, dmg, splash) {
       if (!e || e.hp <= 0) return;
+      if (!splash && !e.def.flying && this.swarms.length && this.swarms.some(s => dist(s.x, s.y, e.x, e.y) < s.r)) dmg *= 0.25;
       e.hp -= Math.max(0.5, dmg - e.def.armor);
       e.flash = 1;
       if (e.hp <= 0) this.killEnemy(e, false);
@@ -979,7 +1160,8 @@ window.BS = window.BS || {};
       if (d.suicide && !suicide) this.banelingBlast(e, true);
       const i = this.enemies.indexOf(e); if (i >= 0) this.enemies.splice(i, 1);
       e.handle.release();
-      this.corpse(e.death, e.x, e.y, e.z, e.yaw, d.deathHold || 3.5, d.scale || 1);
+      if (e.death) this.corpse(e.death, e.x, e.y, e.z, e.yaw, d.deathHold || 3.5, d.scale || 1);
+      else this.fx.play('nydusBirth', e.x, e.y, BS.Terrain.height(e.x, e.y), 0, 1.6);
       if (this.focus === e) this.focus = null;
     }
     banelingBlast(e, fromDeath) {
@@ -1036,8 +1218,9 @@ window.BS = window.BS || {};
         if (this.enemies.length < this.maxAlive()) this.spawnEnemy(s.type, s.ang);
         else this.spawnQueue.push({ t: this.spawnTimer + 2, type: s.type, ang: s.ang });
       }
-      this.tgs = this.targets();
+      this.tgs = this.targets(); this.airTgs = this.airTargets();
       this.updateEnemies(dt);
+      this.updateSpells(dt);
       this.updateBunker(dt);
       this.updateTanks(dt);
       this.updateScvs(dt);
@@ -1070,18 +1253,38 @@ window.BS = window.BS || {};
         if (e.hp <= 0) continue;
         const d = e.def;
         if (e.life > 0) { e.life -= dt; if (e.life <= 0) { this.killEnemy(e, true); this.kills--; continue; } }
+        if (d.transport) { this.updateOverlord(e, dt); continue; }
+        if (d.nydus) { this.updateNydus(e, dt); continue; }
         e.retarget -= dt;
         if (!this.valid(e.target) || e.retarget <= 0) {
+          // Scourge and devourers hunt Terran air; guardians single out mechs.
           let best = null, bd = 1e9;
-          for (const t of targets) { if (t.kind === 'scv' && Math.random() < 0.5) continue; const dd = dist(e.x, e.y, t.x, t.y) - t.radius; if (dd < bd) { bd = dd; best = t; } }
+          for (const t of d.antiAir ? this.airTgs : targets) {
+            if (t.kind === 'scv' && Math.random() < 0.5) continue;
+            const dd = dist(e.x, e.y, t.x, t.y) - t.radius - (d.prefer && t.kind === d.prefer ? 12 : 0);
+            if (dd < bd) { bd = dd; best = t; }
+          }
           e.target = best; e.retarget = rnd(0.5, 0.8);
         }
         const t = e.target;
-        if (!t) continue;
+        if (!t) {
+          // Nothing in the air to hunt: hang back out of reach up the lane until something flies.
+          if (d.antiAir) {
+            const a = Math.atan2(e.y, e.x), gx = this.mode === 'lane' ? clamp(e.x, -6, 6) : Math.cos(a) * 13, gy = this.mode === 'lane' ? 12 : Math.sin(a) * 13;
+            const gd = Math.hypot(gx - e.x, gy - e.y);
+            if (gd > 0.5) { const s = Math.min(gd, d.speed * dt); e.x += (gx - e.x) / gd * s; e.y += (gy - e.y) / gd * s; e.yaw += clamp(angDelta(e.yaw, Math.atan2(gy - e.y, gx - e.x)), -3 * dt, 3 * dt); }
+            this.playAnim(e, 'walk');
+          }
+          continue;
+        }
         t.x = t.obj.x !== undefined ? t.obj.x : t.x; t.y = t.obj.y !== undefined ? t.obj.y : t.y;
         const dx = t.x - e.x, dy = t.y - e.y, dd = Math.hypot(dx, dy);
         const reach = dd - t.radius - e.radius, range = d.range + (t.kind === 'bunker' ? 0.2 : 0), slowed = e.slowUntil > this.time;
-        if (d.suicide && reach <= range) { this.banelingBlast(e, false); this.killEnemy(e, true); continue; }
+        if (d.suicide && reach <= range) {
+          if (d.antiAir) { this.damageDefender(t, d.dmg); this.fx.play('mutaliskImpact', e.x, e.y, e.z, e.yaw, 1.6); BS.audio.play('scourgeHit', { vol: 0.6, gap: 0.1 }); }
+          else this.banelingBlast(e, false);
+          this.killEnemy(e, true); continue;
+        }
         if (d.burrows) {
           if (!e.burrowed && reach <= range - 1) { e.burrowed = true; e.burrowT = 1; this.playAnim(e, 'burrow'); }
           else if (e.burrowed) e.burrowT -= dt;
@@ -1091,13 +1294,14 @@ window.BS = window.BS || {};
         if (canAttack) {
           e.attacking = true;
           e.yaw = Math.atan2(dy, dx);
-          if (d.attackSeq) this.playAnim(e, 'attack'); else if (!d.burrows) this.playAnim(e, 'stand');
+          if (d.attackSeq) this.playAnim(e, 'attack'); else if (!d.burrows && !(e.castUntil > this.time)) this.playAnim(e, 'stand');
           e.cd -= dt * (slowed ? 0.8 : 1);
           if (e.cd <= 0) {
             const cd = this.enemyCd(e);
             e.cd += cd; e.hitAt = this.time + cd * d.hitFrac; e.hitTarget = t;
             if (d.soundAttack) BS.audio.play(d.soundAttack, { vol: 0.35, gap: 0.15 });
-            if (d.projectile) this.enemyShot(e, t, cd);
+            if (d.spell) this.castSpell(e, t);
+            else if (d.projectile) this.enemyShot(e, t, cd);
             else e.pendingHit = true;
           }
           if (e.pendingHit && this.time >= e.hitAt) {
@@ -1126,9 +1330,11 @@ window.BS = window.BS || {};
           const sp = d.speed * (slowed ? 0.5 : 1), nx = (gx - e.x) / gd, ny = (gy - e.y) / gd;
           const mx = nx * sp * dt + e.sx * 0.8, my = ny * sp * dt + e.sy * 0.8;
           // Cliffs: ground units steer around them; flyers ignore them.
-          if (d.flying) { e.x += mx; e.y += my; } else this.stepGround(e, mx, my);
+          // Winged zerglings hop straight over cliffs and the mesa.
+          if (d.flying || d.hops) { e.x += mx; e.y += my; } else this.stepGround(e, mx, my);
           if (this.mode === 'lane') e.x = clamp(e.x, -21, 21);
-          if (!d.flying) e.z = BS.Terrain.height(e.x, e.y);
+          if (d.hops) { const gz = BS.Terrain.height(e.x, e.y); e.z = Math.max(gz, e.z + (gz - e.z) * Math.min(1, dt * 5)) + Math.abs(Math.sin(this.time * 7 + e.seed)) * 0.06; }
+          else if (!d.flying) e.z = BS.Terrain.height(e.x, e.y);
           // Face the way it is heading, not the way the crowd shoves it, and turn at a creature's pace.
           const turn = (d.radius >= 0.9 ? 3 : 8) * dt;
           e.yaw += clamp(angDelta(e.yaw, Math.atan2(ny, nx)), -turn, turn);
@@ -1138,12 +1344,14 @@ window.BS = window.BS || {};
     }
     enemyShot(e, t, cd) {
       const d = e.def;
-      const p = { kind: d.projectile, friendly: false, def: d, target: t, src: e, fx: e.x, fy: e.y, fz: e.z + d.height * 0.6, tx: t.x, ty: t.y, tz: 1.0, t: 0, dur: Math.max(0.15, cd * d.hitFrac), dmg: d.dmg, arc: 0 };
+      const p = { kind: d.projectile, friendly: false, def: d, target: t, src: e, fx: e.x, fy: e.y, fz: e.z + d.height * 0.6, tx: t.x, ty: t.y, tz: t.z !== undefined ? t.z : 1.0, t: 0, dur: Math.max(0.15, cd * d.hitFrac), dmg: d.dmg, arc: 0 };
       switch (d.projectile) {
         case 'acid': p.arc = 1.5; p.impact = 'roachImpact'; this.projectileModel(p, null, 'roachMissile', 0.7); break;
         case 'spine': this.projectileModel(p, 'projHydralisk', null); break;
         case 'bullet': p.impact = 'marineImpact'; this.fx.play('marineLaunch', p.fx, p.fy, p.fz, Math.atan2(t.y - e.y, t.x - e.x)); break;
         case 'glaive': p.bounces = d.bounces; p.hit = []; p.impact = 'mutaliskImpact'; this.projectileModel(p, 'projMutalisk', 'mutaliskMissile'); break;
+        case 'guardian': p.arc = 2; p.impact = 'roachImpact'; this.projectileModel(p, null, 'guardianMissile', 1.2); break;
+        case 'spores': p.impact = 'acidSpores'; this.projectileModel(p, null, 'devourerMissile'); break;
         case 'brood': p.arc = 3; p.model = this.r.spawn('zergling', p.fx, p.fy, p.fz, 0).setScale(0.45).setTeam(3); p.model.play(/^stand/i, true); break;
       }
       this.projectiles.push(p);
@@ -1193,7 +1401,7 @@ window.BS = window.BS || {};
         }
         BS.audio.play('marineFire', { vol: 0.3, gap: 0.09 });
       } else if (u.type === 'firebat') {
-        if (dmg) for (const v of this.enemiesInRange(hx, hy, d.splash, pred)) this.hurtEnemy(v, dmg + (v.def.light ? d.dmgLight : 0));
+        if (dmg) for (const v of this.enemiesInRange(hx, hy, d.splash, pred)) this.hurtEnemy(v, dmg + (v.def.light ? d.dmgLight : 0), true);
         this.fx.play('firebatLaunch', sx, sy, sz, ang, 1.2);
         BS.audio.play('firebatFire', { vol: 0.45, gap: 0.3 });
       } else {
@@ -1316,7 +1524,7 @@ window.BS = window.BS || {};
           const bob = 0.15 * Math.sin(this.time * 2.1 + i);
           const list = this.enemiesInRange(b.x, b.y, D.range, e => !e.def.flying);
           if (list.length) b.yaw += clamp(angDelta(b.yaw, Math.atan2(list[0].y - b.y, list[0].x - b.x)), -4 * dt, 4 * dt);
-          b.cd -= dt;
+          b.cd -= dt * (b.acidUntil > this.time ? 0.7 : 1);
           if (b.cd <= 0 && list.length) {
             b.cd = D.cd;
             const tg = list[0];
@@ -1364,14 +1572,14 @@ window.BS = window.BS || {};
             for (const e of this.enemiesInRange(p.tx, p.ty, r3 + 0.5, e => !e.def.flying)) {
               const dd = dist(p.tx, p.ty, e.x, e.y) - e.radius;
               const mult = dd <= r1 ? 1 : dd <= r2 ? 0.5 : dd <= r3 ? 0.25 : 0;
-              if (mult > 0) this.hurtEnemy(e, (p.dmg + (e.def.armored ? p.dmgArmored : 0)) * mult);
+              if (mult > 0) this.hurtEnemy(e, (p.dmg + (e.def.armored ? p.dmgArmored : 0)) * mult, true);
             }
             BS.audio.play('tankHit', { vol: 0.6, gap: 0.1 });
             this.shake = Math.min(1, this.shake + 0.1);
           } else if (p.kind === 'grenade') {
             if (p.target && p.target.hp > 0 && p.dmg) { p.target.slowUntil = this.time + p.def.slow; p.target.anim = ''; this.hurtEnemy(p.target, p.dmg + (p.target.def.armored ? p.def.dmgArmored : 0)); }
           } else if (p.kind === 'missile') {
-            if (p.splash) { for (const v of this.enemiesInRange(p.tx, p.ty, p.splash, p.pred)) this.hurtEnemy(v, p.dmg); }
+            if (p.splash) { for (const v of this.enemiesInRange(p.tx, p.ty, p.splash, p.pred)) this.hurtEnemy(v, p.dmg, true); }
             else if (p.target && p.target.hp > 0) this.hurtEnemy(p.target, p.dmg);
           } else if (p.kind === 'sam') {
             if (p.target && p.target.hp > 0) this.hurtEnemy(p.target, p.dmg);
@@ -1395,6 +1603,7 @@ window.BS = window.BS || {};
         }
         if (p.kind === 'glaive') dmg = p.dmg;
         this.damageDefender(tg, dmg);
+        if (d.acid) tg.obj.acidUntil = this.time + d.acid;      // devourer acid: the target fires slower for a while
         if (p.kind === 'glaive' && p.bounces > 0) {
           // The glaive ricochets to the nearest defender it has not hit yet, losing a third of its punch each time.
           const hit = p.hit.concat([tg.obj]);
@@ -1428,7 +1637,7 @@ window.BS = window.BS || {};
       for (let i = this.flashes.length - 1; i >= 0; i--) {
         const f = this.flashes[i];
         if (f.delay > 0) { f.delay -= dt; continue; }
-        if (!f.h) { f.h = this.r.spawn('fxMuzzle', f.x, f.y, f.z, f.yaw); f.h.playRandom(/^stand/i, false); }
+        if (!f.h) { f.h = this.r.spawn('fxMuzzle', f.x, f.y, f.z, f.yaw); if (f.scale) f.h.setScale(f.scale); f.h.playRandom(/^stand/i, false); }
         f.life -= dt;
         if (f.life <= 0) { f.h.release(); this.flashes.splice(i, 1); }
       }
@@ -1453,7 +1662,6 @@ window.BS = window.BS || {};
       }
       for (const st of this.structures) st.flash = Math.max(0, st.flash - dt * 4);
       for (const m of this.mechs) m.flash = Math.max(0, m.flash - dt * 4);
-      for (let i = this.beams.length - 1; i >= 0; i--) { this.beams[i].t += dt; if (this.beams[i].t > this.beams[i].life) this.beams.splice(i, 1); }
     }
 
     focusAt(wx, wy) {

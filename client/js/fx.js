@@ -66,6 +66,7 @@ window.BS = window.BS || {};
       this.batches = new Map();       // texture|blend -> {tex, add, list}
       this.instances = new Map();     // handle -> instance
       this.sprites = [];
+      this.beams = [];                // laser bolts: depth-tested glowing segments (see drawBeams)
       this.next = 1;
       this.density = BS.perfScale || 1;     // phones emit fewer particles
       this.maxSprites = Math.round(MAX_SPRITES * (BS.perfScale || 1));
@@ -197,6 +198,9 @@ window.BS = window.BS || {};
       }
     }
 
+    // A laser bolt from a to b ([x, y, z]) that fades over life seconds; rgb is the glow colour (the core is near white).
+    beam(a, b, life, rgb, width) { this.beams.push({ a, b, t: 0, life, rgb: rgb || [1, 0.3, 0.15], w: width || 0.09 }); }
+
     // ---- Rendering --------------------------------------------------------------------------------
     initGl() {
       const gl = this.gl;
@@ -217,6 +221,60 @@ window.BS = window.BS || {};
       for (let i = 0, v = 0; i < idx.length; i += 6, v += 4) { idx[i] = v; idx[i + 1] = v + 1; idx[i + 2] = v + 2; idx[i + 3] = v; idx[i + 4] = v + 2; idx[i + 5] = v + 3; }
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ibuf); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+      // Beam texture: white, alpha falling off across the bolt (v) for a soft glowing edge.
+      const prof = new Uint8Array(4 * 32);
+      for (let i = 0; i < 32; i++) { const d = Math.abs(i - 15.5) / 15.5; prof.set([255, 255, 255, Math.round(255 * Math.exp(-d * d * 5))], i * 4); }
+      this.beamTex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, this.beamTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 32, 0, gl.RGBA, gl.UNSIGNED_BYTE, prof);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+    }
+
+    // Laser bolts as camera-facing ribbons in the 3D pass, so the hull, units and terrain in front of them hide them.
+    // Each bolt is a wide coloured glow plus a thin hot core, added on top of the scene.
+    drawBeams(camera, dt) {
+      const B = this.beams;
+      for (let i = B.length - 1; i >= 0; i--) { B[i].t += dt; if (B[i].t > B[i].life) B.splice(i, 1); }
+      if (!B.length) return;
+      const gl = this.gl, cam = camera.location, V = this.verts;
+      let n = 0;
+      for (const bm of B) {
+        const k = 1 - bm.t / bm.life, [ax, ay, az] = bm.a, [bx, by, bz] = bm.b;
+        let dx = bx - ax, dy = by - ay, dz = bz - az;
+        const mx = (ax + bx) / 2 - cam[0], my = (ay + by) / 2 - cam[1], mz = (az + bz) / 2 - cam[2];
+        // Side vector: perpendicular to the bolt and to the view ray, so the ribbon faces the camera.
+        let sx = dy * mz - dz * my, sy = dz * mx - dx * mz, sz = dx * my - dy * mx;
+        const sl = Math.hypot(sx, sy, sz) || 1;
+        for (const [w, c] of [[bm.w * 2.6, [bm.rgb[0] * 0.55 * k, bm.rgb[1] * 0.55 * k, bm.rgb[2] * 0.55 * k]], [bm.w * 0.7, [k, 0.55 + 0.45 * bm.rgb[1] * k, 0.4 * k + 0.3 * bm.rgb[2] * k]]]) {
+          if (n >= 16383) break;
+          const ox = sx / sl * w, oy = sy / sl * w, oz = sz / sl * w, o = n * 36;
+          const P = [[ax - ox, ay - oy, az - oz, 0, 0], [bx - ox, by - oy, bz - oz, 1, 0], [bx + ox, by + oy, bz + oz, 1, 1], [ax + ox, ay + oy, az + oz, 0, 1]];
+          for (let q = 0; q < 4; q++) V.set([P[q][0], P[q][1], P[q][2], P[q][3], P[q][4], c[0], c[1], c[2], 1], o + q * 9);
+          n++;
+        }
+      }
+      if (this.maxAttribs === undefined) this.maxAttribs = gl.getParameter(gl.MAX_VERTEX_ATTRIBS);
+      for (let i = 0; i < this.maxAttribs; i++) gl.disableVertexAttribArray(i);
+      gl.useProgram(this.prog);
+      gl.uniformMatrix4fv(this.loc.vp, false, camera.viewProjectionMatrix);
+      gl.uniform1i(this.loc.tex, 0); gl.uniform1f(this.loc.add, 1);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.beamTex);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.vbuf); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ibuf);
+      gl.enableVertexAttribArray(this.loc.pos); gl.enableVertexAttribArray(this.loc.uv); gl.enableVertexAttribArray(this.loc.col);
+      gl.vertexAttribPointer(this.loc.pos, 3, gl.FLOAT, false, 36, 0);
+      gl.vertexAttribPointer(this.loc.uv, 2, gl.FLOAT, false, 36, 12);
+      gl.vertexAttribPointer(this.loc.col, 4, gl.FLOAT, false, 36, 20);
+      gl.enable(gl.DEPTH_TEST); gl.depthMask(false); gl.disable(gl.CULL_FACE); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+      gl.bufferData(gl.ARRAY_BUFFER, V.subarray(0, n * 36), gl.DYNAMIC_DRAW);
+      gl.drawElements(gl.TRIANGLES, n * 6, gl.UNSIGNED_SHORT, 0);
+      gl.disableVertexAttribArray(this.loc.pos); gl.disableVertexAttribArray(this.loc.uv); gl.disableVertexAttribArray(this.loc.col);
+      gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.depthMask(true); gl.disable(gl.BLEND);
+      gl.useProgram(null);
+      if (this.r.viewer.webgl) this.r.viewer.webgl.currentShader = null;
     }
 
     draw(camera) {

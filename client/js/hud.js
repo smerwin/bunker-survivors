@@ -180,18 +180,6 @@ window.BS = window.BS || {};
         const [sx, sy] = r.worldToScreen(g.focus.x, g.focus.y, 0.05);
         c.strokeStyle = '#ff6a5a'; c.lineWidth = 2; c.beginPath(); c.ellipse(sx, sy, 22 + g.focus.radius * 14, 12 + g.focus.radius * 7, 0, 0, Math.PI * 2); c.stroke();
       }
-      // Battlecruiser laser beams: bright red-orange bolts with a glow, fading fast.
-      if (g.beams.length) {
-        c.save(); c.globalCompositeOperation = 'lighter'; c.lineCap = 'round';
-        for (const bm of g.beams) {
-          if (!r.inFront(bm.a[0], bm.a[1], bm.a[2]) || !r.inFront(bm.b[0], bm.b[1], bm.b[2])) continue;
-          const [ax, ay] = r.worldToScreen(bm.a[0], bm.a[1], bm.a[2]), [bx, by] = r.worldToScreen(bm.b[0], bm.b[1], bm.b[2]);
-          const k = 1 - bm.t / bm.life;
-          c.strokeStyle = 'rgba(255, 70, 40, ' + (0.35 * k) + ')'; c.lineWidth = 6; c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
-          c.strokeStyle = 'rgba(255, 200, 150, ' + (0.9 * k) + ')'; c.lineWidth = 1.8; c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
-        }
-        c.restore();
-      }
       c.textAlign = 'center'; c.font = '700 15px Eurostile, system-ui, sans-serif';
       for (const f of g.floaters) {
         if (!r.inFront(f.x, f.y, f.z)) continue;

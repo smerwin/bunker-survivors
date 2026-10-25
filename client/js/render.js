@@ -533,7 +533,7 @@ window.BS = window.BS || {};
       this.scene.startFrame();
       this.scene.renderOpaque();
       this.scene.renderTranslucent();
-      if (this.fx) this.fx.draw(this.scene.camera);
+      if (this.fx) { this.fx.draw(this.scene.camera); this.fx.drawBeams(this.scene.camera, dt); }
     }
   }
 

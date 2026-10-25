@@ -27,13 +27,13 @@ struct FBSBunker
 	TArray<FBSInfantryUnit> Units;
 	ABSModelActor* Actor = nullptr;
 	bool bDead = false;
-	float LastShot = -1, Flash = 0;
+	float LastShot = -1, Flash = 0, PlagueUntil = 0;
 };
 
 struct FBSTank
 {
 	enum EState : uint8 { Incoming, Unloading, Leaving, Ready } State = Incoming;
-	float X = 0, Y = 0, Hp = BSDefs::TankHp, MaxHp = BSDefs::TankHp, Armor = BSDefs::TankArmor, Cd = 0, T = 0, MedT = 0, Flash = 0;
+	float X = 0, Y = 0, Hp = BSDefs::TankHp, MaxHp = BSDefs::TankHp, Armor = BSDefs::TankArmor, Cd = 0, T = 0, MedT = 0, Flash = 0, PlagueUntil = 0;
 	ABSModelActor* Actor = nullptr;
 	ABSModelActor* Medivac = nullptr;
 	FVector Med;
@@ -42,7 +42,7 @@ struct FBSTank
 
 struct FBSScv
 {
-	float X = 0, Y = 0, Hp = BSDefs::ScvHp, MaxHp = BSDefs::ScvHp, Flash = 0, Yaw = 0;
+	float X = 0, Y = 0, Hp = BSDefs::ScvHp, MaxHp = BSDefs::ScvHp, Flash = 0, Yaw = 0, PlagueUntil = 0;
 	FVector2D Idle;
 	FString Anim;
 	ABSModelActor* Actor = nullptr;
@@ -54,7 +54,7 @@ struct FBSMech
 {
 	const FBSMechDef* Def = nullptr;
 	FVector2D Slot = FVector2D::ZeroVector;
-	float X = 0, Y = 0, Yaw = PI / 2, Aim = PI / 2, Hp = 0, MaxHp = 0, CdG = 0.5f, CdA = 0.5f, Flash = 0;
+	float X = 0, Y = 0, Yaw = PI / 2, Aim = PI / 2, Hp = 0, MaxHp = 0, CdG = 0.5f, CdA = 0.5f, Flash = 0, PlagueUntil = 0;
 	bool bReady = false, bDead = false;
 	FString Anim;
 	ABSModelActor* Actor = nullptr;
@@ -67,8 +67,9 @@ struct FBSBcTurret { FName Bone; TWeakPtr<FBSEnemy> Target; float Cd = 0; int32 
 struct FBSBattlecruiser
 {
 	float X = 0, Y = 0, Z = 0, Sx = 0, Sy = 0, Sz = 0, Yaw = PI / 2, T = 0, CdM = 3, CdY = 5;
+	float Hp = BSDefs::BcHp, MaxHp = BSDefs::BcHp, Armor = BSDefs::BcArmor, AcidUntil = 0, Flash = 0;
 	TArray<FBSBcTurret> Turrets;
-	bool bOnStation = false;
+	bool bOnStation = false, bDead = false;
 	ABSModelActor* Actor = nullptr;
 };
 
@@ -78,7 +79,7 @@ struct FBSNuke { float X = 0, Y = 0, T = 0; int32 Fall = 0; };
 struct FBSTrooper
 {
 	const FBSInfantryDef* Def = nullptr;
-	float X = 0, Y = 0, Yaw = -PI / 2, Hp = 0, MaxHp = 0, Cd = 0, Flash = 0, StandAt = 0;
+	float X = 0, Y = 0, Yaw = -PI / 2, Hp = 0, MaxHp = 0, Cd = 0, Flash = 0, StandAt = 0, PlagueUntil = 0;
 	FVector2D Spot = FVector2D::ZeroVector;
 	int32 Team = 0;                           // fire team (0 / 1): the teams take turns to bound forward
 	float RetreatUntil = 0;                   // falling back level with the bunker after heavy losses
@@ -91,19 +92,33 @@ struct FBSTrooper
 struct FBSStructure
 {
 	bool bSam = true, bReady = false, bDead = false;
-	float X = 0, Y = 0, Yaw = PI / 2, Hp = 0, MaxHp = 0, Radius = 1, Cd = 0, T = 0, Flash = 0;
+	float X = 0, Y = 0, Yaw = PI / 2, Hp = 0, MaxHp = 0, Radius = 1, Cd = 0, T = 0, Flash = 0, PlagueUntil = 0;
+	ABSModelActor* Actor = nullptr;
+};
+
+// Air strike banshee or viking: flies in to a post, fights from there, then leaves (or is shot down).
+struct FBSBanshee
+{
+	enum EState : uint8 { In, Hover, Out } State = In;
+	FVector2D Post = FVector2D::ZeroVector;
+	float X = 0, Y = 0, Z = 0, Yaw = 0, Cd = 0, T = 0, StandAt = 0;
+	float Hp = BSDefs::BansheeHp, MaxHp = BSDefs::BansheeHp, AcidUntil = 0, Flash = 0;
+	bool bDead = false;
 	ABSModelActor* Actor = nullptr;
 };
 
 struct FBSTarget
 {
-	enum EKind : uint8 { None, Bunker, Tank, Scv, Trooper, Structure, Mech } Kind = None;
+	enum EKind : uint8 { None, Bunker, Tank, Scv, Trooper, Structure, Mech, Bc, Air } Kind = None;
 	TWeakPtr<FBSTank> TankRef;
 	TWeakPtr<FBSScv> ScvRef;
 	TWeakPtr<FBSTrooper> TrooperRef;
 	TWeakPtr<FBSStructure> StructureRef;
 	TWeakPtr<FBSMech> MechRef;
-	float X = 0, Y = 0, Radius = 0;
+	TWeakPtr<FBSBattlecruiser> BcRef;        // Terran air, hunted by scourge and devourers
+	TWeakPtr<FBSBanshee> AirRef;
+	bool bViking = false;
+	float X = 0, Y = 0, Radius = 0, Z = -1;   // Z: height of an air target (-1 = on the ground)
 	bool bStructure = false, bArmored = false, bLight = false;
 	bool IsValid(const FBSBunker& B) const
 	{
@@ -115,10 +130,12 @@ struct FBSTarget
 		case Trooper: { auto P = TrooperRef.Pin(); return P && !P->bDead; }
 		case Structure: { auto P = StructureRef.Pin(); return P && !P->bDead; }
 		case Mech: { auto P = MechRef.Pin(); return P && !P->bDead; }
+		case Bc: { auto P = BcRef.Pin(); return P && !P->bDead; }
+		case Air: { auto P = AirRef.Pin(); return P && !P->bDead; }
 		default: return false;
 		}
 	}
-	bool Same(const FBSTarget& O) const { return Kind == O.Kind && TankRef == O.TankRef && ScvRef == O.ScvRef && TrooperRef == O.TrooperRef && StructureRef == O.StructureRef && MechRef == O.MechRef; }
+	bool Same(const FBSTarget& O) const { return Kind == O.Kind && TankRef == O.TankRef && ScvRef == O.ScvRef && TrooperRef == O.TrooperRef && StructureRef == O.StructureRef && MechRef == O.MechRef && BcRef == O.BcRef && AirRef == O.AirRef; }
 };
 
 struct FBSEnemy
@@ -131,21 +148,17 @@ struct FBSEnemy
 	TArray<FVector2D> Route;                  // lane terrain: waypoints through the Y (or up a ramp to a ledge)
 	bool bHighRoute = false, bPerched = false;
 	FBSTarget Target, HitTarget;
+	// Late game: overlord drop / nydus worm state, spellcasting, winged hops.
+	int32 State = 0, Cargo = 0, NextSpell = 0;
+	float T = 0, SpawnT = 0, UnloadT = 0, CastUntil = 0, Seed = 0;
+	FVector2D Drop = FVector2D::ZeroVector, Exit = FVector2D::ZeroVector;
+	TArray<FString> CargoList;
 	FString Anim, ModelKey, DeathKey;
 	ABSModelActor* Actor = nullptr;
 	bool Alive() const { return Hp > 0; }
 };
 
-// Air strike banshee: flies in to a hover post, fires on ground zerg below, then leaves.
-struct FBSBanshee
-{
-	enum EState : uint8 { In, Hover, Out } State = In;
-	FVector2D Post = FVector2D::ZeroVector;
-	float X = 0, Y = 0, Z = 0, Yaw = 0, Cd = 0, T = 0, StandAt = 0;
-	ABSModelActor* Actor = nullptr;
-};
-
-enum class EBSProjKind : uint8 { Shell, Grenade, Rocket, Acid, Spine, Bullet, Glaive, Spines, Brood, Yamato, Sam, Missile };
+enum class EBSProjKind : uint8 { Shell, Grenade, Rocket, Acid, Spine, Bullet, Glaive, Spines, Brood, Yamato, Sam, Missile, Guardian, Spores };
 
 struct FBSProjectile
 {
@@ -202,7 +215,7 @@ struct FBSParticle
 	bool bFlame = false;
 };
 
-struct FBSFlash { ABSModelActor* A = nullptr; FVector P = FVector::ZeroVector; float Yaw = 0, Delay = 0, Life = 0.1f; bool bShown = false; };
+struct FBSFlash { ABSModelActor* A = nullptr; FVector P = FVector::ZeroVector; float Yaw = 0, Delay = 0, Life = 0.1f, Scale = 1; bool bShown = false; };
 struct FBSFloater { FVector Pos; FString Text; FLinearColor Color; float T = 0; };
 struct FBSCorpse { ABSModelActor* Actor = nullptr; float T = 0, Hold = 3.5f, X = 0, Y = 0, Z = 0, Yaw = 0; bool bSink = true, bVanish = false; };
 struct FBSSpawn { float T = 0; FString Type; float Ang = 0; };
@@ -243,7 +256,7 @@ public:
 	float NukeCd = 0, VikingCd = 0;
 	TArray<TSharedPtr<FBSMech>> Mechs;
 	TSharedPtr<FBSBattlecruiser> Bc;
-	TArray<FBSBanshee> VikingWing;
+	TArray<TSharedPtr<FBSBanshee>> VikingWing;
 	bool TreeMaxed(const FString& Tree) const;
 	void CheckTech();
 	int32 TechCount(const FString& Kind) const { int32 N = 0; for (auto& M : Mechs) N += M->Def->Key == Kind; return N; }
@@ -266,7 +279,7 @@ public:
 	TArray<TSharedPtr<FBSTank>> Tanks;
 	TArray<TSharedPtr<FBSScv>> Scvs;
 	TArray<TSharedPtr<FBSEnemy>> Enemies;
-	TArray<FBSBanshee> Banshees;
+	TArray<TSharedPtr<FBSBanshee>> Banshees;
 	TArray<TSharedPtr<FBSTrooper>> Squad;
 	TArray<TSharedPtr<FBSStructure>> Structures;
 	TArray<FBSFloater> Floaters;
@@ -307,7 +320,7 @@ private:
 	float EnemyCd(const FBSEnemy& E) const { return E.Def->Cd / (bHard ? 1.05f : 1.f); }
 	void BuildTargets();
 	void DamageDefender(const FBSTarget& T, float Dmg);
-	void HurtEnemy(const TSharedPtr<FBSEnemy>& E, float Dmg);
+	void HurtEnemy(const TSharedPtr<FBSEnemy>& E, float Dmg, bool bSplash = false);   // bSplash: blasts and flame, which dark swarm does not stop
 	void KillEnemy(const TSharedPtr<FBSEnemy>& E, bool bSuicide);
 	void BanelingBlast(const FBSEnemy& E, bool bFromDeath);
 	TArray<TSharedPtr<FBSEnemy>> EnemiesInRange(float X, float Y, float Range, TFunctionRef<bool(const FBSEnemy&)> Pred) const;
@@ -344,7 +357,23 @@ private:
 	void FireInfantry(const FBSInfantryDef* D, const FVector& Muzzle, const TSharedPtr<FBSEnemy>& Target);
 	void LaunchGlaive(const FVector& From, const FBSTarget& To, float Dmg, int32 Bounces, const TArray<FBSTarget>& Hit, const FBSZergDef* D);
 	void AddProjectileModel(FBSProjectile& P, const TCHAR* Model, const TCHAR* Trail, float TrailScale = 1.f);
-	void MuzzleMesh(const FVector& At, float Yaw, float Delay);
+	void MuzzleMesh(const FVector& At, float Yaw, float Delay, float Scale = 1.f);
+	TArray<FVector> MechMuzzles(const FBSMech& M, bool bAir) const;
+	// Late-game zerg.
+	int32 LateTier() const { return TechUnlocked.Num(); }
+	bool AirPresence() const { return Bc.IsValid() || VikingWing.Num() || Banshees.Num() || TechUnlocked.Contains(TEXT("bc")) || TechUnlocked.Contains(TEXT("vikings")); }
+	void Despawn(const TSharedPtr<FBSEnemy>& E);
+	void UpdateOverlord(const TSharedPtr<FBSEnemy>& E, float Dt);
+	void UpdateNydus(const TSharedPtr<FBSEnemy>& E, float Dt);
+	void CastSpell(FBSEnemy& E, const FBSTarget& T);
+	void UpdateSpells(float Dt);
+	void BuildAirTargets();
+	void KillAir(const FBSTarget& T);
+	struct FBSSwarm { float X = 0, Y = 0, R = 3, Until = 0; int32 Fx = 0; };
+	struct FBSAbduct { TWeakPtr<FBSTrooper> Trooper; TWeakPtr<FBSMech> Mech; float Fx = 0, Fy = 0, Tx = 0, Ty = 0, T = 0; };
+	TArray<FBSSwarm> Swarms;                  // defiler dark swarm clouds
+	TArray<FBSAbduct> Abductions;             // viper pulls in progress
+	TArray<FBSTarget> AirTargets;
 	FVector BunkerSlit(float Ang) const;          // the bunker's gun slit (Ref_Weapon bones) facing a direction
 	TArray<FBSFlash> Flashes;
 	ABSModelActor* StationMedivac = nullptr;   // Medivac on Station: hovers over the bunker
