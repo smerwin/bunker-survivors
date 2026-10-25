@@ -950,7 +950,7 @@ window.BS = window.BS || {};
     }
     // How far into high tech the player is (0-6 tech cards unlocked): drives the late-game zerg.
     lateTier() { return Object.keys(this.techUnlocked).length; }
-    airPresence() { return !!this.bc || this.vikingWing.length > 0 || this.banshees.length > 0 || !!this.techUnlocked.bc || !!this.techUnlocked.vikings; }
+    airPresence() { return !!this.bc || this.vikingWing.length > 0 || this.banshees.length > 0; }
     // Gone without a kill (an overlord flying off, a nydus worm burrowing away).
     despawn(e) {
       e.hp = 0;
@@ -1010,9 +1010,17 @@ window.BS = window.BS || {};
         }
         if (!best) { e.cd = 1; return; }
         const o = best.obj, a = Math.atan2(o.y - e.y, o.x - e.x), oz = BS.Terrain.height(o.x, o.y) + 1;
+        // Pulled toward the viper, but only as far as open ground at the victim's own level (never into a cliff).
+        let tx = o.x, ty = o.y;
+        const want = Math.max(0, dist(o.x, o.y, e.x, e.y) - 1.5), z0 = BS.Terrain.height(o.x, o.y);
+        for (let s = 0.2; s <= want; s += 0.2) {
+          const x = o.x - Math.cos(a) * s, y = o.y - Math.sin(a) * s;
+          if (!BS.Terrain.walkable(x, y) || Math.abs(BS.Terrain.height(x, y) - z0) > 0.5 || (this.mode === 'lane' && Math.abs(x) > 21)) break;
+          tx = x; ty = y;
+        }
         this.fx.beam([e.x, e.y, e.z], [o.x, o.y, oz], 0.6, [0.55, 0.25, 1], 0.06);
         this.fx.play('viperTongueImpact', o.x, o.y, oz, a);
-        this.abductions.push({ o, mech: best.kind === 'mech', fx: o.x, fy: o.y, tx: e.x + Math.cos(a) * 1.5, ty: e.y + Math.sin(a) * 1.5, t: 0 });
+        this.abductions.push({ o, mech: best.kind === 'mech', fx: o.x, fy: o.y, tx, ty, t: 0 });
         BS.audio.play('viperAbduct', { vol: 0.7 });
         this.floater(o.x, o.y, oz + 1, 'ABDUCTED', '#c08cff');
         return;
@@ -1090,7 +1098,7 @@ window.BS = window.BS || {};
     }
     valid(tg) { return tg && !tg.obj.dead && (tg.kind !== 'tank' || tg.obj.state === 'ready'); }
     damageDefender(tg, dmg) {
-      if (!this.valid(tg)) return;
+      if (!this.valid(tg) || !(dmg >= 0)) return;       // a bad damage value (NaN) must never make something unkillable
       const o = tg.obj;
       if (tg.kind === 'bunker') {
         const real = Math.max(0.5, dmg - this.bunker.armor);
@@ -1172,7 +1180,7 @@ window.BS = window.BS || {};
       e.hp = 0;
       this.kills++; this.minerals += d.bounty; this.score += d.bounty * 2;
       if (d.soundDeath) BS.audio.play(d.soundDeath, { vol: 0.5 });
-      if (d.suicide && !suicide) this.banelingBlast(e, true);
+      if (d.suicide && !suicide && !d.antiAir) this.banelingBlast(e, true);      // a shot-down baneling still bursts (scourge do not)
       const i = this.enemies.indexOf(e); if (i >= 0) this.enemies.splice(i, 1);
       e.handle.release();
       if (e.death) this.corpse(e.death, e.x, e.y, e.z, e.yaw, d.deathHold || 3.5, d.scale || 1);
@@ -1280,12 +1288,17 @@ window.BS = window.BS || {};
             if (dd < bd) { bd = dd; best = t; }
           }
           e.target = best; e.retarget = rnd(0.5, 0.8);
+          if (best) e.idle = 0;
         }
         const t = e.target;
         if (!t) {
-          // Nothing in the air to hunt: hang back out of reach up the lane until something flies.
+          // Nothing in the air to hunt: hang back up the lane for a while, then give up and fly off (so idle hunters never
+          // fill the alive cap and hold up the waves behind them).
           if (d.antiAir) {
-            const a = Math.atan2(e.y, e.x), gx = this.mode === 'lane' ? clamp(e.x, -6, 6) : Math.cos(a) * 13, gy = this.mode === 'lane' ? 12 : Math.sin(a) * 13;
+            e.idle = (e.idle || 0) + dt;
+            const leave = e.idle > 8, a = Math.atan2(e.y, e.x);
+            const gx = this.mode === 'lane' ? clamp(e.x, -6, 6) : Math.cos(a) * (leave ? 34 : 13), gy = this.mode === 'lane' ? (leave ? 34 : 12) : Math.sin(a) * (leave ? 34 : 13);
+            if (leave && Math.hypot(gx - e.x, gy - e.y) < 1) { this.despawn(e); continue; }
             const gd = Math.hypot(gx - e.x, gy - e.y);
             if (gd > 0.5) { const s = Math.min(gd, d.speed * dt); e.x += (gx - e.x) / gd * s; e.y += (gy - e.y) / gd * s; e.yaw += clamp(angDelta(e.yaw, Math.atan2(gy - e.y, gx - e.x)), -3 * dt, 3 * dt); }
             this.playAnim(e, 'walk');

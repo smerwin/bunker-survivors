@@ -1886,7 +1886,16 @@ void ABSGame::CastSpell(FBSEnemy& E, const FBSTarget& T)
 		const float A = FMath::Atan2(Oy - E.Y, Ox - E.X);
 		AddFx(EBSFxKind::Tracer, FVector(E.X, E.Y, E.Z), FVector(Ox, Oy, Oz), 0.6f, 0.06f, FLinearColor(0.55f, 0.25f, 1.f), 14);
 		PlayFx(TEXT("viperTongueImpact"), FVector(Ox, Oy, Oz), A);
-		FBSAbduct Ab2; Ab2.Trooper = BestT; Ab2.Mech = BestM; Ab2.Fx = Ox; Ab2.Fy = Oy; Ab2.Tx = E.X + FMath::Cos(A) * 1.5f; Ab2.Ty = E.Y + FMath::Sin(A) * 1.5f;
+		// Pulled toward the viper, but only as far as open ground at the victim's own level (never into a cliff).
+		float Tx = Ox, Ty = Oy;
+		const float Want = FMath::Max(0.f, FMath::Sqrt(Dist2(Ox, Oy, E.X, E.Y)) - 1.5f), Z0 = BSTerrain::Height(Ox, Oy);
+		for (float S = 0.2f; S <= Want; S += 0.2f)
+		{
+			const float X = Ox - FMath::Cos(A) * S, Y = Oy - FMath::Sin(A) * S;
+			if (!BSTerrain::Walkable(X, Y) || FMath::Abs(BSTerrain::Height(X, Y) - Z0) > 0.5f || (Mode == EBSMode::Lane && FMath::Abs(X) > 21)) break;
+			Tx = X; Ty = Y;
+		}
+		FBSAbduct Ab2; Ab2.Trooper = BestT; Ab2.Mech = BestM; Ab2.Fx = Ox; Ab2.Fy = Oy; Ab2.Tx = Tx; Ab2.Ty = Ty;
 		Abductions.Add(Ab2);
 		PlaySound(TEXT("viperAbduct"), 0.7f);
 		Floater(Ox, Oy, Oz + 1, TEXT("ABDUCTED"), FLinearColor(0.75f, 0.55f, 1.f));
@@ -2152,7 +2161,7 @@ void ABSGame::KillEnemy(const TSharedPtr<FBSEnemy>& E, bool bSuicide)
 	E->Hp = 0;
 	Kills++; Minerals += D->Bounty; Score += D->Bounty * 2;
 	if (!D->SoundDeath.IsEmpty()) PlaySound(D->SoundDeath, 0.5f);
-	if (D->bSuicide && !bSuicide) BanelingBlast(*E, true);
+	if (D->bSuicide && !bSuicide && !D->bAntiAir) BanelingBlast(*E, true);      // a shot-down baneling still bursts (scourge do not)
 	Enemies.Remove(E);
 	ReleaseModel(E->Actor); E->Actor = nullptr;
 	if (D->Death.IsEmpty()) PlayFx(TEXT("nydusBirth"), FVector(E->X, E->Y, BSTerrain::Height(E->X, E->Y)), 0, 1.6f);      // the nydus worm has no death model
@@ -2323,17 +2332,21 @@ void ABSGame::UpdateEnemies(float Dt)
 				const float Dd = FMath::Sqrt(Dist2(E.X, E.Y, T.X, T.Y)) - T.Radius - (D->bPreferMech && T.Kind == FBSTarget::Mech ? 12.f : 0.f);
 				if (Dd < Bd) { Bd = Dd; BestT = &T; }
 			}
-			if (BestT) E.Target = *BestT; else E.Target = FBSTarget();
+			if (BestT) { E.Target = *BestT; E.Idle = 0; } else E.Target = FBSTarget();
 			E.Retarget = Rnd(0.5f, 0.8f);
 		}
 		if (E.Target.Kind == FBSTarget::None)
 		{
-			// Nothing in the air to hunt: hang back out of reach up the lane until something flies.
+			// Nothing in the air to hunt: hang back up the lane for a while, then give up and fly off (so idle hunters never
+			// fill the alive cap and hold up the waves behind them).
 			if (D->bAntiAir)
 			{
-				const float A = FMath::Atan2(E.Y, E.X);
-				const float Gx = Mode == EBSMode::Lane ? FMath::Clamp(E.X, -6.f, 6.f) : FMath::Cos(A) * 13, Gy = Mode == EBSMode::Lane ? 12.f : FMath::Sin(A) * 13;
+				E.Idle += Dt;
+				const bool bLeave = E.Idle > 8;
+				const float A = FMath::Atan2(E.Y, E.X), R = bLeave ? 34.f : 13.f;
+				const float Gx = Mode == EBSMode::Lane ? FMath::Clamp(E.X, -6.f, 6.f) : FMath::Cos(A) * R, Gy = Mode == EBSMode::Lane ? (bLeave ? 34.f : 12.f) : FMath::Sin(A) * R;
 				const float Gd = FMath::Sqrt(Dist2(Gx, Gy, E.X, E.Y));
+				if (bLeave && Gd < 1) { Despawn(EP); continue; }
 				if (Gd > 0.5f)
 				{
 					const float S = FMath::Min(Gd, D->Speed * Dt);

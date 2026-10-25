@@ -153,7 +153,7 @@ struct FBSEnemy
 	FBSTarget Target, HitTarget;
 	// Late game: overlord drop / nydus worm state, spellcasting, winged hops.
 	int32 State = 0, Cargo = 0, NextSpell = 0;
-	float T = 0, SpawnT = 0, UnloadT = 0, CastUntil = 0, Seed = 0;
+	float T = 0, SpawnT = 0, UnloadT = 0, CastUntil = 0, Seed = 0, Idle = 0;
 	FVector2D Drop = FVector2D::ZeroVector, Exit = FVector2D::ZeroVector;
 	TArray<FString> CargoList;
 	FString Anim, ModelKey, DeathKey;
@@ -364,7 +364,7 @@ private:
 	TArray<FVector> MechMuzzles(const FBSMech& M, bool bAir) const;
 	// Late-game zerg.
 	int32 LateTier() const { return TechUnlocked.Num(); }
-	bool AirPresence() const { return Bc.IsValid() || VikingWing.Num() || Banshees.Num() || TechUnlocked.Contains(TEXT("bc")) || TechUnlocked.Contains(TEXT("vikings")); }
+	bool AirPresence() const { return Bc.IsValid() || VikingWing.Num() || Banshees.Num(); }
 	void Despawn(const TSharedPtr<FBSEnemy>& E);
 	void UpdateOverlord(const TSharedPtr<FBSEnemy>& E, float Dt);
 	void UpdateNydus(const TSharedPtr<FBSEnemy>& E, float Dt);
