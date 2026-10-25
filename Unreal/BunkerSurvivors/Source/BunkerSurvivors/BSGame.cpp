@@ -1403,10 +1403,9 @@ bool ABSGame::CallBattlecruiser()
 	Bc->X = Bc->Sx = 0; Bc->Y = bLane ? -24.f : -34.f; Bc->Z = 10; Bc->Sy = bLane ? 13.f : 0.f; Bc->Sz = bLane ? 6.5f : 8.f;
 	Bc->Actor = AcquireModel(TEXT("battlecruiser"));
 	// The hull's hardpoints (Ref_Weapon bones; the importer turns "Ref_Weapon 10" into "Ref_Weapon_10").
-	int32 Ti = 0;
 	for (const TCHAR* Bone : { TEXT("Ref_Weapon_10"), TEXT("Ref_Weapon_13"), TEXT("Ref_Weapon_12"), TEXT("Ref_Weapon_15"), TEXT("Ref_Weapon_24"), TEXT("Ref_Weapon_25") })
 	{
-		FBSBcTurret Tu; Tu.Bone = Bone; Tu.Cd = 0.3f + 0.2f * Ti++;
+		FBSBcTurret Tu; Tu.Bone = Bone;
 		Bc->Turrets.Add(Tu);
 	}
 	if (Bc->Actor) { Bc->Actor->SetScale(0.75f); Bc->Actor->SetTeamColor(TerranColor); Bc->Actor->SetSim(Bc->X, Bc->Y, Bc->Z, Bc->Yaw); Bc->Actor->Play(WalkNames, true); }
@@ -1431,70 +1430,99 @@ void ABSGame::UpdateBc(float Dt)
 	B.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(B.Yaw, -PI / 2), -0.6f * Dt, 0.6f * Dt);   // swing round to face south
 	if (B.Actor) B.Actor->SetSim(B.X, B.Y, B.Sz + 0.25f * FMath::Sin(B.T * 0.7f), B.Yaw);
 	auto Any = [](const FBSEnemy& E) { return E.Alive(); };
-	// Six laser turrets on the hull's hardpoints, each with its own target, firing two-shot bursts: the beam is drawn as
-	// a tracer (the wraith's laser is an M3 ribbon, which is not imported) and lands with the wraith's laser hit.
-	for (int32 i = 0; i < B.Turrets.Num(); i++)
+	// Laser batteries, as in StarCraft II: ATS against ground, ATA against air, single amber bolts in quick succession (one
+	// every 0.16 s, slowed by devourer acid) that walk along the hull's six hardpoints. Each battery keeps its own target,
+	// and scourge and devourers closing on the ship are taken first (point defence). The bolt is drawn as a tracer (the
+	// wraith's laser is an M3 ribbon, which is not imported) and lands with the wraith's laser hit.
+	B.CdL -= Dt * (B.AcidUntil > Time ? 0.7f : 1.f);
+	while (B.CdL <= 0)
 	{
-		FBSBcTurret& Tu = B.Turrets[i];
-		Tu.Cd -= Dt * (B.AcidUntil > Time ? 0.7f : 1.f);        // devourer acid slows the batteries
-		if (Tu.Cd > 0) continue;
-		FVector At(B.X + (i % 2 ? 1.6f : -1.6f), B.Y + (1 - i / 2) * 1.8f, B.Sz - 0.3f);
-		if (B.Actor && B.Actor->Mesh && B.Actor->Mesh->GetBoneIndex(Tu.Bone) != INDEX_NONE)
+		B.CdL += BSDefs::BcLaserCd;
+		bool bFired = false;
+		for (int32 n = 0; n < B.Turrets.Num() && !bFired; n++)
 		{
-			const FVector Wp = B.Actor->Mesh->GetBoneLocation(Tu.Bone);
-			At = FVector(Wp.Y / BSSpace::UnitsPerMetre, Wp.X / BSSpace::UnitsPerMetre, Wp.Z / BSSpace::UnitsPerMetre);
-		}
-		TSharedPtr<FBSEnemy> E = Tu.Target.Pin();
-		// Point defence first: scourge and devourers closing on the ship are picked before anything else.
-		if (!E || !E->Alive() || FMath::Sqrt(Dist2(At.X, At.Y, E->X, E->Y)) - E->Radius > BSDefs::BcRange || (Tu.Shots == 0 && !E->Def->bAntiAir))
-		{
+			const int32 i = B.Next = (B.Next + 1) % B.Turrets.Num();
+			FBSBcTurret& Tu = B.Turrets[i];
+			FVector At(B.X + (i % 2 ? 1.6f : -1.6f), B.Y + (1 - i / 2) * 1.8f, B.Sz - 0.3f);
+			if (B.Actor && B.Actor->Mesh && B.Actor->Mesh->GetBoneIndex(Tu.Bone) != INDEX_NONE)
+			{
+				const FVector Wp = B.Actor->Mesh->GetBoneLocation(Tu.Bone);
+				At = FVector(Wp.Y / BSSpace::UnitsPerMetre, Wp.X / BSSpace::UnitsPerMetre, Wp.Z / BSSpace::UnitsPerMetre);
+			}
 			TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(At.X, At.Y, BSDefs::BcRange, Any);
 			const TSharedPtr<FBSEnemy>* Threat = L.FindByPredicate([](const TSharedPtr<FBSEnemy>& X) { return X->Def->bAntiAir; });
-			E = Threat ? *Threat : L.Num() ? L[FMath::RandRange(0, FMath::Min(4, L.Num()) - 1)] : nullptr;
-			Tu.Target = E; Tu.Shots = 0;
+			TSharedPtr<FBSEnemy> E = Tu.Target.Pin();
+			if (Threat) E = *Threat;
+			else if (!E || !E->Alive() || FMath::Sqrt(Dist2(At.X, At.Y, E->X, E->Y)) - E->Radius > BSDefs::BcRange)
+				E = L.Num() ? L[FMath::RandRange(0, FMath::Min(4, L.Num()) - 1)] : nullptr;
+			Tu.Target = E;
+			if (!E) continue;
+			HurtEnemy(E, E->Def->bFlying ? BSDefs::BcLaserA : BSDefs::BcLaserG);
+			const FVector Hit(E->X + Rnd(-0.15f, 0.15f), E->Y + Rnd(-0.15f, 0.15f), E->Z + E->Def->Height * 0.5f);
+			AddFx(EBSFxKind::Tracer, At, Hit, 0.1f, 0.05f, FLinearColor(1.f, 0.62f, 0.18f), 22);
+			PlayFx(TEXT("laserImpact"), Hit, FMath::Atan2(At.Y - Hit.Y, At.X - Hit.X), 1.2f);
+			PlaySound(TEXT("laserHit"), 0.25f, 0.12f);
+			PlaySound(TEXT("bcFire"), 0.3f, 0.3f);
+			bFired = true;
 		}
-		if (!E) { Tu.Cd = 0.2f; continue; }
-		HurtEnemy(E, E->Def->bFlying ? BSDefs::BcLaserA : BSDefs::BcLaserG);
-		const FVector Hit(E->X + Rnd(-0.15f, 0.15f), E->Y + Rnd(-0.15f, 0.15f), E->Z + E->Def->Height * 0.5f);
-		AddFx(EBSFxKind::Tracer, At, Hit, 0.14f, 0.05f, FLinearColor(1.f, 0.32f, 0.14f), 22);
-		PlayFx(TEXT("laserImpact"), Hit, FMath::Atan2(At.Y - Hit.Y, At.X - Hit.X), 1.4f);
-		PlaySound(TEXT("laserHit"), 0.3f, 0.1f);
-		PlaySound(TEXT("bcFire"), 0.3f, 0.3f);
-		if (++Tu.Shots >= BSDefs::BcBurst) { Tu.Shots = 0; Tu.Cd = BSDefs::BcTurretCd * Rnd(0.85f, 1.15f); }
-		else Tu.Cd = BSDefs::BcBurstGap;
+		if (!bFired) { B.CdL = 0.2f; break; }
 	}
-	// Missile pods every few seconds at a spread of targets.
+	// Missile pods (the Wings of Liberty armoury upgrade): an anti-air volley every few seconds, splashing other flyers.
 	B.CdM -= Dt;
 	if (B.CdM <= 0)
 	{
-		TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(B.X, B.Y, BSDefs::BcRange + 2, Any);
+		TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(B.X, B.Y, BSDefs::BcRange + 2, [](const FBSEnemy& E) { return E.Def->bFlying; });
 		B.CdM = L.Num() ? BSDefs::BcMissileCd : 0.5f;
 		for (int32 k = 0; k < FMath::Min(BSDefs::BcMissiles, L.Num()); k++)
 		{
 			FBSProjectile P; P.Kind = EBSProjKind::Missile; P.bFriendly = true;
 			P.From = FVector(B.X + Rnd(-2, 2), B.Y + Rnd(-1, 1), B.Sz - 0.4f); P.To = FVector(L[k]->X, L[k]->Y, L[k]->Z + 0.4f);
 			P.T = -k * 0.1f; P.Dur = 0.6f; P.Arc = 1.2f; P.Dmg = BSDefs::BcMissileDmg; P.TargetEnemy = L[k]; P.ImpactFx = TEXT("bcMissileImpact");
+			P.Splash = BSDefs::BcMissileSplash; P.SplashAir = 1;
 			AddProjectileModel(P, nullptr, TEXT("bcMissile"));
 			if (!P.Trail) AddProjectileVisual(P, FLinearColor(1, 0.7f, 0.35f), 0.2f);
 			Projectiles.Add(P);
 		}
 		if (L.Num()) PlaySound(TEXT("bcMissiles"), 0.5f);
 	}
-	// Yamato cannon on its own, at the toughest zerg in reach.
-	B.CdY -= Dt;
-	if (B.CdY <= 0)
+	// Yamato cannon on its own, at the toughest zerg in reach: it charges at the bow for a couple of seconds first.
+	const FVector Bow(B.X + FMath::Cos(B.Yaw) * 2.5f, B.Y + FMath::Sin(B.Yaw) * 2.5f, B.Sz);
+	if (B.YamatoT >= 0)
+	{
+		B.YamatoT += Dt;
+		if (B.YamatoFx) MoveFx(B.YamatoFx, Bow, B.Yaw);
+		if (B.YamatoT >= BSDefs::BcYamatoCharge)
+		{
+			B.YamatoT = -1;
+			if (B.YamatoFx) { StopFx(B.YamatoFx); B.YamatoFx = 0; }
+			TSharedPtr<FBSEnemy> Pick = B.YamatoTarget.Pin();
+			if (!Pick || !Pick->Alive())
+			{
+				Pick.Reset();
+				for (const TSharedPtr<FBSEnemy>& E : EnemiesInRange(B.X, B.Y, BSDefs::BcRange + 4, Any)) if (!Pick || E->Hp > Pick->Hp) Pick = E;
+			}
+			if (Pick)
+			{
+				FBSProjectile P; P.Kind = EBSProjKind::Yamato; P.bFriendly = true;
+				P.From = Bow; P.To = FVector(Pick->X, Pick->Y, 0.6f); P.Dur = 0.5f; P.TargetEnemy = Pick; P.Dmg = BSDefs::BcYamato;
+				AddProjectileModel(P, TEXT("projYamato"), TEXT("yamatoMissile"));
+				Projectiles.Add(P);
+				PlaySound(TEXT("bcYamato"), 0.8f);
+				Floater(B.X, B.Y, B.Sz + 1, TEXT("YAMATO"), FLinearColor(0.74f, 0.42f, 1));
+			}
+		}
+	}
+	else if ((B.CdY -= Dt) <= 0)
 	{
 		TSharedPtr<FBSEnemy> Pick;
 		for (const TSharedPtr<FBSEnemy>& E : EnemiesInRange(B.X, B.Y, BSDefs::BcRange + 4, Any)) if (!Pick || E->Hp > Pick->Hp) Pick = E;
 		B.CdY = Pick ? BSDefs::BcYamatoCd : 1.f;
 		if (Pick)
 		{
-			FBSProjectile P; P.Kind = EBSProjKind::Yamato; P.bFriendly = true;
-			P.From = FVector(B.X, B.Y + 2.5f, B.Sz); P.To = FVector(Pick->X, Pick->Y, 0.6f); P.Dur = 0.5f; P.TargetEnemy = Pick; P.Dmg = BSDefs::BcYamato;
-			AddProjectileModel(P, TEXT("projYamato"), TEXT("yamatoMissile"));
-			Projectiles.Add(P);
-			PlaySound(TEXT("bcYamato"), 0.8f);
-			Floater(B.X, B.Y, B.Sz + 1, TEXT("YAMATO"), FLinearColor(0.74f, 0.42f, 1));
+			B.YamatoT = 0; B.YamatoTarget = Pick;
+			B.YamatoFx = PlayFx(TEXT("yamatoCharge"), Bow, B.Yaw, 1.4f);
+			PlaySound(TEXT("bcYamatoCharge"), 0.7f);
+			Floater(B.X, B.Y, B.Sz + 1, TEXT("YAMATO CHARGING"), FLinearColor(0.74f, 0.42f, 1));
 		}
 	}
 }

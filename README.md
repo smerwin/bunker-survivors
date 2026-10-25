@@ -148,7 +148,7 @@ When the bunker is full, new recruits stand behind it, up to 48.
 | Tactical Nuke (400) | Infantry Weapons maxed | A ghost calls a nuke on the densest pack clear of the bunker. 45 s to reload. |
 | Viking Wing (300) | every bunker system (Stimpack, Neosteel, Hi-Sec, Magnetic Rails, Medivac) | Four fighters patrol overhead for 20 s, hunting air. |
 | Thor (600, up to 2) | Building Armor maxed | Heavy walkers firing long-range from behind the bunker. |
-| Battlecruiser (1500) | every tree maxed | Parks nose-south over the fork of the lane: six laser turrets on its hardpoints pick their own targets, plus missile pods and an automatic Yamato. |
+| Battlecruiser (1500) | every tree maxed | Parks nose-south over the fork of the lane. As in StarCraft II, its laser batteries fire rapid amber bolts along six hardpoints (8 against ground, 5 against air), taking scourge and devourers first; missile pods fire at air only, and the Yamato charges at the bow for two seconds before it fires. |
 | Odin (2500) | the battlecruiser on station | Heavy artillery from behind the bunker. |
 
 **The Swarm answers.** Every tech card you unlock brings stranger zerg into the waves, and more of them:

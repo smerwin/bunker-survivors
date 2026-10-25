@@ -62,12 +62,15 @@ struct FBSMech
 
 struct FBSEnemy;
 
-// Battlecruiser on station, with six laser turrets on its hardpoints.
-struct FBSBcTurret { FName Bone; TWeakPtr<FBSEnemy> Target; float Cd = 0; int32 Shots = 0; };
+// Battlecruiser on station, with laser batteries on six hardpoints (each keeps its own target).
+struct FBSBcTurret { FName Bone; TWeakPtr<FBSEnemy> Target; };
 struct FBSBattlecruiser
 {
 	float X = 0, Y = 0, Z = 0, Sx = 0, Sy = 0, Sz = 0, Yaw = PI / 2, T = 0, CdM = 3, CdY = 5;
 	float Hp = BSDefs::BcHp, MaxHp = BSDefs::BcHp, Armor = BSDefs::BcArmor, AcidUntil = 0, Flash = 0;
+	float CdL = 0.3f, YamatoT = -1;             // next laser bolt; Yamato charge time (-1 = not charging)
+	int32 Next = 0, YamatoFx = 0;               // battery that fires next; the charge effect
+	TWeakPtr<FBSEnemy> YamatoTarget;
 	TArray<FBSBcTurret> Turrets;
 	bool bOnStation = false, bDead = false;
 	ABSModelActor* Actor = nullptr;

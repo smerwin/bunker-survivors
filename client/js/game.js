@@ -610,7 +610,7 @@ window.BS = window.BS || {};
       // On station over the tip of the mesa where the lane forks (the bottom of the V), nose to the south, a little scaled
       // down: it overlooks both arms and the stem without hiding the lane.
       this.bc = { x: 0, y: lane ? -24 : -34, z: 10, sx: 0, sy: lane ? 13 : 0, sz: lane ? 6.5 : 8, yaw: Math.PI / 2, state: 'in', cdM: 3, cdY: 5, t: 0, hp: D.hp, maxHp: D.hp, armor: D.armor, flash: 0,
-        turrets: D.turrets.map((bone, i) => ({ bone, cd: 0.3 + i * 0.2, shots: 0, target: null })) };
+        cdL: 0.3, next: 0, yamato: null, turrets: D.turrets.map(bone => ({ bone, target: null })) };
       this.bc.handle = this.r.spawn('battlecruiser', this.bc.x, this.bc.y, this.bc.z, this.bc.yaw).setTeam(1).setScale(0.75);
       this.bc.handle.play(/^walk|^fly|^stand/i, true);
       this.toast('Battlecruiser inbound');
@@ -630,55 +630,70 @@ window.BS = window.BS || {};
       }
       b.yaw += clamp(angDelta(b.yaw, -Math.PI / 2), -0.6 * dt, 0.6 * dt);     // swing round to face south
       b.handle.setPos(b.x, b.y, b.sz + 0.25 * Math.sin(b.t * 0.7)).setYaw(b.yaw);
-      // Six laser turrets on the hull's hardpoints, each with its own target, firing two-shot bursts (slowed by devourer acid).
-      const acid = b.acidUntil > this.time ? 0.7 : 1;
-      b.turrets.forEach((tu, i) => {
-        tu.cd -= dt * acid;
-        if (tu.cd > 0) return;
-        const at = b.handle.boneWorld(tu.bone) || [b.x + (i % 2 ? 1.6 : -1.6), b.y + (1 - Math.floor(i / 2)) * 1.8, b.sz - 0.3];
-        const t = tu.target;
-        // Point defence first: scourge and devourers closing on the ship are picked before anything else.
-        if (!t || t.hp <= 0 || dist(at[0], at[1], t.x, t.y) - t.radius > D.range || (tu.shots === 0 && !t.def.antiAir)) {
-          const near = this.enemiesInRange(at[0], at[1], D.range), threat = near.find(e => e.def.antiAir);
-          tu.target = threat || (near.length ? near[Math.floor(Math.random() * Math.min(4, near.length))] : null);
-          tu.shots = 0;
+      // Laser batteries, as in StarCraft II: ATS against ground, ATA against air, single amber bolts in quick succession
+      // (one every 0.16 s, slowed by devourer acid) that walk along the hull's six hardpoints. Each battery keeps its own
+      // target, and scourge and devourers closing on the ship are taken first (point defence).
+      b.cdL -= dt * (b.acidUntil > this.time ? 0.7 : 1);
+      while (b.cdL <= 0) {
+        b.cdL += D.laserCd;
+        let fired = false;
+        for (let n = 0; n < b.turrets.length && !fired; n++) {
+          const i = b.next = (b.next + 1) % b.turrets.length, tu = b.turrets[i];
+          const at = b.handle.boneWorld(tu.bone) || [b.x + (i % 2 ? 1.6 : -1.6), b.y + (1 - Math.floor(i / 2)) * 1.8, b.sz - 0.3];
+          const near = this.enemiesInRange(at[0], at[1], D.range), threat = near.find(e => e.def.antiAir), t = tu.target;
+          if (threat) tu.target = threat;
+          else if (!t || t.hp <= 0 || dist(at[0], at[1], t.x, t.y) - t.radius > D.range) tu.target = near.length ? near[Math.floor(Math.random() * Math.min(4, near.length))] : null;
+          const e = tu.target;
+          if (!e) continue;
+          this.hurtEnemy(e, e.def.flying ? D.laserA : D.laserG);
+          const hit = [e.x + rnd(-0.15, 0.15), e.y + rnd(-0.15, 0.15), e.z + e.def.height * 0.5];
+          this.fx.beam(at, hit, 0.1, [1, 0.62, 0.18], 0.08);
+          this.fx.play('laserImpact', hit[0], hit[1], hit[2], Math.atan2(at[1] - hit[1], at[0] - hit[0]), 1.2);
+          BS.audio.play('laserHit', { vol: 0.25, gap: 0.12 });
+          BS.audio.play('bcFire', { vol: 0.3, gap: 0.3 });
+          fired = true;
         }
-        const e = tu.target;
-        if (!e) { tu.cd = 0.2; return; }
-        this.hurtEnemy(e, e.def.flying ? D.laserA : D.laserG);
-        const hit = [e.x + rnd(-0.15, 0.15), e.y + rnd(-0.15, 0.15), e.z + e.def.height * 0.5];
-        this.fx.beam(at, hit, 0.14);
-        this.fx.play('laserImpact', hit[0], hit[1], hit[2], Math.atan2(at[1] - hit[1], at[0] - hit[0]), 1.4);
-        BS.audio.play('laserHit', { vol: 0.3, gap: 0.1 });
-        BS.audio.play('bcFire', { vol: 0.3, gap: 0.3 });
-        tu.shots++;
-        if (tu.shots >= D.burst) { tu.shots = 0; tu.cd = D.turretCd * rnd(0.85, 1.15); } else tu.cd = D.burstGap;
-      });
-      // Missile pods every few seconds at a spread of targets.
+        if (!fired) { b.cdL = 0.2; break; }
+      }
+      // Missile pods (the Wings of Liberty armoury upgrade): an anti-air volley every few seconds, splashing other flyers.
       b.cdM -= dt;
       if (b.cdM <= 0) {
-        const list = this.enemiesInRange(b.x, b.y, D.range + 2);
+        const air = e => e.def.flying, list = this.enemiesInRange(b.x, b.y, D.range + 2, air);
         b.cdM = list.length ? D.missileCd : 0.5;
         list.slice(0, D.missiles).forEach((e, k) => {
           const p = { kind: 'missile', friendly: true, fx: b.x + rnd(-2, 2), fy: b.y + rnd(-1, 1), fz: b.sz - 0.4, tx: e.x, ty: e.y, tz: e.z + 0.4, t: -k * 0.1, dur: 0.6, arc: 1.2,
-            dmg: D.missileDmg, target: e, impact: 'bcMissileImpact' };
+            dmg: D.missileDmg, target: e, impact: 'bcMissileImpact', splash: D.missileSplash, pred: air };
           this.projectileModel(p, null, 'bcMissile');
           this.projectiles.push(p);
         });
         if (list.length) BS.audio.play('bcMissiles', { vol: 0.5 });
       }
-      // Yamato cannon on its own, at the toughest zerg in reach.
-      b.cdY -= dt;
-      if (b.cdY <= 0) {
+      // Yamato cannon on its own, at the toughest zerg in reach: it charges at the bow for a couple of seconds first.
+      const bow = [b.x + Math.cos(b.yaw) * 2.5, b.y + Math.sin(b.yaw) * 2.5, b.sz];
+      if (b.yamato) {
+        const y = b.yamato;
+        y.t += dt;
+        this.fx.move(y.fx, bow[0], bow[1], bow[2], b.yaw);
+        if (y.t >= D.yamatoCharge) {
+          b.yamato = null; this.fx.stop(y.fx);
+          let tg = y.target && y.target.hp > 0 ? y.target : null;
+          if (!tg) for (const e of this.enemiesInRange(b.x, b.y, D.range + 4)) if (!tg || e.hp > tg.hp) tg = e;
+          if (tg) {
+            const p = { kind: 'yamato', friendly: true, fx: bow[0], fy: bow[1], fz: bow[2], tx: tg.x, ty: tg.y, tz: 0.6, t: 0, dur: 0.5, dmg: D.yamato, target: tg };
+            this.projectileModel(p, 'projYamato', 'yamatoMissile');
+            this.projectiles.push(p);
+            BS.audio.play('bcYamato', { vol: 0.8 });
+            this.floater(b.x, b.y, b.sz + 1, 'YAMATO', '#bd6bff');
+          }
+        }
+      } else if ((b.cdY -= dt) <= 0) {
         let pickE = null;
         for (const e of this.enemiesInRange(b.x, b.y, D.range + 4)) if (!pickE || e.hp > pickE.hp) pickE = e;
         b.cdY = pickE ? D.yamatoCd : 1;
         if (pickE) {
-          const p = { kind: 'yamato', friendly: true, fx: b.x, fy: b.y + 2.5, fz: b.sz, tx: pickE.x, ty: pickE.y, tz: 0.6, t: 0, dur: 0.5, dmg: D.yamato, target: pickE };
-          this.projectileModel(p, 'projYamato', 'yamatoMissile');
-          this.projectiles.push(p);
-          BS.audio.play('bcYamato', { vol: 0.8 });
-          this.floater(b.x, b.y, b.sz + 1, 'YAMATO', '#bd6bff');
+          b.yamato = { target: pickE, t: 0, fx: this.fx.play('yamatoCharge', bow[0], bow[1], bow[2], b.yaw, 1.4) };
+          BS.audio.play('bcYamatoCharge', { vol: 0.7 });
+          this.floater(b.x, b.y, b.sz + 1, 'YAMATO CHARGING', '#bd6bff');
         }
       }
     }

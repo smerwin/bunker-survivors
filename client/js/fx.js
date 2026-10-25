@@ -247,7 +247,7 @@ window.BS = window.BS || {};
         // Side vector: perpendicular to the bolt and to the view ray, so the ribbon faces the camera.
         let sx = dy * mz - dz * my, sy = dz * mx - dx * mz, sz = dx * my - dy * mx;
         const sl = Math.hypot(sx, sy, sz) || 1;
-        for (const [w, c] of [[bm.w * 2.6, [bm.rgb[0] * 0.55 * k, bm.rgb[1] * 0.55 * k, bm.rgb[2] * 0.55 * k]], [bm.w * 0.7, [k, 0.55 + 0.45 * bm.rgb[1] * k, 0.4 * k + 0.3 * bm.rgb[2] * k]]]) {
+        for (const [w, c] of [[bm.w * 2.6, [bm.rgb[0] * 0.55 * k, bm.rgb[1] * 0.55 * k, bm.rgb[2] * 0.55 * k]], [bm.w * 0.7, [k, (0.55 + 0.45 * bm.rgb[1]) * k, (0.4 + 0.3 * bm.rgb[2]) * k]]]) {
           if (n >= 16383) break;
           const ox = sx / sl * w, oy = sy / sl * w, oz = sz / sl * w, o = n * 36;
           const P = [[ax - ox, ay - oy, az - oz, 0, 0], [bx - ox, by - oy, bz - oz, 1, 0], [bx + ox, by + oy, bz + oz, 1, 1], [ax + ox, ay + oy, az + oz, 0, 1]];
