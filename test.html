@@ -1,0 +1,44 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>M3 render test</title>
+<style>html,body{margin:0;background:#101418;color:#ddd;font:13px monospace}canvas{display:block}#log{position:fixed;left:8px;top:8px;white-space:pre;pointer-events:none}</style>
+</head><body>
+<canvas id="c" width="900" height="600"></canvas>
+<div id="log"></div>
+<script src="lib/viewer.min.js"></script>
+<script>
+const logEl = document.getElementById('log');
+function log(...a) { logEl.textContent += a.join(' ') + '\n'; console.log(...a); }
+const MV = window.ModelViewer || Object.values(window).find(v => v && v.viewer && v.viewer.ModelViewer);
+log('lib keys:', MV ? Object.keys(MV).join(',') : 'NOT FOUND');
+const canvas = document.getElementById('c');
+const viewer = new MV.viewer.ModelViewer(canvas, { alpha: false });
+viewer.on('error', e => log('viewer error:', e.error, e.reason || '', e.src || ''));
+viewer.addHandler(MV.viewer.handlers.m3);
+viewer.addHandler(MV.viewer.handlers.dds);
+const scene = viewer.addScene();
+scene.color = [0.12, 0.14, 0.18];
+const cam = scene.camera;
+cam.perspective(Math.PI / 4, canvas.width / canvas.height, 0.1, 5000);
+const solver = (src) => '/asset/' + String(src).replace(/\\/g, '/');
+const name = new URLSearchParams(location.search).get('m') || 'assets/units/zerg/zergling/zergling.m3';
+viewer.load(name, solver).then(model => {
+  if (!model) { log('model failed'); return; }
+  log('model', model.name || name, 'bones', model.bones.length, 'batches', model.batches.length, 'materials', model.materials[1].length);
+  log('sequences:', model.sequences.map((s, i) => i + ':' + s.name + '(' + (s.interval ? s.interval.join('-') : '?') + ')').join(' '));
+  const b = model.bounds; if (b) log('bounds r', b.r, 'center', b.x, b.y, b.z);
+  const inst = model.addInstance();
+  inst.setScene(scene);
+  const walk = model.sequences.findIndex(s => /walk/i.test(s.name));
+  inst.setSequence(walk >= 0 ? walk : 0);
+  inst.setSequenceLoopMode(2);
+  inst.setTeamColor(0);
+  window.inst = inst;
+  const r = (b && b.r) || 1;
+  cam.moveToAndFace([r * 2.2, -r * 2.2, r * 2.0], [0, 0, r * 0.5], [0, 0, 1]);
+  log('camera at', cam.location.join(','));
+});
+let last = performance.now(), frames = 0;
+function frame(t) { const dt = t - last; last = t; viewer.updateAndRender(dt); if (++frames === 120) log('rendered 120 frames'); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+</script>
+</body></html>

@@ -1,0 +1,41 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>glTF check</title>
+<style>html,body{margin:0;background:#15181e;color:#ddd;font:13px monospace;overflow:hidden}#log{position:fixed;left:8px;top:8px;white-space:pre;pointer-events:none;text-shadow:0 1px 2px #000}</style>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+</head><body><div id="log"></div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+const log = (...a) => { document.getElementById('log').textContent += a.join(' ') + '\n'; };
+const q = new URLSearchParams(location.search);
+const models = (q.get('m') || 'assets/units/zerg/zergling/zergling').split(',');
+const anim = new RegExp(q.get('a') || '^walk$', 'i');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight); renderer.setPixelRatio(devicePixelRatio);
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x2a2f3a);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x404050, 1.4));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(3, 6, 4); scene.add(sun);
+scene.add(new THREE.GridHelper(20, 20, 0x556070, 0x3a4250));
+const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.05, 200);
+const mixers = [];
+const loader = new GLTFLoader();
+let x = -(models.length - 1) * 1.6;
+window.__ready = 0;
+for (const m of models) {
+  const px = x; x += 3.2;
+  loader.load('/gltf/' + m + '.glb', gltf => {
+    const root = gltf.scene; root.position.x = px; scene.add(root);
+    const clips = gltf.animations;
+    const clip = clips.find(c => anim.test(c.name)) || clips[0];
+    if (clip) { const mixer = new THREE.AnimationMixer(root); mixer.clipAction(clip).play(); mixers.push(mixer); }
+    log(m.split('/').pop(), 'clips:', clips.length, 'playing:', clip ? clip.name + ' ' + clip.duration.toFixed(2) + 's' : '-');
+    window.__ready++;
+  }, undefined, e => log('ERROR', m, e.message || e));
+}
+camera.position.set(0, 4.2 + models.length * 0.6, 7 + models.length * 1.4); camera.lookAt(0, 0.8, 0);
+window.__cam = (x, y, z, ty) => { camera.position.set(x, y, z); camera.lookAt(0, ty || 0.6, 0); };
+const clock = new THREE.Clock();
+window.__advance = (s) => { for (const mx of mixers) mx.update(s); renderer.render(scene, camera); };
+renderer.setAnimationLoop(() => { const dt = clock.getDelta(); for (const mx of mixers) mx.update(dt); renderer.render(scene, camera); });
+</script></body></html>

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0f16">
+<title>Bunker Survivors</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="gl"></canvas>
+  <canvas id="fx"></canvas>
+
+  <div id="hud" class="hidden">
+    <div id="topbar" class="glass">
+      <div class="stat"><i class="crystal"></i><div><small>MINERALS</small><b id="minerals">0</b></div></div>
+      <div class="sep"></div>
+      <div class="stat"><div><small>WAVE</small><b id="wave" class="amber">00</b></div><svg id="wavering" viewBox="0 0 36 36"><circle class="track" cx="18" cy="18" r="15"/><circle id="waveArc" class="arc" cx="18" cy="18" r="15"/><text id="waveSecs" x="18" y="22">0</text></svg></div>
+      <div class="sep"></div>
+      <div class="stat"><div><small>KILLS</small><b id="kills">0</b></div></div>
+    </div>
+    <div id="sysbtns">
+      <button id="mute" class="glass sys" aria-label="Sound"></button>
+      <button id="pause" class="glass sys" aria-label="Pause"></button>
+    </div>
+    <div id="squad" class="glass">
+      <img id="bunkerPortrait" class="portrait" src="icon/btn-building-terran-bunker.png" alt="Bunker view" title="Tap: view from inside the bunker">
+      <div class="squadbody">
+        <div class="row"><small id="bunkerLabel">BUNKER</small><small id="stimTag" class="amber"></small><span id="hpText">400 / 400</span></div>
+        <div id="segments"></div>
+        <div id="slots"></div>
+        <div id="outside"></div>
+        <div id="bcRow" class="hidden"><small id="bcLabel">BATTLECRUISER</small><div id="bcBar"><i></i></div><span id="bcHp"></span></div>
+      </div>
+    </div>
+    <canvas id="radar"></canvas>
+    <div id="bunkerFrame"></div>
+    <div id="toast"></div>
+    <div id="banner"></div>
+    <div id="bottom">
+      <div id="abilities"></div>
+      <div id="armouryHead"><small>ARMOURY</small><span class="rule"></span><button id="armouryToggle" aria-label="Toggle armoury">&#8964;</button></div>
+      <div id="armoury"></div>
+    </div>
+    <div id="pausedModal" class="modal hidden"><div class="card glass"><h2>PAUSED</h2><div class="btns"><button id="resume" class="primary">RESUME</button><button class="menuBtn">MAIN MENU</button></div></div></div>
+    <div id="overModal" class="modal hidden"><div class="card glass over"><h2>BUNKER LOST</h2><div id="overStats" class="stats"></div><div id="overBest" class="pill"></div><div class="btns"><button id="redeploy" class="primary">REDEPLOY</button><button class="menuBtn">MAIN MENU</button></div></div></div>
+  </div>
+
+  <div id="start">
+    <div class="title"><h1>BUNKER<br><span>SURVIVORS</span></h1><div class="bar"></div><p>ONE FIRETEAM. &nbsp;ONE BUNKER. &nbsp;THE SWARM.</p></div>
+    <div class="modes">
+      <button class="mode glass" data-mode="lane"><img src="icon/btn-unit-terran-marine.png" alt=""><span><b>LANE DEFENCE</b><small>Hold the lane as the Swarm pours down from the north.</small></span><em id="tagLane"></em></button>
+      <button class="mode glass arena" data-mode="arena"><img src="icon/btn-unit-zerg-ultralisk.png" alt=""><span><b>360 ARENA</b><small>Waves from every side. Bigger, faster, deadlier.</small></span><em id="tagArena"></em></button>
+    </div>
+    <div class="foot"><p id="best"></p><p id="status">CONNECTING TO STARCRAFT II...</p><p id="progress"></p><button id="relink" class="hidden">LINK STARCRAFT II FOLDER AGAIN</button></div>
+  </div>
+
+  <div id="link" class="modal hidden"><div class="card glass">
+    <h2>LINK STARCRAFT II</h2>
+    <p>Bunker Survivors draws every unit, effect and sound from your own StarCraft II install. Point it at the folder once: the files are read right here in your browser and never leave this computer.</p>
+    <div class="path"><code id="linkPath"></code><button id="linkCopy">COPY</button></div>
+    <p id="linkHint" class="hint"></p>
+    <div class="btns"><button id="linkPick" class="primary">CHOOSE STARCRAFT II FOLDER</button></div>
+    <p class="hint">or drag the StarCraft II folder onto this card</p>
+    <p id="linkBusy" class="amber"></p><p id="linkErr" class="err"></p>
+    <input id="linkInput" type="file" webkitdirectory directory hidden>
+  </div></div>
+</div>
+<script src="lib/viewer.min.js"></script>
+<script src="js/units.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/terrain.js"></script>
+<script src="js/fx.js"></script>
+<script src="js/render.js"></script>
+<script src="js/game.js"></script>
+<script src="js/hud.js"></script>
+<script src="js/link.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
