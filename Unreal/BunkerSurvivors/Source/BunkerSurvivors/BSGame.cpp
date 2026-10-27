@@ -209,6 +209,13 @@ void ABSGame::Init(UBSAssets* InAssets, EBSMode InMode)
 		MechSlots.Add(TEXT("goliath"), { FVector2D(-3.9f, 1.6f), FVector2D(3.9f, 1.6f), FVector2D(-2.3f, 2.3f), FVector2D(2.3f, 2.3f) });
 		MechSlots.Add(TEXT("thor"), { FVector2D(-5.0f, -5.8f), FVector2D(5.0f, -5.8f) });
 		MechSlots.Add(TEXT("odin"), { FVector2D(0, -10.5f) });
+		// Forward base on the plateau east of the stem (see UpdateExpansion): the way up, the command center's site and the
+		// SCV's spot beside it, the Odin, goliaths over the arm, and three ranks of troopers on the cliff edge over the stem.
+		FwdRoute = BSTerrain::LedgeRoute(1);
+		FwdPost = FVector2D(8.0f, 5.0f); FwdCc = FVector2D(9.8f, 2.6f); FwdScv = FVector2D(8.3f, 3.3f); FwdOdin = FVector2D(10.8f, 6.6f);
+		FwdGoliath = { FVector2D(7.4f, 8.4f), FVector2D(8.4f, 9.2f), FVector2D(9.3f, 8.2f), FVector2D(8.4f, 7.4f) };
+		const float Ranks[3][3] = { { 5.6f, 3.0f, 5 }, { 6.35f, 3.0f, 6 }, { 7.1f, 3.75f, 5 } };
+		for (const auto& Rk : Ranks) for (int32 i = 0; i < (int32)Rk[2]; i++) FwdTroopers.Add(FVector2D(Rk[0], Rk[1] + i * 0.75f));
 	}
 	else
 	{
@@ -684,6 +691,7 @@ bool ABSGame::Eject(int32 Index)
 bool ABSGame::Board(int32 Index)
 {
 	if (!Squad.IsValidIndex(Index) || Squad[Index]->bDead) return false;
+	if (Squad[Index]->Fwd.bOn) { Toast(TEXT("Holding the high ground")); return false; }
 	if (Bunker.Units.Num() >= Bunker.Slots) { Toast(TEXT("Bunker is full")); return false; }
 	Squad[Index]->bBoarding = !Squad[Index]->bBoarding;
 	return true;
@@ -724,8 +732,8 @@ void ABSGame::UpdateSquad(float Dt)
 	const float Hs = BSDefs::BunkerHalfSize;
 	const bool bStim = Ab.StimUntil > Time;
 	// Keep a little elbow room so troopers converging on one spot do not stack. Anyone standing on their own spot is
-	// already spaced out and lets others through the ranks.
-	auto Home = [](const FBSTrooper& M) { return FMath::Abs(M.X - M.Spot.X) + FMath::Abs(M.Y - M.Spot.Y) < 0.3f; };
+	// already spaced out and lets others through the ranks (on the high ground, its spot is its post there).
+	auto Home = [](const FBSTrooper& M) { const FVector2D& S = M.Fwd.bOn && !M.Fwd.bBack ? M.Fwd.Post : M.Spot; return FMath::Abs(M.X - S.X) + FMath::Abs(M.Y - S.Y) < 0.3f; };
 	for (int32 i = 0; i < Squad.Num(); i++)
 		for (int32 j = i + 1; j < Squad.Num(); j++)
 		{
@@ -750,8 +758,9 @@ void ABSGame::UpdateSquad(float Dt)
 		if (M.bDead) continue;
 		const FBSInfantryDef* D = M.Def;
 		auto Pred = [D](const FBSEnemy& E) { return !(D->bGroundOnly && E.Def->bFlying); };
+		const float Range = D->Range + (M.Fwd.bOn && BSTerrain::OnHigh(M.X, M.Y) ? 1.f : 0.f);   // the forward post on the high ground outranges the lane
 		// Morale: when a third of the group around it has just been killed, the group falls back level with the bunker.
-		if (!M.bBoarding && !bStim && M.RetreatUntil <= Time && Forward(M))
+		if (!M.bBoarding && !M.Fwd.bOn && !bStim && M.RetreatUntil <= Time && Forward(M))
 		{
 			int32 Lost = 0, Near = 0;
 			for (const FVector& K : SquadDeaths) Lost += Dist2(K.X, K.Y, M.X, M.Y) < 3.5f * 3.5f;
@@ -763,14 +772,23 @@ void ABSGame::UpdateSquad(float Dt)
 			}
 		}
 		float Gx = M.Spot.X, Gy = M.Spot.Y;
+		FVector2D Fg = FVector2D::ZeroVector; bool bFinal = false;
 		if (M.bBoarding) { Gx = (M.X < 0 ? -1 : 1) * (Hs + 0.3f); Gy = 0.4f; }
+		else if (M.Fwd.bOn && !FwdGoal(M.Fwd, M.X, M.Y, Fg, bFinal)) { M.Fwd.bOn = false; M.Fwd.bBack = false; }   // back down in the stem: home to its spot
+		else if (M.Fwd.bOn)
+		{
+			// Expedition to the high ground (UpdateExpansion): the fire teams bound along the route, one covering while the
+			// other moves; at the post they hold and fire.
+			if (bBothTeams && M.Team != BoundTeam && EnemiesInRange(M.X, M.Y, Range, Pred).Num()) { Gx = M.X; Gy = M.Y; }
+			else { Gx = Fg.X; Gy = Fg.Y; }
+		}
 		else if (M.RetreatUntil > Time && !bStim)
 		{
 			if (!Forward(M)) { Gx = M.X; Gy = M.Y; }                                   // back on the line: hold and fire
 			else if (bLane) { Gx = FMath::Clamp(M.X, -6.f, 6.f); Gx = (Gx < 0 ? -1 : 1) * FMath::Max(FMath::Abs(Gx), Hs + 0.8f); Gy = 0.4f; }
 			else { const float A = FMath::Atan2(M.Y, M.X); Gx = FMath::Cos(A) * 2.8f; Gy = FMath::Sin(A) * 2.8f; }
 		}
-		else if (EnemiesInRange(M.X, M.Y, D->Range, Pred).Num()) { Gx = M.X; Gy = M.Y; }   // hold and fire
+		else if (EnemiesInRange(M.X, M.Y, Range, Pred).Num()) { Gx = M.X; Gy = M.Y; }   // hold and fire
 		else if (bStim)
 		{
 			// Stimmed: the whole squad charges the nearest zerg until it is in range, no bounding, no falling back.
@@ -836,13 +854,13 @@ void ABSGame::UpdateSquad(float Dt)
 		{
 			TSharedPtr<FBSEnemy> Target;
 			if (TSharedPtr<FBSEnemy> F = Focus.Pin())
-				if (F->Alive() && Pred(*F) && FMath::Sqrt(Dist2(M.X, M.Y, F->X, F->Y)) - F->Radius <= D->Range) Target = F;
-			if (!Target) { TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(M.X, M.Y, D->Range, Pred); if (L.Num()) Target = L[0]; }
+				if (F->Alive() && Pred(*F) && FMath::Sqrt(Dist2(M.X, M.Y, F->X, F->Y)) - F->Radius <= Range) Target = F;
+			if (!Target) { TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(M.X, M.Y, Range, Pred); if (L.Num()) Target = L[0]; }
 			if (Target)
 			{
 				M.Cd += D->Cd;
 				M.Yaw = FMath::Atan2(Target->Y - M.Y, Target->X - M.X);
-				FireInfantry(D, FVector(M.X + FMath::Cos(M.Yaw) * 0.45f, M.Y + FMath::Sin(M.Yaw) * 0.45f, BSTerrain::Height(M.X, M.Y) + 0.85f), Target);
+				FireInfantry(D, FVector(M.X + FMath::Cos(M.Yaw) * 0.45f, M.Y + FMath::Sin(M.Yaw) * 0.45f, BSTerrain::Height(M.X, M.Y) + 0.85f), Target, M.Fwd.bOn);
 				const float Len = M.Actor ? M.Actor->Play(TEXT("attack"), false, bStim ? 2.1f : 1.4f) : 0.f;
 				M.Anim = TEXT("attack"); M.StandAt = Time + FMath::Min(D->Cd / (bStim ? 1.5f : 1.f), Len > 0 ? Len : 0.5f);
 			}
@@ -902,15 +920,17 @@ void ABSGame::UpdateStructures(float Dt)
 		if (!S.bReady)
 		{
 			// Rises from 10% to full health while it builds, as in SC2.
-			S.T += Dt; S.Hp = FMath::Min(S.MaxHp, S.Hp + S.MaxHp * 0.9f / BSDefs::BuildTime * Dt);
-			if (S.T >= BSDefs::BuildTime)
+			const float Build = S.bCc ? BSDefs::CcBuild : BSDefs::BuildTime;
+			S.T += Dt; S.Hp = FMath::Min(S.MaxHp, S.Hp + S.MaxHp * 0.9f / Build * Dt);
+			if (S.T >= Build)
 			{
 				S.bReady = true;
 				if (S.Actor) S.Actor->Play(StandNames, true);
-				Toast(S.bSam ? TEXT("Missile turret online") : TEXT("Sensor tower online: radar active"));
+				if (!S.bCc) Toast(S.bSam ? TEXT("Missile turret online") : TEXT("Sensor tower online: radar active"));
 			}
 			continue;
 		}
+		if (S.bCc) { Minerals += BSDefs::CcIncome * Dt; continue; }      // the forward base mines
 		if (!S.bSam) continue;
 		S.Cd -= Dt;
 		if (S.Cd > 0) continue;
@@ -939,9 +959,184 @@ void ABSGame::DestroyStructure(const TSharedPtr<FBSStructure>& S)
 	S->bDead = true;
 	ReleaseModel(S->Actor); S->Actor = nullptr;
 	Structures.Remove(S);
+	if (S->bCc)
+	{
+		Corpse(TEXT("commandcenterDeath"), S->X, S->Y, BSTerrain::Height(S->X, S->Y), S->Yaw, 4, BSDefs::CcScale, true);
+		PlaySound(BSSounds::Explosion, 0.9f);
+		Shake = FMath::Min(1.f, Shake + 0.5f);
+		Toast(TEXT("Forward base destroyed"));
+		return;
+	}
 	Corpse(S->bSam ? TEXT("missileturretDeath") : TEXT("sensortowerDeath"), S->X, S->Y, 0, S->Yaw, 4, 1, true);
 	PlaySound(BSSounds::Explosion, 0.6f);
 	Toast(S->bSam ? TEXT("Missile turret destroyed") : TEXT("Sensor tower destroyed: radar offline"));
+}
+
+// ---- Forward base on the high ground ------------------------------------------------------------------------
+// Lane only. Once the army is maxed out - every tree researched, the battlecruiser on station, the Odin in position and a
+// full squad - it expands onto the plateau east of the stem: the Odin, the goliaths and a detachment of troopers go up the
+// stem, into the arm and up its ramp (BSTerrain::LedgeRoute), clear the plateau, then an SCV builds a command center there.
+// The base mines minerals, and troopers up there outrange the lane (+1) and never miss for firing uphill. If the
+// battlecruiser or the Odin is lost, or the squad is cut down below ExpandMinSquad, they fall back (port of Game.expandReady
+// and friends).
+bool ABSGame::ExpandReady() const
+{
+	const TSharedPtr<FBSMech>* Odin = Mechs.FindByPredicate([](const TSharedPtr<FBSMech>& M) { return M->Def->Key == TEXT("odin"); });
+	return FwdRoute.Num() > 0 && TreeMaxed(TEXT("all")) && Bc.IsValid() && Bc->bOnStation && Odin && (*Odin)->bReady && TroopsFull();
+}
+
+bool ABSGame::ExpandHolds() const
+{
+	return Bc.IsValid() && Mechs.ContainsByPredicate([](const TSharedPtr<FBSMech>& M) { return M->Def->Key == TEXT("odin"); }) && Squad.Num() >= BSDefs::ExpandMinSquad;
+}
+
+int32 ABSGame::FwdCount() const
+{
+	int32 N = 0;
+	for (const TSharedPtr<FBSTrooper>& M : Squad) N += M->Fwd.bOn;
+	for (const TSharedPtr<FBSMech>& M : Mechs) N += M->Fwd.bOn;
+	for (const TSharedPtr<FBSScv>& S : Scvs) N += S->Fwd.bOn;
+	return N;
+}
+
+// Next point for a unit on the expedition: along the route to its post on the high ground (bFinal: the post itself), or
+// back down it. False once it is back down in the stem.
+bool ABSGame::FwdGoal(FBSFwd& F, float X, float Y, FVector2D& Out, bool& bFinal) const
+{
+	bFinal = false;
+	for (;;)
+	{
+		if (F.bBack)
+		{
+			if (F.Leg <= 0) return false;
+			const FVector2D& P = FwdRoute[F.Leg - 1];
+			if (Dist2(X, Y, P.X, P.Y) < 0.9f * 0.9f) { F.Leg--; continue; }
+			Out = P; return true;
+		}
+		if (F.Leg >= FwdRoute.Num()) { Out = F.Post; bFinal = true; return true; }
+		const FVector2D& P = FwdRoute[F.Leg];
+		if (Dist2(X, Y, P.X, P.Y) < 0.9f * 0.9f) { F.Leg++; continue; }
+		Out = P; return true;
+	}
+}
+
+void ABSGame::BeginExpansion()
+{
+	// Anyone still on the way back down turns round where they are.
+	auto Send = [](FBSFwd& F, const FVector2D& Post) { if (!F.bOn) F.Leg = 0; F.bOn = true; F.bBack = false; F.Post = Post; };
+	int32 G = 0;
+	for (const TSharedPtr<FBSMech>& M : Mechs)
+	{
+		if (M->Def->Key == TEXT("odin")) Send(M->Fwd, FwdOdin);
+		else if (M->Def->Key == TEXT("goliath")) Send(M->Fwd, FwdGoliath[G++ % FwdGoliath.Num()]);
+	}
+	// A detachment of troopers (those already out there first).
+	TArray<TSharedPtr<FBSTrooper>> Pick;
+	for (const TSharedPtr<FBSTrooper>& M : Squad) if (!M->bDead && !M->bBoarding && M->Fwd.bOn) Pick.Add(M);
+	for (const TSharedPtr<FBSTrooper>& M : Squad) if (!M->bDead && !M->bBoarding && !M->Fwd.bOn) Pick.Add(M);
+	for (int32 i = 0; i < FMath::Min(Pick.Num(), BSDefs::ExpandTroopers); i++) Send(Pick[i]->Fwd, FwdTroopers[i]);
+	for (const TSharedPtr<FBSScv>& S : Scvs) if (S->Fwd.bOn) Send(S->Fwd, FwdScv);
+	Expand = EExpand::Advance; ExpandT = 0;
+	Toast(TEXT("Expanding to the high ground"));
+}
+
+void ABSGame::FallBack()
+{
+	for (const TSharedPtr<FBSTrooper>& M : Squad) if (M->Fwd.bOn) M->Fwd.bBack = true;
+	for (const TSharedPtr<FBSMech>& M : Mechs) if (M->Fwd.bOn) M->Fwd.bBack = true;
+	for (const TSharedPtr<FBSScv>& S : Scvs) if (S->Fwd.bOn) S->Fwd.bBack = true;
+	Expand = EExpand::Fallback; ExpandT = 0;
+	Toast(TEXT("Falling back from the high ground"));
+}
+
+TSharedPtr<FBSStructure> ABSGame::ForwardBase() const
+{
+	for (const TSharedPtr<FBSStructure>& S : Structures) if (S->bCc) return S;
+	return nullptr;
+}
+
+void ABSGame::UpdateExpansion(float Dt)
+{
+	ExpandT += Dt;
+	if (Expand == EExpand::Off) { if (ExpandReady()) BeginExpansion(); return; }
+	if (Expand == EExpand::Fallback) { if (!FwdCount()) { Expand = EExpand::Off; ExpandT = 0; } return; }
+	if (!ExpandHolds()) { FallBack(); return; }
+	const TSharedPtr<FBSStructure> Cc = ForwardBase();
+	if (Expand == EExpand::Advance)
+	{
+		// Taken once the Odin stands at its post and (almost) nothing on the ground contests the plateau round it.
+		const TSharedPtr<FBSMech>* OdinP = Mechs.FindByPredicate([](const TSharedPtr<FBSMech>& M) { return M->Def->Key == TEXT("odin"); });
+		const FBSMech& Odin = **OdinP;
+		const bool bThere = Odin.Fwd.bOn && !Odin.Fwd.bBack && Odin.Fwd.Leg >= FwdRoute.Num() && Dist2(Odin.X, Odin.Y, Odin.Fwd.Post.X, Odin.Fwd.Post.Y) < 0.5f * 0.5f;
+		int32 Foes = 0;
+		for (const TSharedPtr<FBSEnemy>& E : Enemies)
+			Foes += E->Alive() && !E->Def->bFlying && BSTerrain::OnHigh(E->X, E->Y) && Dist2(E->X, E->Y, FwdPost.X, FwdPost.Y) < BSDefs::ExpandClear * BSDefs::ExpandClear;
+		if (bThere && Foes <= 2)
+		{
+			ExpandT = 0;
+			if (Cc && Cc->bReady) { Expand = EExpand::Held; Toast(TEXT("Forward base established")); }
+			else { Expand = EExpand::Build; Toast(TEXT("High ground taken")); }
+		}
+	}
+	else if (Expand == EExpand::Build)
+	{
+		if (Cc && Cc->bReady) { Expand = EExpand::Held; ExpandT = 0; Toast(TEXT("Forward base established")); }
+		else if (!Cc && !Scvs.ContainsByPredicate([](const TSharedPtr<FBSScv>& S) { return S->Fwd.bOn && !S->Fwd.bBack; }))
+		{
+			// An SCV goes up to build it (the one nearest the way up).
+			const FVector2D& W0 = FwdRoute[0];
+			TSharedPtr<FBSScv> Best;
+			for (const TSharedPtr<FBSScv>& S : Scvs)
+				if (!S->Fwd.bOn && (!Best || Dist2(S->X, S->Y, W0.X, W0.Y) < Dist2(Best->X, Best->Y, W0.X, W0.Y))) Best = S;
+			if (Best) { Best->Fwd.bOn = true; Best->Fwd.bBack = false; Best->Fwd.Leg = 0; Best->Fwd.Post = FwdScv; }
+		}
+	}
+	else if (Expand == EExpand::Held && !Cc) { Expand = EExpand::Advance; ExpandT = 0; }
+}
+
+// The builder reached the site: the command center goes up (it rises from 10% health like the turrets).
+TSharedPtr<FBSStructure> ABSGame::PlaceForwardBase()
+{
+	TSharedPtr<FBSStructure> S = MakeShared<FBSStructure>();
+	S->bSam = false; S->bCc = true; S->X = FwdCc.X; S->Y = FwdCc.Y;
+	S->MaxHp = BSDefs::CcHp; S->Hp = S->MaxHp * 0.1f; S->Armor = BSDefs::CcArmor; S->Radius = BSDefs::CcRadius;
+	S->Actor = AcquireModel(TEXT("commandcenter"));
+	if (S->Actor)
+	{
+		S->Actor->SetTeamColor(TerranColor); S->Actor->SetScale(BSDefs::CcScale);
+		S->Actor->SetSim(S->X, S->Y, BSTerrain::Height(S->X, S->Y), S->Yaw); S->Actor->Play(TEXT("birth"), false);
+	}
+	Structures.Add(S);
+	Toast(TEXT("Building a forward command center"));
+	return S;
+}
+
+// The SCV sent up to the high ground: walks the route, builds the command center, then stays to repair it.
+void ABSGame::UpdateFwdScv(FBSScv& S, float Dt)
+{
+	FVector2D G = FVector2D::ZeroVector; bool bFinal = false;
+	if (!FwdGoal(S.Fwd, S.X, S.Y, G, bFinal)) { S.Fwd.bOn = false; S.Fwd.bBack = false; return; }   // back down: it rejoins the repair crew
+	const float Far = FMath::Sqrt(Dist2(S.X, S.Y, G.X, G.Y));
+	if (Far > 0.25f)
+	{
+		const float Sp = FMath::Min(Far, BSDefs::ScvSpeed * Dt), Ox = S.X, Oy = S.Y;
+		StepGround(S.X, S.Y, (G.X - S.X) / Far * Sp, (G.Y - S.Y) / Far * Sp);
+		if (S.X != Ox || S.Y != Oy) S.Yaw = FMath::Atan2(S.Y - Oy, S.X - Ox);
+		if (S.Anim != TEXT("walk") && S.Actor) { S.Anim = TEXT("walk"); S.Actor->Play(TEXT("walk"), true, 1.4f); }
+	}
+	else
+	{
+		TSharedPtr<FBSStructure> Cc = ForwardBase();
+		if (!Cc && Expand == EExpand::Build) Cc = PlaceForwardBase();
+		if (Cc && (!Cc->bReady || Cc->Hp < Cc->MaxHp - 1))
+		{
+			S.Yaw = FMath::Atan2(Cc->Y - S.Y, Cc->X - S.X);
+			if (S.Anim != TEXT("work") && S.Actor) { S.Anim = TEXT("work"); S.Actor->Play(TEXT("work"), true); PlaySound(BSSounds::ScvRepair, 0.25f, 1.5f); }
+			if (Cc->bReady) { const float Amount = FMath::Min3(BSDefs::ScvRepairRate * Dt, Cc->MaxHp - Cc->Hp, Minerals / 0.3f); if (Amount > 0) { Cc->Hp += Amount; Minerals -= Amount * 0.3f; } }
+		}
+		else if (S.Anim != TEXT("stand") && S.Actor) { S.Anim = TEXT("stand"); S.Actor->Play(StandNames, true); }
+	}
+	if (S.Actor) S.Actor->SetSim(S.X, S.Y, BSTerrain::Height(S.X, S.Y), S.Yaw);
 }
 
 bool ABSGame::AddScv(bool bFree)
@@ -1260,6 +1455,28 @@ void ABSGame::UpdateMechs(float Dt)
 		FBSMech& M = *MP;
 		if (M.bDead) continue;
 		const FBSMechDef* D = M.Def;
+		bool bMoving = false;
+		if (M.Fwd.bOn)
+		{
+			// On the expedition to the high ground (UpdateExpansion): walk the route, guns firing on the move.
+			FVector2D G = FVector2D::ZeroVector; bool bFinal = false;
+			if (!FwdGoal(M.Fwd, M.X, M.Y, G, bFinal)) { M.Fwd.bOn = false; M.Fwd.bBack = false; M.bReady = false; }   // back down in the stem: on to its post
+			else
+			{
+				M.bReady = true;                                                  // (even if a viper yanked it about)
+				const float Far = FMath::Sqrt(Dist2(M.X, M.Y, G.X, G.Y));
+				if (Far > 0.15f)
+				{
+					const FVector2D Wp = RoundBunker(M.X, M.Y, G.X, G.Y);
+					const float Dx = Wp.X - M.X, Dy = Wp.Y - M.Y, Dd = FMath::Max(0.001f, FMath::Sqrt(Dx * Dx + Dy * Dy)), Sp = FMath::Min(Dd, D->Speed * Dt);
+					StepGround(M.X, M.Y, Dx / Dd * Sp, Dy / Dd * Sp);
+					M.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(M.Yaw, FMath::Atan2(Dy, Dx)), -3 * Dt, 3 * Dt);
+					if (M.Actor && M.Anim != TEXT("walk")) { M.Anim = TEXT("walk"); M.Actor->Play(WalkNames, true); }
+					bMoving = true;
+				}
+				else if (M.Anim == TEXT("walk")) { M.Anim = TEXT("stand"); if (M.Actor) M.Actor->Play(StandNames, true); }
+			}
+		}
 		if (!M.bReady)
 		{
 			const FVector2D Wp = RoundBunker(M.X, M.Y, M.Slot.X, M.Slot.Y);
@@ -1291,7 +1508,7 @@ void ABSGame::UpdateMechs(float Dt)
 			M.Aim = FMath::Atan2(Target->Y - M.Y, Target->X - M.X);
 			MechFire(M, Target, bAir, (bAir ? D->ADmg : D->GDmg) + Bonus);
 		}
-		M.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(M.Yaw, M.Aim), -4 * Dt, 4 * Dt);
+		if (!bMoving) M.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(M.Yaw, M.Aim), -4 * Dt, 4 * Dt);
 		if (M.Actor) M.Actor->SetSim(M.X, M.Y, BSTerrain::Height(M.X, M.Y), M.Yaw);
 	}
 }
@@ -2139,7 +2356,7 @@ void ABSGame::DamageDefender(const FBSTarget& T, float Dmg)
 	else if (T.Kind == FBSTarget::Structure)
 	{
 		TSharedPtr<FBSStructure> S = T.StructureRef.Pin();
-		S->Hp -= FMath::Max(0.5f, Dmg); S->Flash = 1;
+		S->Hp -= FMath::Max(0.5f, Dmg - S->Armor); S->Flash = 1;
 		if (S->Hp <= 0 && !S->bDead) DestroyStructure(S);
 	}
 }
@@ -2277,6 +2494,7 @@ void ABSGame::Step(float Dt)
 	UpdateScvs(Dt);
 	UpdateSquad(Dt);
 	UpdateStructures(Dt);
+	UpdateExpansion(Dt);
 	UpdateBanshees(Dt);
 	UpdateMechs(Dt);
 	UpdateBc(Dt);
@@ -2329,6 +2547,15 @@ void ABSGame::UpdateEnemies(float Dt)
 			for (const FBSTarget& T : Pool)
 			{
 				if (T.Kind == FBSTarget::Scv && FMath::FRand() < 0.5f) continue;
+				// Down in the lane, walkers cannot reach anything up on the high ground (the forward base) unless it is in
+				// reach already; they would only pile up under the cliff.
+				bool bUp = false;
+				if (T.Kind == FBSTarget::Trooper) { if (auto P = T.TrooperRef.Pin()) bUp = P->Fwd.bOn; }
+				else if (T.Kind == FBSTarget::Mech) { if (auto P = T.MechRef.Pin()) bUp = P->Fwd.bOn; }
+				else if (T.Kind == FBSTarget::Scv) { if (auto P = T.ScvRef.Pin()) bUp = P->Fwd.bOn; }
+				else if (T.Kind == FBSTarget::Structure) { if (auto P = T.StructureRef.Pin()) bUp = P->bCc; }
+				if (bUp && !D->bFlying && !D->bHops && !D->bAntiAir && BSTerrain::OnHigh(T.X, T.Y) && !BSTerrain::OnHigh(E.X, E.Y)
+					&& FMath::Sqrt(Dist2(E.X, E.Y, T.X, T.Y)) - T.Radius - E.Radius > D->Range) continue;
 				const float Dd = FMath::Sqrt(Dist2(E.X, E.Y, T.X, T.Y)) - T.Radius - (D->bPreferMech && T.Kind == FBSTarget::Mech ? 12.f : 0.f);
 				if (Dd < Bd) { Bd = Dd; BestT = &T; }
 			}
@@ -2539,10 +2766,10 @@ void ABSGame::UpdateBunker(float Dt)
 }
 
 // One shot from a trooper at a muzzle position (a bunker slit, or the rifle of a soldier standing outside).
-void ABSGame::FireInfantry(const FBSInfantryDef* D, const FVector& Muzzle, const TSharedPtr<FBSEnemy>& Target)
+void ABSGame::FireInfantry(const FBSInfantryDef* D, const FVector& Muzzle, const TSharedPtr<FBSEnemy>& Target, bool bFwd)
 {
 	auto Pred = [D](const FBSEnemy& E) { return !(D->bGroundOnly && E.Def->bFlying); };
-	const bool bMiss = BSTerrain::OnHigh(Target->X, Target->Y) && FMath::FRand() < 0.3f;   // firing up at the high ground
+	const bool bMiss = BSTerrain::OnHigh(Target->X, Target->Y) && !(bFwd && BSTerrain::OnHigh(Muzzle.X, Muzzle.Y)) && FMath::FRand() < 0.3f;   // firing up at the high ground
 	const float DmgBase = bMiss ? 0.f : D->Dmg + Up.Weapons;
 	const FVector Hit(Target->X, Target->Y, Target->Z + Target->Def->Height * 0.5f);
 	const float Ang = FMath::Atan2(Hit.Y - Muzzle.Y, Hit.X - Muzzle.X);
@@ -2681,17 +2908,21 @@ void ABSGame::UpdateScvs(float Dt)
 	if (BunkerFrac > 0.4f)
 		for (const TSharedPtr<FBSTank>& K : Tanks)
 			if (K->State == FBSTank::Ready && !K->bDead && K->Hp < K->MaxHp - 1) Jobs.Add({ K->X, K->Y, BSDefs::TankRadius, 0.4f, &K->Hp, K->MaxHp, K->Hp / K->MaxHp });
+	// (Nothing up on the high ground: the SCV posted at the forward base looks after that.)
 	if (BunkerFrac > 0.4f)
 		for (const TSharedPtr<FBSStructure>& St : Structures)
-			if (St->bReady && !St->bDead && St->Hp < St->MaxHp - 1) Jobs.Add({ St->X, St->Y, St->Radius, 0.3f, &St->Hp, St->MaxHp, St->Hp / St->MaxHp });
+			if (St->bReady && !St->bDead && !St->bCc && St->Hp < St->MaxHp - 1) Jobs.Add({ St->X, St->Y, St->Radius, 0.3f, &St->Hp, St->MaxHp, St->Hp / St->MaxHp });
 	if (BunkerFrac > 0.4f)
 		for (const TSharedPtr<FBSMech>& M : Mechs)
-			if (M->bReady && !M->bDead && M->Hp < M->MaxHp - 1) Jobs.Add({ M->X, M->Y, M->Def->Radius, 0.4f, &M->Hp, M->MaxHp, M->Hp / M->MaxHp });
+			if (M->bReady && !M->bDead && !M->Fwd.bOn && M->Hp < M->MaxHp - 1) Jobs.Add({ M->X, M->Y, M->Def->Radius, 0.4f, &M->Hp, M->MaxHp, M->Hp / M->MaxHp });
 	Jobs.Sort([](const FJob& A, const FJob& B) { return A.Need < B.Need; });
+	TArray<TSharedPtr<FBSScv>> Snapshot = Scvs;
+	for (const TSharedPtr<FBSScv>& SP : Snapshot) if (SP->Fwd.bOn) UpdateFwdScv(*SP, Dt);
 	int32 ScvIndex = 0;
 	for (const TSharedPtr<FBSScv>& SP : Scvs)
 	{
 		FBSScv& S = *SP;
+		if (S.Fwd.bOn) continue;
 		float JobX = 0, JobY = 0, JobR = 0, Cost = 0;
 		float* JobHp = nullptr; float JobMax = 0;
 		if (Jobs.Num())
@@ -3155,7 +3386,7 @@ FString ABSGame::DebugState() const
 	FString Out;
 	for (const TSharedPtr<FBSTrooper>& M : Squad) Out += FString::Printf(TEXT("%.1f,%.1f "), M->X, M->Y);
 	FString Str;
-	for (const TSharedPtr<FBSStructure>& S : Structures) Str += FString::Printf(TEXT("%s:%d:%.0f "), S->bSam ? TEXT("sam") : TEXT("sensor"), S->bReady ? 1 : 0, S->Hp);
+	for (const TSharedPtr<FBSStructure>& S : Structures) Str += FString::Printf(TEXT("%s:%d:%.0f "), S->bCc ? TEXT("cc") : S->bSam ? TEXT("sam") : TEXT("sensor"), S->bReady ? 1 : 0, S->Hp);
 	FString Ban;
 	for (const TSharedPtr<FBSBanshee>& Bn : Banshees) Ban += FString::Printf(TEXT("%d@%.1f,%.1f "), (int32)Bn->State, Bn->X, Bn->Y);
 	return FString::Printf(TEXT("t=%.1f wave=%d enemies=%d kills=%d minerals=%.0f bunker=%.0f/%.0f units=%d tanks=%d scvs=%d over=%d squad=[%s] structures=[%s] banshees=[%s] radar=%d rails=%d bunkerActor[%s]"),

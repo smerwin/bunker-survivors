@@ -20,6 +20,9 @@ namespace BSTerrain
 	bool OnHigh(float X, float Y);
 	// Waypoints for a ground unit spawning at (X, Y): down an arm into the stem, or up a ramp to a perch.
 	TArray<FVector2D> Route(float X, float Y, bool bHigh);
+	// The way from the bunker up onto the side plateau east (Side 1) or west (-1) of the stem: up the stem to the fork,
+	// into the arm, then up its ramp (walked in reverse to come back down).
+	TArray<FVector2D> LedgeRoute(int32 Side);
 	// A point down the north-east (Side 1) or north-west (-1) arm: T along it (0 fork .. 1 far end), Off across it.
 	FVector2D ArmPoint(int32 Side, float T, float Off);
 }

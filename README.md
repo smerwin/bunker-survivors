@@ -151,6 +151,12 @@ When the bunker is full, new recruits stand behind it, up to 48.
 | Battlecruiser (1500) | every tree maxed | Parks nose-south over the fork of the lane. As in StarCraft II, its laser batteries fire rapid amber bolts along six hardpoints (8 against ground, 5 against air), taking scourge and devourers first; missile pods fire at air only, and the Yamato charges at the bow for two seconds before it fires. |
 | Odin (2500) | the battlecruiser on station | Heavy artillery from behind the bunker. |
 
+**Forward base** (lane). Max everything out (every tree researched, the battlecruiser on station, the Odin in position and
+no room for more troops) and the army expands onto the plateau east of the stem: the Odin, the goliaths and 16 troopers
+go up the arm's ramp and clear it, then an SCV builds a command center there that mines 3 minerals a second. Troopers on
+the high ground get +1 range and never miss for firing uphill. Lose the battlecruiser or the Odin, or drop below 24
+troopers outside, and they fall back to the bunker.
+
 **The Swarm answers.** Every tech card you unlock brings stranger zerg into the waves, and more of them:
 
 | Zerg | What it does |

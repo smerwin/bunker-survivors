@@ -95,6 +95,13 @@ namespace BSTerrain
 		return Pts;
 	}
 
+	TArray<FVector2D> LedgeRoute(int32 Side)
+	{
+		const float S = Side < 0 ? -1.f : 1.f;
+		const FRamp& R = Ramps[Side < 0 ? 0 : 1];
+		return { FVector2D(2.2f * S, 5.5f), FVector2D(2.9f * S, 10.4f), FVector2D(R.A.X - 0.4f * S, R.A.Y + 0.6f), FVector2D(R.B.X + 0.3f * S, R.B.Y - 0.4f) };
+	}
+
 	FVector2D ArmPoint(int32 Side, float T, float Off)
 	{
 		const float Dx = ArmBx - ArmAx, Dy = ArmBy - ArmAy, L = FMath::Sqrt(Dx * Dx + Dy * Dy);

@@ -88,6 +88,11 @@ namespace BSDefs
 	// Missile turrets: anti-air only, like SC2 (12 x2, range 7). Sensor tower: the radar only works while one stands.
 	constexpr float SamHp = 250, SamDmg = 12, SamCd = 0.86f, SamRange = 7, SamRadius = 1.0f, SensorHp = 200, SensorRadius = 0.8f, BuildTime = 3;
 	constexpr int32 SamShots = 2, SamCost = 100, SamMax = 3, SensorCost = 125;
+	// Forward base (lane): a maxed-out army takes the plateau east of the stem and an SCV builds a command center there,
+	// which mines CcIncome minerals/s. ExpandTroopers go up with the Odin and the goliaths; below ExpandMinSquad they fall
+	// back. ExpandClear: the plateau counts as taken with at most two ground zerg this close to the post.
+	constexpr float CcHp = 1500, CcArmor = 1, CcRadius = 1.5f, CcScale = 0.6f, CcBuild = 12, CcIncome = 3, ExpandClear = 7;
+	constexpr int32 ExpandTroopers = 16, ExpandMinSquad = 24;
 	constexpr float RailsRange = 2.f;
 	// Battlecruiser on station: hovers over the lane; laser batteries (ATS 8 against ground, ATA 5 against air, one bolt
 	// every 0.16 s along six hardpoints), anti-air missile pods, and a Yamato cannon that charges before it fires.
