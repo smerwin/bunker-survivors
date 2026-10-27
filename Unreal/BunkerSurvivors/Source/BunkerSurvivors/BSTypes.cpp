@@ -93,7 +93,7 @@ namespace
 		{
 			FBSZergDef& D = Add(TEXT("guardian"), TEXT("Guardian"), TEXT("guardian"), TEXT("guardianDeath"), TEXT("btn-unit-zerg-guardian"));
 			D.Hp = 150; D.Armor = 2; D.Dmg = 20; D.Cd = 2; D.Range = 9; D.Speed = 2.2f; D.Radius = 1.0f; D.bArmored = true; D.bFlying = true; D.Fly = 3.8f; D.bPreferMech = true;
-			D.Bounty = 60; D.Budget = 20; D.Late = 1; D.Weight = 2.5f; D.HitFrac = 0.4f; D.AttackAnims = { TEXT("attack") };
+			D.Bounty = 60; D.Budget = 20; D.Unlock = 16; D.Late = 1; D.Weight = 0.25f; D.HitFrac = 0.4f; D.AttackAnims = { TEXT("attack") };
 			D.Projectile = EBSProjectile::Guardian; D.SoundAttack = TEXT("guardianFire"); D.Height = 1.4f;
 		}
 		{
