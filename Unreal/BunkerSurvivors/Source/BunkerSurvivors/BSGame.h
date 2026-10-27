@@ -40,10 +40,15 @@ struct FBSTank
 	bool bDead = false;
 };
 
+// A unit on the expedition to the forward base on the high ground (see ABSGame::UpdateExpansion): its post up there, how
+// many waypoints of the route it has passed, and whether it is on the way back down.
+struct FBSFwd { bool bOn = false, bBack = false; int32 Leg = 0; FVector2D Post = FVector2D::ZeroVector; };
+
 struct FBSScv
 {
 	float X = 0, Y = 0, Hp = BSDefs::ScvHp, MaxHp = BSDefs::ScvHp, Flash = 0, Yaw = 0, PlagueUntil = 0;
 	FVector2D Idle;
+	FBSFwd Fwd;                               // the SCV sent up to build (and repair) the forward command center
 	FString Anim;
 	ABSModelActor* Actor = nullptr;
 	bool bDead = false;
@@ -58,6 +63,7 @@ struct FBSMech
 	bool bReady = false, bDead = false;
 	FString Anim;
 	ABSModelActor* Actor = nullptr;
+	FBSFwd Fwd;
 };
 
 struct FBSEnemy;
@@ -86,16 +92,17 @@ struct FBSTrooper
 	FVector2D Spot = FVector2D::ZeroVector;
 	int32 Team = 0;                           // fire team (0 / 1): the teams take turns to bound forward
 	float RetreatUntil = 0;                   // falling back level with the bunker after heavy losses
+	FBSFwd Fwd;                               // on the expedition to the high ground
 	FString Anim;
 	ABSModelActor* Actor = nullptr;
 	bool bBoarding = false, bDead = false, bStimLook = false;
 };
 
-// Missile turret (anti-air) or sensor tower (radar).
+// Missile turret (anti-air), sensor tower (radar), or the forward command center on the high ground (bCc).
 struct FBSStructure
 {
-	bool bSam = true, bReady = false, bDead = false;
-	float X = 0, Y = 0, Yaw = PI / 2, Hp = 0, MaxHp = 0, Radius = 1, Cd = 0, T = 0, Flash = 0, PlagueUntil = 0;
+	bool bSam = true, bCc = false, bReady = false, bDead = false;
+	float X = 0, Y = 0, Yaw = PI / 2, Hp = 0, MaxHp = 0, Armor = 0, Radius = 1, Cd = 0, T = 0, Flash = 0, PlagueUntil = 0;
 	ABSModelActor* Actor = nullptr;
 };
 
@@ -263,8 +270,12 @@ public:
 	bool BuildStructure(bool bSam);       // missile turret or sensor tower
 	bool TroopsFull() const { return Bunker.Units.Num() + Squad.Num() + PendingInfantry() >= Bunker.Slots + BSDefs::SquadMax; }
 	int32 SamCount() const { int32 N = 0; for (auto& S : Structures) N += S->bSam; return N; }
-	bool HasSensor() const { for (auto& S : Structures) if (!S->bSam) return true; return false; }
-	bool SensorUp() const { for (auto& S : Structures) if (!S->bSam && S->bReady) return true; return false; }
+	bool HasSensor() const { for (auto& S : Structures) if (!S->bSam && !S->bCc) return true; return false; }
+	bool SensorUp() const { for (auto& S : Structures) if (!S->bSam && !S->bCc && S->bReady) return true; return false; }
+	// Forward base on the high ground (lane): a maxed-out army expands onto the plateau east of the stem.
+	enum class EExpand : uint8 { Off, Advance, Build, Held, Fallback };
+	EExpand Expand = EExpand::Off;
+	float ExpandT = 0;
 	// High-tech reinforcements: surprise armoury cards unlocked by maxing out the tech trees (see BSDefs::Tech).
 	TSet<FString> TechUnlocked;
 	float NukeCd = 0, VikingCd = 0;
@@ -374,11 +385,24 @@ private:
 	void BuildTerrain();                      // the lane chokepoint's ground mesh (BSTerrain heights)
 	bool StepGround(float& X, float& Y, float Mx, float My) const;
 	void UpdateStructures(float Dt);
+	// Forward base on the high ground.
+	bool ExpandReady() const;
+	bool ExpandHolds() const;
+	int32 FwdCount() const;
+	bool FwdGoal(FBSFwd& F, float X, float Y, FVector2D& Out, bool& bFinal) const;
+	void BeginExpansion();
+	void FallBack();
+	void UpdateExpansion(float Dt);
+	TSharedPtr<FBSStructure> ForwardBase() const;
+	TSharedPtr<FBSStructure> PlaceForwardBase();
+	void UpdateFwdScv(FBSScv& S, float Dt);
+	TArray<FVector2D> FwdRoute, FwdTroopers, FwdGoliath;   // the way up (BSTerrain::LedgeRoute) and the posts up there
+	FVector2D FwdPost = FVector2D::ZeroVector, FwdCc = FVector2D::ZeroVector, FwdScv = FVector2D::ZeroVector, FwdOdin = FVector2D::ZeroVector;
 	TSharedPtr<FBSTrooper> JoinSquad(const FBSInfantryDef* Def, float Hp, float X, float Y, ABSModelActor* Actor);
 	void KillTrooper(const FBSInfantryDef* Def, float X, float Y, float Yaw, ABSModelActor* Actor, bool bStim);
 	void DestroyStructure(const TSharedPtr<FBSStructure>& S);
 	FVector2D RoundBunker(float X, float Y, float Gx, float Gy) const;
-	void FireInfantry(const FBSInfantryDef* D, const FVector& Muzzle, const TSharedPtr<FBSEnemy>& Target);
+	void FireInfantry(const FBSInfantryDef* D, const FVector& Muzzle, const TSharedPtr<FBSEnemy>& Target, bool bFwd = false);   // bFwd: a trooper at the forward post
 	void LaunchGlaive(const FVector& From, const FBSTarget& To, float Dmg, int32 Bounces, const TArray<FBSTarget>& Hit, const FBSZergDef* D);
 	void AddProjectileModel(FBSProjectile& P, const TCHAR* Model, const TCHAR* Trail, float TrailScale = 1.f);
 	void MuzzleMesh(const FVector& At, float Yaw, float Delay, float Scale = 1.f);

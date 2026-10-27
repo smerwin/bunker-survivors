@@ -49,6 +49,7 @@ window.BS = window.BS || {};
       this.mechs = []; this.bc = null; this.vikingWing = []; this.nukes = [];
       this.pods = []; this.finale = null;                          // wave 100: zerg drop pods, the boss fight
       this.station = null;
+      this.fwd = { state: 'off', t: 0 };                            // forward base on the high ground (updateExpansion)
       BS.Terrain.setMode(this.mode);
       this.layout();
       this.bunker.handle = this.r.spawn('bunker', 0, 0, 0, this.bunker.yaw).setTeam(1);
@@ -68,6 +69,13 @@ window.BS = window.BS || {};
         // High-tech walkers: goliaths at the bunker's shoulders; the thors and the odin are too big to stand in the lane
         // without walling off the view, so they fire long-range from behind the bunker.
         this.mechSlots = { goliath: [[-3.9, 1.6], [3.9, 1.6], [-2.3, 2.3], [2.3, 2.3]], thor: [[-5.0, -5.8], [5.0, -5.8]], odin: [[0, -10.5]] };
+        // Forward base on the plateau east of the stem (see updateExpansion): the way up, the command center's site and
+        // the SCV's spot beside it, the Odin, goliaths over the arm, and three ranks of troopers on the cliff edge over the stem.
+        this.fwdRoute = BS.Terrain.ledgeRoute(1);
+        this.fwdPost = [8.0, 5.0]; this.fwdCc = [9.8, 2.6]; this.fwdScv = [8.3, 3.3]; this.fwdOdin = [10.8, 6.6];
+        this.fwdGoliath = [[7.4, 8.4], [8.4, 9.2], [9.3, 8.2], [8.4, 7.4]];
+        this.fwdTroopers = [];
+        for (const [x, y0, n] of [[5.6, 3.0, 5], [6.35, 3.0, 6], [7.1, 3.75, 5]]) for (let i = 0; i < n; i++) this.fwdTroopers.push([x, y0 + i * 0.75]);
       } else {
         this.tankSlots = [[-3.0, -2.6], [3.0, -2.6], [-3.0, 2.6], [3.0, 2.6]];
         this.scvIdle = [[-2.6, -2.6], [2.6, 2.6], [-2.6, 2.6], [2.6, -2.6]];
@@ -76,6 +84,7 @@ window.BS = window.BS || {};
         this.sensorSlot = [-4.2, -4.2];
         this.strikePosts = [45, 135, 225, 315].map(a => [Math.cos(a * Math.PI / 180) * 7, Math.sin(a * Math.PI / 180) * 7]);
         this.mechSlots = { goliath: [[0, 2.7], [2.7, 0], [-2.7, 0], [0, -2.7]], thor: [[-4.6, -3.6], [4.6, 3.6]], odin: [[-5.2, 3.2]] };
+        this.fwdRoute = null;                     // the arena is flat: no high ground to take
       }
       // Ranks of eight behind the bunker (the side away from the lane), stepping round the tanks, SCVs, turrets and
       // sensor tower, as deep as it takes to fit the whole squad.
@@ -228,6 +237,7 @@ window.BS = window.BS || {};
     board(i) {
       const m = this.squad[i];
       if (!m || m.dead) return false;
+      if (m.fwd) return this.toast('Holding the high ground');
       if (this.bunker.units.length >= this.bunker.slots) return this.toast('Bunker is full');
       m.boarding = !m.boarding;
       return true;
@@ -235,8 +245,8 @@ window.BS = window.BS || {};
     updateSquad(dt) {
       const hs = T().bunker.halfSize, stim = this.ab.stimUntil > this.time, Q = this.squad;
       // Keep a little elbow room so troopers converging on one spot do not stack. Anyone standing on their own spot is
-      // already spaced out and lets others through the ranks.
-      const home = m => Math.abs(m.x - m.spot[0]) + Math.abs(m.y - m.spot[1]) < 0.3;
+      // already spaced out and lets others through the ranks (on the high ground, its spot is its post there).
+      const home = m => { const s = m.fwd && !m.back ? m.fwd : m.spot; return Math.abs(m.x - s[0]) + Math.abs(m.y - s[1]) < 0.3; };
       for (let i = 0; i < Q.length; i++) for (let j = i + 1; j < Q.length; j++) {
         const p = Q[i], q = Q[j], dx = q.x - p.x, dy = q.y - p.y, d2 = dx * dx + dy * dy;
         if (d2 >= 0.49 || home(p) || home(q)) continue;
@@ -253,8 +263,9 @@ window.BS = window.BS || {};
       for (const m of Q.slice()) {
         if (m.dead) continue;
         const d = m.def, pred = e => !(d.groundOnly && e.def.flying);
+        const range = d.range + (m.fwd && BS.Terrain.onHigh(m.x, m.y) ? 1 : 0);   // the forward post on the high ground outranges the lane
         // Morale: when too many of its neighbours have just been killed, the group falls back level with the bunker.
-        if (!m.boarding && !stim && m.retreatUntil <= this.time && forward(m)) {
+        if (!m.boarding && !m.fwd && !stim && m.retreatUntil <= this.time && forward(m)) {
           const lost = this.squadDeaths.filter(k => dist(k.x, k.y, m.x, m.y) < 3.5).length;
           const near = Q.filter(o => !o.dead && dist(o.x, o.y, m.x, m.y) < 3.5);
           if (lost >= 2 && lost >= (lost + near.length) / 3) {      // a third of the group gone
@@ -262,14 +273,21 @@ window.BS = window.BS || {};
             this.toast('Squad falling back');
           }
         }
-        let gx = m.spot[0], gy = m.spot[1];
+        let gx = m.spot[0], gy = m.spot[1], g;
         if (m.boarding) { gx = (m.x < 0 ? -1 : 1) * (hs + 0.3); gy = 0.4; }
+        else if (m.fwd && !(g = this.fwdGoal(m))) { m.fwd = null; m.back = false; }        // back down in the stem: home to its spot
+        else if (m.fwd) {
+          // Expedition to the high ground (updateExpansion): the fire teams bound along the route, one covering while the
+          // other moves; at the post they hold and fire.
+          if (bothTeams && m.team !== this.boundTeam && this.enemiesInRange(m.x, m.y, range, pred).length) { gx = m.x; gy = m.y; }
+          else { gx = g[0]; gy = g[1]; }
+        }
         else if (m.retreatUntil > this.time && !stim) {
           if (!forward(m)) { gx = m.x; gy = m.y; }                                    // back on the line: hold and fire
           else if (lane) { gx = clamp(m.x, -6, 6); gx = (gx < 0 ? -1 : 1) * Math.max(Math.abs(gx), hs + 0.8); gy = 0.4; }
           else { const a = Math.atan2(m.y, m.x); gx = Math.cos(a) * 2.8; gy = Math.sin(a) * 2.8; }
         }
-        else if (this.enemiesInRange(m.x, m.y, d.range, pred).length) { gx = m.x; gy = m.y; }   // hold and fire
+        else if (this.enemiesInRange(m.x, m.y, range, pred).length) { gx = m.x; gy = m.y; }   // hold and fire
         else if (stim) {
           // Stimmed: the whole squad charges the nearest zerg until it is in range, no bounding, no falling back.
           let th = null, best = 1e9;
@@ -316,8 +334,8 @@ window.BS = window.BS || {};
         m.cd -= dt * (stim ? 1.5 : 1);
         if (m.cd <= 0) {
           let target = null;
-          if (this.focus && this.focus.hp > 0 && pred(this.focus) && dist(m.x, m.y, this.focus.x, this.focus.y) - this.focus.radius <= d.range) target = this.focus;
-          if (!target) target = this.enemiesInRange(m.x, m.y, d.range, pred)[0];
+          if (this.focus && this.focus.hp > 0 && pred(this.focus) && dist(m.x, m.y, this.focus.x, this.focus.y) - this.focus.radius <= range) target = this.focus;
+          if (!target) target = this.enemiesInRange(m.x, m.y, range, pred)[0];
           if (target) {
             m.cd += d.cd;
             m.yaw = Math.atan2(target.y - m.y, target.x - m.x);
@@ -375,9 +393,10 @@ window.BS = window.BS || {};
         if (st.state === 'building') {
           const B = T()[st.kind];
           st.t += dt; st.hp = Math.min(st.maxHp, st.hp + st.maxHp * 0.9 / B.build * dt);
-          if (st.t >= B.build) { st.state = 'ready'; st.handle.play(/^stand$/i, true); this.toast(st.kind === 'sam' ? 'Missile turret online' : 'Sensor tower online: radar active'); }
+          if (st.t >= B.build) { st.state = 'ready'; st.handle.play(/^stand$/i, true); if (st.kind !== 'cc') this.toast(st.kind === 'sam' ? 'Missile turret online' : 'Sensor tower online: radar active'); }
           continue;
         }
+        if (st.kind === 'cc') { this.minerals += T().cc.income * dt; continue; }      // the forward base mines
         if (st.kind !== 'sam') continue;
         st.cd -= dt;
         if (st.cd > 0) continue;
@@ -399,9 +418,120 @@ window.BS = window.BS || {};
       st.dead = true;
       st.handle.release();
       this.structures.splice(this.structures.indexOf(st), 1);
+      if (st.kind === 'cc') {
+        this.corpse('commandcenterDeath', st.x, st.y, BS.Terrain.height(st.x, st.y), st.yaw, 4, T().cc.scale, true);
+        BS.audio.play('explosion', { vol: 0.9 });
+        this.shake = Math.min(1, this.shake + 0.5);
+        return this.toast('Forward base destroyed');
+      }
       this.corpse(st.kind === 'sam' ? 'missileturretDeath' : 'sensortowerDeath', st.x, st.y, 0, st.yaw, 4, 1, true);
       BS.audio.play('explosion', { vol: 0.6 });
       this.toast(st.kind === 'sam' ? 'Missile turret destroyed' : 'Sensor tower destroyed: radar offline');
+    }
+
+    // ---- Forward base on the high ground ----------------------------------------------------------------
+    // Lane only. Once the army is maxed out - every tree researched, the battlecruiser on station, the Odin in position and
+    // a full squad - it expands onto the plateau east of the stem: the Odin, the goliaths and a detachment of troopers go up
+    // the stem, into the arm and up its ramp (BS.Terrain.ledgeRoute), clear the plateau, then an SCV builds a command
+    // center there. The base mines minerals, and troopers up there outrange the lane (+1) and never miss for firing
+    // uphill. If the battlecruiser or the Odin is lost, or the squad is cut down below expand.minSquad, they fall back.
+    expandReady() {
+      const odin = this.mechs.find(m => m.kind === 'odin');
+      return !!this.fwdRoute && this.treeMaxed('all') && !!this.bc && this.bc.state === 'station' && !!odin && odin.state === 'ready' && this.troopsFull();
+    }
+    expandHolds() { return !!this.bc && this.mechs.some(m => m.kind === 'odin') && this.squad.length >= T().expand.minSquad; }
+    fwdUnits() { return this.squad.filter(m => m.fwd).concat(this.mechs.filter(m => m.fwd), this.scvs.filter(s => s.fwd)); }
+    // Next point for a unit on the expedition: along the route to its post on the high ground, or back down it. Returns
+    // [x, y, atPost], or null once it is back down in the stem.
+    fwdGoal(o) {
+      const W = this.fwdRoute;
+      for (;;) {
+        if (o.back) {
+          if (o.leg <= 0) return null;
+          const p = W[o.leg - 1];
+          if (dist(o.x, o.y, p[0], p[1]) < 0.9) { o.leg--; continue; }
+          return [p[0], p[1], false];
+        }
+        if (o.leg >= W.length) return [o.fwd[0], o.fwd[1], true];
+        const p = W[o.leg];
+        if (dist(o.x, o.y, p[0], p[1]) < 0.9) { o.leg++; continue; }
+        return [p[0], p[1], false];
+      }
+    }
+    beginExpansion() {
+      // Anyone still on the way back down turns round where they are.
+      const send = (o, post) => { if (!o.fwd) o.leg = 0; o.fwd = post; o.back = false; };
+      send(this.mechs.find(m => m.kind === 'odin'), this.fwdOdin);
+      this.mechs.filter(m => m.kind === 'goliath').forEach((m, i) => send(m, this.fwdGoliath[i % this.fwdGoliath.length]));
+      const troopers = this.squad.filter(m => !m.dead && !m.boarding).sort((a, b) => (b.fwd ? 1 : 0) - (a.fwd ? 1 : 0)).slice(0, T().expand.troopers);
+      troopers.forEach((m, i) => send(m, this.fwdTroopers[i]));
+      for (const s of this.scvs) if (s.fwd) send(s, this.fwdScv);
+      this.fwd = { state: 'advance', t: 0 };
+      this.toast('Expanding to the high ground');
+    }
+    fallBack() {
+      for (const o of this.fwdUnits()) o.back = true;
+      this.fwd = { state: 'fallback', t: 0 };
+      this.toast('Falling back from the high ground');
+    }
+    updateExpansion(dt) {
+      const X = this.fwd;
+      X.t += dt;
+      if (X.state === 'off') { if (this.expandReady()) this.beginExpansion(); return; }
+      if (X.state === 'fallback') { if (!this.fwdUnits().length) this.fwd = { state: 'off', t: 0 }; return; }
+      if (!this.expandHolds()) { this.fallBack(); return; }
+      const cc = this.structures.find(s => s.kind === 'cc');
+      if (X.state === 'advance') {
+        // Taken once the Odin stands at its post and (almost) nothing on the ground contests the plateau round it.
+        const odin = this.mechs.find(m => m.kind === 'odin'), P = this.fwdPost;
+        const there = odin.fwd && !odin.back && odin.leg >= this.fwdRoute.length && dist(odin.x, odin.y, odin.fwd[0], odin.fwd[1]) < 0.5;
+        const foes = this.enemies.filter(e => e.hp > 0 && !e.def.flying && BS.Terrain.onHigh(e.x, e.y) && dist(e.x, e.y, P[0], P[1]) < T().expand.clear).length;
+        if (there && foes <= 2) {
+          X.t = 0;
+          if (cc && cc.state === 'ready') { X.state = 'held'; this.toast('Forward base established'); }
+          else { X.state = 'build'; this.toast('High ground taken'); }
+        }
+      } else if (X.state === 'build') {
+        if (cc && cc.state === 'ready') { X.state = 'held'; X.t = 0; this.toast('Forward base established'); }
+        else if (!cc && !this.scvs.some(s => s.fwd && !s.back)) {
+          // An SCV goes up to build it (the one nearest the way up).
+          const W = this.fwdRoute[0];
+          let best = null;
+          for (const s of this.scvs) if (!s.fwd && (!best || dist(s.x, s.y, W[0], W[1]) < dist(best.x, best.y, W[0], W[1]))) best = s;
+          if (best) { best.fwd = this.fwdScv; best.back = false; best.leg = 0; }
+        }
+      } else if (X.state === 'held' && !cc) { X.state = 'advance'; X.t = 0; }
+    }
+    // The builder reached the site: the command center goes up (it rises from 10% health like the turrets).
+    placeForwardBase() {
+      const D = T().cc, [x, y] = this.fwdCc;
+      const st = { kind: 'cc', x, y, hp: D.hp * 0.1, maxHp: D.hp, armor: D.armor, radius: D.radius, cd: 0, state: 'building', t: 0, dead: false, flash: 0, yaw: Math.PI / 2 };
+      st.handle = this.r.spawn('commandcenter', x, y, BS.Terrain.height(x, y), st.yaw).setTeam(1).setScale(D.scale);
+      st.handle.play(/^birth/i, false);
+      this.structures.push(st);
+      this.toast('Building a forward command center');
+      return st;
+    }
+    // The SCV sent up to the high ground: walks the route, builds the command center, then stays to repair it.
+    updateFwdScv(s, dt) {
+      const D = T().scv, g = this.fwdGoal(s);
+      if (!g) { s.fwd = null; s.back = false; return; }           // back down: it rejoins the repair crew
+      const far = dist(s.x, s.y, g[0], g[1]);
+      if (far > 0.25) {
+        const sp = Math.min(far, D.speed * dt), ox = s.x, oy = s.y;
+        this.stepGround(s, (g[0] - s.x) / far * sp, (g[1] - s.y) / far * sp);
+        if (s.x !== ox || s.y !== oy) s.yaw = Math.atan2(s.y - oy, s.x - ox);
+        if (s.anim !== 'walk') { s.anim = 'walk'; s.handle.play(/^walk/i, true, 1.4); }
+      } else {
+        let cc = this.structures.find(st => st.kind === 'cc');
+        if (!cc && this.fwd.state === 'build') cc = this.placeForwardBase();
+        if (cc && (cc.state === 'building' || cc.hp < cc.maxHp - 1)) {
+          s.yaw = Math.atan2(cc.y - s.y, cc.x - s.x);
+          if (s.anim !== 'work') { s.anim = 'work'; s.handle.play(/^work/i, true); BS.audio.play('scvRepair', { vol: 0.25, gap: 1.5 }); }
+          if (cc.state === 'ready') { const amount = Math.min(D.repairRate * dt, cc.maxHp - cc.hp, this.minerals / 0.3); if (amount > 0) { cc.hp += amount; this.minerals -= amount * 0.3; } }
+        } else if (s.anim !== 'stand') { s.anim = 'stand'; s.handle.play(/^stand$/i, true); }
+      }
+      s.handle.setPos(s.x, s.y, BS.Terrain.height(s.x, s.y)).setYaw(s.yaw);
     }
 
     // ---- Purchases --------------------------------------------------------------------------------
@@ -522,6 +652,23 @@ window.BS = window.BS || {};
       for (const m of this.mechs.slice()) {
         if (m.dead) continue;
         const D = m.def;
+        let moving = false;
+        if (m.fwd) {
+          // On the expedition to the high ground (updateExpansion): walk the route, guns firing on the move.
+          const g = this.fwdGoal(m);
+          if (!g) { m.fwd = null; m.back = false; m.state = 'walking'; }        // back down in the stem: on to its post
+          else {
+            m.state = 'ready';                                                  // (even if a viper yanked it about)
+            const far = dist(m.x, m.y, g[0], g[1]);
+            if (far > 0.15) {
+              const [wx, wy] = this.roundBunker(m, g[0], g[1]), dx = wx - m.x, dy = wy - m.y, dd = Math.hypot(dx, dy) || 1, sp = Math.min(dd, D.speed * dt);
+              this.stepGround(m, dx / dd * sp, dy / dd * sp);
+              m.yaw += clamp(angDelta(m.yaw, Math.atan2(dy, dx)), -3 * dt, 3 * dt);
+              if (m.anim !== 'walk') { m.anim = 'walk'; m.handle.play(/^walk/i, true); }
+              moving = true;
+            } else if (m.anim === 'walk') { m.anim = 'stand'; m.handle.play(/^stand$/i, true); }
+          }
+        }
         if (m.state === 'walking') {
           const [gx, gy] = this.roundBunker(m, m.slot[0], m.slot[1]);
           const far = Math.hypot(m.slot[0] - m.x, m.slot[1] - m.y), dx = gx - m.x, dy = gy - m.y, dd = Math.hypot(dx, dy) || 1;
@@ -546,7 +693,7 @@ window.BS = window.BS || {};
           m.aim = Math.atan2(target.y - m.y, target.x - m.x);
           this.mechFire(m, target, air, (air ? D.aDmg : D.gDmg) + bonus);
         }
-        m.yaw += clamp(angDelta(m.yaw, m.aim), -4 * dt, 4 * dt);
+        if (!moving) m.yaw += clamp(angDelta(m.yaw, m.aim), -4 * dt, 4 * dt);
         m.handle.setPos(m.x, m.y, BS.Terrain.height(m.x, m.y)).setYaw(m.yaw);
       }
     }
@@ -1589,6 +1736,7 @@ window.BS = window.BS || {};
       this.updateScvs(dt);
       this.updateSquad(dt);
       this.updateStructures(dt);
+      this.updateExpansion(dt);
       this.updateBanshees(dt);
       this.updateMechs(dt);
       this.updateBc(dt);
@@ -1628,6 +1776,10 @@ window.BS = window.BS || {};
           let best = null, bd = 1e9;
           for (const t of d.antiAir ? this.airTgs : targets) {
             if (t.kind === 'scv' && Math.random() < 0.5) continue;
+            // Down in the lane, walkers cannot reach anything up on the high ground (the forward base) unless it is in reach
+            // already; they would only pile up under the cliff.
+            const up = t.obj.fwd || (t.kind === 'structure' && t.obj.kind === 'cc');
+            if (up && !d.flying && !d.hops && !d.antiAir && BS.Terrain.onHigh(t.x, t.y) && !BS.Terrain.onHigh(e.x, e.y) && dist(e.x, e.y, t.x, t.y) - t.radius - e.radius > d.range) continue;
             const dd = dist(e.x, e.y, t.x, t.y) - t.radius - (d.prefer && t.kind === d.prefer ? 12 : 0) - (d.spell === 'broodling' ? 4 * (BROOD_PRIORITY[t.kind] || 0) : 0);
             if (dd < bd) { bd = dd; best = t; }
           }
@@ -1782,7 +1934,7 @@ window.BS = window.BS || {};
     // One shot from a trooper at a muzzle position (a bunker slit, or the rifle of a soldier standing outside).
     fireInfantry(u, sx, sy, sz, target) {
       const d = u.def, pred = e => !(d.groundOnly && e.def.flying);
-      const miss = BS.Terrain.onHigh(target.x, target.y) && Math.random() < 0.3;   // firing up at the high ground
+      const miss = BS.Terrain.onHigh(target.x, target.y) && !(u.fwd && BS.Terrain.onHigh(sx, sy)) && Math.random() < 0.3;   // firing up at the high ground
       const dmg = miss ? 0 : d.dmg + this.up.weapons;
       const hx = target.x, hy = target.y, hz = target.z + target.def.height * 0.5, ang = Math.atan2(hy - sy, hx - sx);
       if (u.type === 'marine') {
@@ -1885,10 +2037,12 @@ window.BS = window.BS || {};
       const jobs = [];
       if (!b.dead && b.hp < b.maxHp - 1) jobs.push({ x: 0, y: 0, r: T().bunker.halfSize, cost: 0.25, obj: b, need: frac - 0.2 });
       if (frac > 0.4) for (const t of this.tanks) if (t.state === 'ready' && !t.dead && t.hp < t.maxHp - 1) jobs.push({ x: t.x, y: t.y, r: t.radius, cost: 0.4, obj: t, need: t.hp / t.maxHp });
-      if (frac > 0.4) for (const st of this.structures) if (st.state === 'ready' && !st.dead && st.hp < st.maxHp - 1) jobs.push({ x: st.x, y: st.y, r: st.radius, cost: 0.3, obj: st, need: st.hp / st.maxHp });
-      if (frac > 0.4) for (const m of this.mechs) if (m.state === 'ready' && !m.dead && m.hp < m.maxHp - 1) jobs.push({ x: m.x, y: m.y, r: m.radius, cost: 0.4, obj: m, need: m.hp / m.maxHp });
+      // (Nothing up on the high ground: the SCV posted at the forward base looks after that.)
+      if (frac > 0.4) for (const st of this.structures) if (st.state === 'ready' && !st.dead && st.kind !== 'cc' && st.hp < st.maxHp - 1) jobs.push({ x: st.x, y: st.y, r: st.radius, cost: 0.3, obj: st, need: st.hp / st.maxHp });
+      if (frac > 0.4) for (const m of this.mechs) if (m.state === 'ready' && !m.dead && !m.fwd && m.hp < m.maxHp - 1) jobs.push({ x: m.x, y: m.y, r: m.radius, cost: 0.4, obj: m, need: m.hp / m.maxHp });
       jobs.sort((a, c) => a.need - c.need);
-      this.scvs.forEach((s, i) => {
+      for (const s of this.scvs) if (s.fwd) this.updateFwdScv(s, dt);
+      this.scvs.filter(s => !s.fwd).forEach((s, i) => {
         const job = jobs.length ? jobs[i % jobs.length] : null;
         let gx, gy, stop;
         if (job) { const a = Math.atan2(s.idle[1] - job.y, s.idle[0] - job.x); gx = job.x + Math.cos(a) * (job.r + 0.6); gy = job.y + Math.sin(a) * (job.r + 0.6); stop = 0.25; }

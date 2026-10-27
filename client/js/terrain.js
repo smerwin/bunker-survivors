@@ -79,5 +79,11 @@ window.BS = window.BS || {};
       } else pts.push([1.6 * s + (Math.random() - 0.5) * 1.5, 9]);
       return pts;
     },
+    // The way from the bunker up onto the side plateau east (s = 1) or west (-1) of the stem: up the stem to the fork,
+    // into the arm, then up its ramp (walked in reverse to come back down).
+    ledgeRoute(s) {
+      const r = RAMPS[s < 0 ? 0 : 1];
+      return [[2.2 * s, 5.5], [2.9 * s, 10.4], [r.a[0] - 0.4 * s, r.a[1] + 0.6], [r.b[0] + 0.3 * s, r.b[1] - 0.4]];
+    },
   };
 })(window.BS);

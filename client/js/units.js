@@ -73,6 +73,9 @@ window.BS = window.BS || {};
     missileturretDeath: 'assets/buildings/terran/missileturretdeath/missileturretdeath.m3',
     sensortower: 'assets/buildings/terran/sensortower/sensortower.m3',
     sensortowerDeath: 'assets/buildings/terran/sensortowerdeath/sensortowerdeath.m3',
+    // Forward base on the high ground (a maxed-out army expands there).
+    commandcenter: 'assets/buildings/terran/commandcenter/commandcenter.m3',
+    commandcenterDeath: 'assets/buildings/terran/commandcenterdeath/commandcenterdeath.m3',
     // High-tech reinforcements (unlocked by maxing the tech trees).
     goliath: U + 'terran/goliath/goliath.m3',
     goliathDeath: U + 'terran/goliathdeath/goliathdeath.m3',
@@ -332,6 +335,10 @@ window.BS = window.BS || {};
     sam: { hp: 250, armor: 0, dmg: 12, shots: 2, cd: 0.86, range: 7, radius: 1.0, cost: 100, max: 3, build: 3 },
     // Sensor tower: the radar only works while one stands.
     sensor: { hp: 200, armor: 0, radius: 0.8, cost: 125, build: 3 },
+    // Forward base (lane): a maxed-out army takes the plateau east of the stem and an SCV builds a command center there,
+    // which mines `income` minerals/s. `troopers` go up with the Odin and the goliaths; below `minSquad` they fall back.
+    cc: { hp: 1500, armor: 1, radius: 1.5, scale: 0.6, build: 12, income: 3 },
+    expand: { troopers: 16, minSquad: 24, clear: 7 },
     railsRange: 2,
     // High-tech reinforcements. g* = anti-ground weapon, a* = anti-air; shots per volley; walkers walk in from the south.
     goliath: { hp: 150, armor: 1, radius: 0.7, cost: 250, max: 4, speed: 3, gDmg: 12, gShots: 2, gCd: 0.9, gRange: 6, aDmg: 10, aShots: 2, aCd: 1.5, aRange: 8 },
