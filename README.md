@@ -38,8 +38,8 @@ Both play the same game: they share unit stats, waves, terrain and rules, and fe
 
 ### Hosting the web edition
 
-It is live at **https://smerwin.github.io/bunker-survivors/**, published by `.github/workflows/pages.yml` on every
-push to `main`. The site is the `client/` folder as static files plus a built worker (`npm run build:web` writes
+It is live at **https://smerwin.github.io/bunker-survivors/**; `npm run deploy:web` publishes the current checkout
+there (it commits the built site to the `gh-pages` branch, which GitHub Pages serves). The site is the `client/` folder as static files plus a built worker (`npm run build:web` writes
 `client/gen/sc2-worker.js`), so any HTTPS static host works, in a subfolder or at the root. It needs HTTPS (service
 workers), and it fetches the M3 structure description from the m3addon repository on GitHub at runtime. No
 StarCraft II files are ever part of the site.

@@ -16,7 +16,8 @@
     "start": "node server/index.js",
     "postinstall": "node scripts/patch-viewer.js",
     "patch": "node scripts/patch-viewer.js",
-    "build:web": "node scripts/build-web.js"
+    "build:web": "node scripts/build-web.js",
+    "deploy:web": "node scripts/deploy-pages.js"
   },
   "dependencies": {
     "gl-matrix": "^3.3.0",
