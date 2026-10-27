@@ -1,23 +1,22 @@
 // SC2 asset access: opens the local StarCraft II CASC storage and resolves file names
 // (from the MNDX root) to decoded file contents. Nothing is extracted or copied to disk.
 'use strict';
-const fs = require('fs');
-const path = require('path');
 const { CascStorage } = require('./casc');
 const { parseMndxRoot } = require('./mndx');
 
 // Where Battle.net puts StarCraft II by default on Windows and macOS, plus a few common custom spots.
 // Anything else: set SC2_DIR to the folder that contains .build.info and SC2Data.
-const DEFAULT_INSTALL_CANDIDATES = [
+const defaultCandidates = (path, os) => [
   'C:/Program Files (x86)/StarCraft II',
   'C:/Program Files/StarCraft II',
   ...['C', 'D', 'E', 'F'].flatMap(d => [d + ':/StarCraft II', d + ':/Games/StarCraft II', d + ':/Battle.net/StarCraft II']),
   '/Applications/StarCraft II',
-  path.join(require('os').homedir(), 'Applications', 'StarCraft II'),
+  path.join(os.homedir(), 'Applications', 'StarCraft II'),
 ];
 
 function findInstall(explicit) {
-  const candidates = explicit ? [explicit] : DEFAULT_INSTALL_CANDIDATES;
+  const fs = require('fs'), path = require('path');
+  const candidates = explicit ? [explicit] : defaultCandidates(path, require('os'));
   for (const c of candidates) {
     if (fs.existsSync(path.join(c, '.build.info')) && fs.existsSync(path.join(c, 'SC2Data', 'data'))) return c;
   }
@@ -25,6 +24,7 @@ function findInstall(explicit) {
 }
 
 class SC2Assets {
+  // installDir: the install folder on disk, or a source over it (see casc.js).
   constructor(installDir) {
     const t0 = Date.now();
     this.installDir = installDir;
@@ -108,7 +108,7 @@ if (require.main === module) {
   if (args[0] === 'read') {
     const buf = sc2.read(args[1]);
     console.log(args[1], buf ? buf.length + ' bytes, magic ' + buf.toString('latin1', 0, 4) : 'NOT FOUND');
-    if (buf && args[2]) { fs.writeFileSync(args[2], buf); console.log('wrote', args[2]); }
+    if (buf && args[2]) { require('fs').writeFileSync(args[2], buf); console.log('wrote', args[2]); }
   } else {
     for (const q of args) {
       const re = new RegExp(q, 'i');

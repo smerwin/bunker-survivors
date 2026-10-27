@@ -15,11 +15,16 @@
   "scripts": {
     "start": "node server/index.js",
     "postinstall": "node scripts/patch-viewer.js",
-    "patch": "node scripts/patch-viewer.js"
+    "patch": "node scripts/patch-viewer.js",
+    "build:web": "node scripts/build-web.js"
   },
   "dependencies": {
     "gl-matrix": "^3.3.0",
     "mdx-m3-viewer": "^5.12.0",
     "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "buffer": "^6.0.3",
+    "esbuild": "^0.28.2"
   }
 }

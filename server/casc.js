@@ -1,21 +1,34 @@
-// Minimal pure-Node reader for a local Blizzard CASC storage (StarCraft II).
+// Minimal pure-JS reader for a local Blizzard CASC storage (StarCraft II).
 // Reads .build.info -> build config -> encoding file, then resolves content keys
 // to encoding keys, locates them via the .idx files and BLTE-decodes from data.XXX.
+// The install is reached through a "source" (paths relative to the install folder, '/'-separated), so the same code
+// runs on the Node server (files on disk) and in the browser (the File objects of the folder the player picked).
 'use strict';
-const fs = require('fs');
-const path = require('path');
 const zlib = require('zlib');
 
-function hex(buf) { return Buffer.from(buf).toString('hex'); }
+// A source over the install folder on disk.
+function fsSource(root) {
+  const fs = require('fs'), path = require('path'), fds = new Map();
+  const full = rel => path.join(root, ...rel.split('/'));
+  return {
+    exists: rel => fs.existsSync(full(rel)),
+    list: rel => fs.readdirSync(full(rel)),
+    read: rel => fs.readFileSync(full(rel)),
+    readRange(rel, offset, size) {
+      if (!fds.has(rel)) fds.set(rel, fs.openSync(full(rel), 'r'));
+      const buf = Buffer.alloc(size);
+      fs.readSync(fds.get(rel), buf, 0, size, offset);
+      return buf;
+    },
+  };
+}
 
 class CascStorage {
   constructor(root) {
-    this.root = root;               // e.g. C:\Program Files (x86)\StarCraft II
-    this.dataDir = path.join(root, 'SC2Data', 'data');
-    this.configDir = path.join(root, 'SC2Data', 'config');
+    this.root = root;               // e.g. C:\Program Files (x86)\StarCraft II, or a source object
+    this.src = typeof root === 'string' ? fsSource(root) : root;
     this.index = new Map();         // ekey[0..9) hex -> {archive, offset, size}
     this.encoding = new Map();      // ckey hex -> ekey hex
-    this.fds = new Map();
     this.loadBuildInfo();
     this.loadIndices();
     this.loadBuildConfig();
@@ -23,7 +36,10 @@ class CascStorage {
   }
 
   loadBuildInfo() {
-    const txt = fs.readFileSync(path.join(this.root, '.build.info'), 'utf8');
+    // Only the SC2Data folder picked (no .build.info beside it): the build config is found from the index instead.
+    this.buildKey = null; this.version = '?';
+    if (!this.src.exists('.build.info')) return;
+    const txt = this.src.read('.build.info').toString('utf8');
     const lines = txt.split(/\r?\n/).filter(Boolean);
     const cols = lines[0].split('|').map(c => c.split('!')[0]);
     const rows = lines.slice(1).map(l => Object.fromEntries(l.split('|').map((v, i) => [cols[i], v])));
@@ -35,14 +51,14 @@ class CascStorage {
 
   loadIndices() {
     // One .idx per bucket, several versions may coexist; use the newest per bucket.
-    const files = fs.readdirSync(this.dataDir).filter(f => f.endsWith('.idx'));
+    const files = this.src.list('SC2Data/data').filter(f => f.endsWith('.idx'));
     const best = new Map();
     for (const f of files) {
       const bucket = f.slice(0, 2), ver = parseInt(f.slice(2, 10), 16);
       if (!best.has(bucket) || best.get(bucket).ver < ver) best.set(bucket, { f, ver });
     }
     for (const { f } of best.values()) {
-      const buf = fs.readFileSync(path.join(this.dataDir, f));
+      const buf = this.src.read('SC2Data/data/' + f);
       const headerSize = buf.readUInt32LE(0);
       const version = buf.readUInt16LE(8);
       if (version !== 7) throw new Error(`unexpected idx version ${version} in ${f}`);
@@ -65,32 +81,39 @@ class CascStorage {
   }
 
   loadBuildConfig() {
-    const k = this.buildKey;
-    const p = path.join(this.configDir, k.slice(0, 2), k.slice(2, 4), k);
-    const cfg = {};
-    for (const line of fs.readFileSync(p, 'utf8').split(/\r?\n/)) {
-      const m = line.match(/^([\w-]+)\s*=\s*(.*)$/);
-      if (m) cfg[m[1]] = m[2].trim();
+    const conf = k => 'SC2Data/config/' + k.slice(0, 2) + '/' + k.slice(2, 4) + '/' + k;
+    const parse = rel => {
+      const cfg = {};
+      for (const line of this.src.read(rel).toString('utf8').split(/\r?\n/)) {
+        const m = line.match(/^([\w-]+)\s*=\s*(.*)$/);
+        if (m) cfg[m[1]] = m[2].trim();
+      }
+      return cfg;
+    };
+    let cfg = null;
+    if (this.buildKey) cfg = parse(conf(this.buildKey));
+    else {
+      // The build config whose encoding file is actually in this storage.
+      const ls = rel => { try { return this.src.list(rel); } catch (e) { return []; } };
+      for (const a of ls('SC2Data/config')) for (const b of ls('SC2Data/config/' + a)) for (const k of ls('SC2Data/config/' + a + '/' + b)) {
+        if (cfg) break;
+        let c; try { c = parse(conf(k)); } catch (e) { continue; }
+        if (c.root && c.encoding && this.index.has((c.encoding.split(' ')[1] || '').slice(0, 18))) {
+          cfg = c; this.buildKey = k; this.version = (c['build-name'] || '?').replace(/^B(\d+).*/, '$1');
+        }
+      }
+      if (!cfg) throw new Error('no build config found under SC2Data/config');
     }
     this.buildConfig = cfg;
     this.rootCKey = cfg.root.split(' ')[0];
     this.encodingEKey = cfg.encoding.split(' ')[1];
   }
 
-  fd(archive) {
-    if (!this.fds.has(archive)) {
-      const name = path.join(this.dataDir, 'data.' + String(archive).padStart(3, '0'));
-      this.fds.set(archive, fs.openSync(name, 'r'));
-    }
-    return this.fds.get(archive);
-  }
-
   // Read and decode a file by encoding key (full 16-byte hex or 9-byte prefix).
   readByEKey(ekeyHex) {
     const entry = this.index.get(ekeyHex.slice(0, 18));
     if (!entry) return null;
-    const raw = Buffer.alloc(entry.size);
-    fs.readSync(this.fd(entry.archive), raw, 0, entry.size, entry.offset);
+    const raw = this.src.readRange('SC2Data/data/data.' + String(entry.archive).padStart(3, '0'), entry.offset, entry.size);
     // 30-byte archive entry header: ekey reversed[16], size[4], flags[2], checksums[8]
     return decodeBLTE(raw.subarray(30));
   }
@@ -153,7 +176,7 @@ function decodeBLTE(buf) {
   return Buffer.concat(out);
 }
 
-module.exports = { CascStorage, decodeBLTE };
+module.exports = { CascStorage, decodeBLTE, fsSource };
 
 if (require.main === module) {
   const t0 = Date.now();
@@ -161,5 +184,4 @@ if (require.main === module) {
   console.log('version', st.version, 'region', st.region, 'index entries', st.index.size, 'encoding entries', st.encoding.size, (Date.now() - t0) + 'ms');
   const root = st.readByCKey(st.rootCKey);
   console.log('root size', root && root.length, 'magic', root && root.toString('latin1', 0, 4), 'head', root && root.subarray(0, 64).toString('hex'));
-  fs.writeFileSync(path.join(process.env.TEMP || '.', 'sc2root.bin'), root);
 }

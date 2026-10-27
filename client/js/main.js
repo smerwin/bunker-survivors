@@ -13,12 +13,16 @@ window.BS = window.BS || {};
   const isPortrait = () => window.innerHeight > window.innerWidth;
 
   async function boot() {
+    // The companion server, or (web edition) the player's own StarCraft II folder; see link.js. First, so that the
+    // renderer's own textures (cliffs, creep) already come through it.
+    let st = null;
+    try {
+      st = await BS.linkSC2();
+      $('status').textContent = 'STARCRAFT II ' + st.sc2Version + ' LINKED' + (st.hostname ? '  ' + st.hostname.toUpperCase() : '');
+    } catch (e) { $('status').textContent = String(e.message || e).toUpperCase(); }
+    $('relink').onclick = () => BS.relinkSC2().then(() => $('relink').classList.add('hidden'));
     renderer = new BS.Renderer($('gl'), $('fx'), { maxDpr: touch ? 1.5 : 2, animEvery: touch ? 2 : 1 });
     window.renderer = renderer;              // for poking at from the browser console
-    try {
-      const st = await fetch('/api/status').then(r => r.json());
-      $('status').textContent = 'STARCRAFT II ' + st.sc2Version + ' LINKED  ' + st.hostname.toUpperCase();
-    } catch (e) { $('status').textContent = 'COMPANION SERVER NOT REACHABLE'; }
     try {
       const bl = localStorage.getItem('bs.best.lane') || 0, ba = localStorage.getItem('bs.best.arena') || 0;
       $('best').textContent = 'BEST  LANE ' + bl + '   ARENA ' + ba;
@@ -28,10 +32,29 @@ window.BS = window.BS || {};
     setupInput();
     stageAttract();
     renderer.fx.preload(BS.CORE_FX);
-    renderer.preload(BS.CORE_MODELS, (d, n) => { $('progress').textContent = 'LOADING SC2 ART ' + d + ' / ' + n; }).then(() => { $('progress').textContent = ''; });
+    renderer.preload(BS.CORE_MODELS, (d, n) => { $('progress').textContent = 'LOADING SC2 ART ' + d + ' / ' + n; }).then(() => {
+      $('progress').textContent = '';
+      if (st && st.mode === 'local') cacheAllArt();
+    });
     requestAnimationFrame(loop);
     const m = new URLSearchParams(location.search).get('mode');
     if (m === 'lane' || m === 'arena') start(m);
+  }
+
+  // Web edition, first visit with the folder linked: read every model, effect, sound and icon the game can use into the
+  // browser's cache now, so later visits play without the folder.
+  async function cacheAllArt() {
+    const keys = Object.keys(BS.MODELS).concat(Object.keys(BS.EXTRA_MODELS || {}));
+    const icons = new Set();
+    (function scan(o) { if (o && typeof o === 'object') for (const [k, v] of Object.entries(o)) { if (k === 'icon' && typeof v === 'string') icons.add(v); else scan(v); } })(BS);
+    let done = 0;
+    const total = keys.length + icons.size + 1;
+    const tick = () => { done++; $('progress').textContent = done < total ? 'CACHING SC2 ART ' + Math.round(done / total * 100) + '%' : ''; };
+    for (const k of keys) { try { await renderer.ensureModel(k); } catch (e) { /* logged */ } tick(); }
+    await Promise.all([...icons].map(i => fetch('/icon/' + i + '.png').catch(() => null).then(tick)));
+    renderer.fx.preload(Object.keys(BS.fxList()));
+    BS.audio.preload();
+    tick();
   }
 
   // A dug-in position mid-fight behind the start screen, the camera slowly orbiting.

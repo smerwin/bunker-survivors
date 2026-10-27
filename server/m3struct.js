@@ -37,7 +37,12 @@ async function ensureStructures() {
   return XML_PATH;
 }
 
+// The browser edition fetches the XML itself and hands it over here (it has no disk to keep it on).
+let xmlText = null;
+function setStructuresXml(text) { xmlText = text; }
+
 function loadXml() {
+  if (xmlText) return xmlText;
   if (!fs.existsSync(XML_PATH)) throw new Error('M3 structure description missing: call ensureStructures() first (' + XML_PATH + ')');
   return fs.readFileSync(XML_PATH, 'utf8');
 }
@@ -162,4 +167,4 @@ class M3File {
   str(ref) { return this.deref(ref)[0] || ''; }
 }
 
-module.exports = { M3Layout, M3File, ensureStructures };
+module.exports = { M3Layout, M3File, ensureStructures, setStructuresXml, XML_URL };

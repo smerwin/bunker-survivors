@@ -55,8 +55,19 @@
       <button class="mode glass" data-mode="lane"><img src="/icon/btn-unit-terran-marine.png" alt=""><span><b>LANE DEFENCE</b><small>Hold the lane as the Swarm pours down from the north.</small></span><em id="tagLane"></em></button>
       <button class="mode glass arena" data-mode="arena"><img src="/icon/btn-unit-zerg-ultralisk.png" alt=""><span><b>360 ARENA</b><small>Waves from every side. Bigger, faster, deadlier.</small></span><em id="tagArena"></em></button>
     </div>
-    <div class="foot"><p id="best"></p><p id="status">CONNECTING TO STARCRAFT II...</p><p id="progress"></p></div>
+    <div class="foot"><p id="best"></p><p id="status">CONNECTING TO STARCRAFT II...</p><p id="progress"></p><button id="relink" class="hidden">LINK STARCRAFT II FOLDER AGAIN</button></div>
   </div>
+
+  <div id="link" class="modal hidden"><div class="card glass">
+    <h2>LINK STARCRAFT II</h2>
+    <p>Bunker Survivors draws every unit, effect and sound from your own StarCraft II install. Point it at the folder once: the files are read right here in your browser and never leave this computer.</p>
+    <div class="path"><code id="linkPath"></code><button id="linkCopy">COPY</button></div>
+    <p id="linkHint" class="hint"></p>
+    <div class="btns"><button id="linkPick" class="primary">CHOOSE STARCRAFT II FOLDER</button></div>
+    <p class="hint">or drag the StarCraft II folder onto this card</p>
+    <p id="linkBusy" class="amber"></p><p id="linkErr" class="err"></p>
+    <input id="linkInput" type="file" webkitdirectory directory hidden>
+  </div></div>
 </div>
 <script src="lib/viewer.min.js"></script>
 <script src="js/units.js"></script>
@@ -66,6 +77,7 @@
 <script src="js/render.js"></script>
 <script src="js/game.js"></script>
 <script src="js/hud.js"></script>
+<script src="js/link.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>

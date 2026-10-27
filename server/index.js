@@ -12,17 +12,11 @@ const zlib = require('zlib');
 const { SC2Assets, findInstall } = require('./sc2');
 const { loadGameData } = require('./gamedata');
 const { ensureStructures } = require('./m3struct');
+const { assetRoutes, MIME, BadRequest, decodePath } = require('./routes');
 
 const PORT = parseInt(process.env.PORT || '8642', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 const CLIENT_DIR = path.join(__dirname, '..', 'client');
-
-const MIME = {
-  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon',
-  '.m3': 'application/octet-stream', '.dds': 'application/octet-stream', '.ogg': 'audio/ogg', '.wav': 'audio/wav',
-  '.mp3': 'audio/mpeg', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.webmanifest': 'application/manifest+json',
-};
 
 function lanAddresses() {
   const out = [];
@@ -73,20 +67,13 @@ async function main() {
     const made = make();
     return made ? cachePut(key, made) : made;      // a missing file (null) is not cached
   }
-  function readCached(full) {
-    return cached(full, () => sc2.storage.readByCKey(sc2.files.get(full).ckey));
-  }
 
-  // A request path is a client error, not a crash, when it is not valid percent-encoding.
-  class BadRequest extends Error {}
-  function decodePath(reqPath) {
-    try { return decodeURIComponent(reqPath); } catch (e) { throw new BadRequest('bad URL encoding'); }
-  }
   function resolveAsset(reqPath) {
     return sc2.resolve(decodePath(reqPath));
   }
 
   const fxList = loadGameData().fxList();
+  const assets = assetRoutes(sc2, fxList, cached);
   const ips = lanAddresses();
   const hostname = os.hostname().toLowerCase();
   // When bound to one address (e.g. a Tailscale IP), only that address is reachable, so advertise just it.
@@ -110,18 +97,10 @@ async function main() {
       return send(200, type, gz, Object.assign({ 'Content-Encoding': 'gzip', 'Vary': 'Accept-Encoding' }, extra || {}));
     };
     try {
-      if (u.pathname.startsWith('/asset/')) {
-        const full = resolveAsset(u.pathname.slice(7));
-        if (!full) return send(404, 'text/plain', 'asset not found: ' + u.pathname.slice(7));
-        let buf = readCached(full);
-        if (!buf) return send(404, 'text/plain', 'asset data missing: ' + full);
-        if (full.endsWith('.wav')) {
-          // Many SC2 wavs are IMA ADPCM, which browsers cannot decode: convert to PCM once.
-          buf = cached('pcm:' + full, () => { const adpcm = require('./adpcm'); return adpcm.isAdpcm(buf) ? adpcm.decodeImaAdpcm(buf) : buf; });
-        }
-        const type = MIME[path.extname(full)] || 'application/octet-stream';
-        const extra = { 'Cache-Control': 'public, max-age=86400', 'X-SC2-Name': full };
-        return /\.(m3|dds)$/i.test(full) ? sendGz(full, type, buf, extra) : send(200, type, buf, extra);
+      const r = assets(u.pathname);
+      if (r) {
+        const extra = Object.assign(r.cache ? { 'Cache-Control': r.cache } : {}, r.name ? { 'X-SC2-Name': r.name } : {});
+        return r.gzip && r.status === 200 ? sendGz(r.key, r.type, r.body, extra) : send(r.status, r.type, r.body, extra);
       }
       if (u.pathname.startsWith('/gltf/')) {
         // /gltf/assets/units/zerg/zergling/zergling.glb -> converted from the matching .m3
@@ -130,42 +109,6 @@ async function main() {
         if (!full) return send(404, 'text/plain', 'model not found: ' + rel);
         const glb = cached('glb:' + full, () => require('./m3gltf').convertM3(sc2, full).glb);
         return send(200, 'model/gltf-binary', glb, { 'Cache-Control': 'no-cache' });
-      }
-      if (u.pathname.startsWith('/icon/')) {
-        // /icon/btn-unit-terran-marine.png -> assets/textures/btn-unit-terran-marine.dds decoded to PNG
-        const base = u.pathname.slice(6).replace(/\.png$/i, '');
-        const full = resolveAsset('assets/textures/' + base + '.dds');
-        if (!full) return send(404, 'text/plain', 'icon not found');
-        const png = cached('png:' + full, () => require('./dds').ddsToPng(readCached(full)));
-        return send(200, 'image/png', png, { 'Cache-Control': 'public, max-age=86400' });
-      }
-      if (u.pathname.startsWith('/fx/')) {
-        // /fx/<key>.json -> the SC2 particle effect's emitters, extracted from the M3 (see server/m3fx.js).
-        const key = decodePath(u.pathname.slice(4)).replace(/\.json$/, '');
-        const def = fxList[key];
-        if (!def) return send(404, 'text/plain', 'no such effect: ' + key);
-        const json = cached('fx:' + key, () => {
-          const fx = require('./m3fx').extractFxVariants(sc2, def[0], def[1]);
-          fx.loop = !!def[2];
-          return Buffer.from(JSON.stringify(fx));
-        });
-        return sendGz('fx:' + key, 'application/json', json, { 'Cache-Control': 'public, max-age=3600' });
-      }
-      if (u.pathname.startsWith('/fxtex/')) {
-        // /fxtex/assets/textures/glow_yellow1.png -> that SC2 texture decoded to PNG.
-        const rel = decodePath(u.pathname.slice(7)).replace(/\.png$/i, '.dds');
-        const full = resolveAsset(rel);
-        if (!full) return send(404, 'text/plain', 'texture not found: ' + rel);
-        const png = cached('png:' + full, () => require('./dds').ddsToPng(readCached(full)));
-        return send(200, 'image/png', png, { 'Cache-Control': 'public, max-age=86400' });
-      }
-      if (u.pathname.startsWith('/font/')) {
-        // /font/eurostile-bol.otf -> StarCraft II's own UI fonts from the install.
-        const name = path.basename(u.pathname);
-        if (!/^eurostile[\w-]*\.otf$/.test(name)) return send(404, 'text/plain', 'font not found');
-        const full = resolveAsset('mods/core.sc2mod/base.sc2data/ui/fonts/' + name);
-        if (!full) return send(404, 'text/plain', 'font not found');
-        return sendGz(full, 'font/otf', readCached(full), { 'Cache-Control': 'public, max-age=86400' });
       }
       if (u.pathname === '/api/find') {
         const q = (u.searchParams.get('q') || '').toLowerCase();

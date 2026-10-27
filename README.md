@@ -26,7 +26,24 @@ Both play the same game: they share unit stats, waves, terrain and rules, and fe
 | **Bunker view**: 360 degrees from inside the bunker (tap the bunker on the squad card) | <img src="docs/media/browser-bunker-view.gif" width="260" alt="Browser: bunker view"> | <img src="docs/media/unreal-bunker-view.gif" width="260" alt="Unreal: bunker view"> |
 | **Arena** (desktop, landscape): zerg from every side | <img src="docs/media/browser-arena.gif" width="360" alt="Browser: arena"> | <img src="docs/media/unreal-arena.gif" width="360" alt="Unreal: arena"> |
 
-## Quick start: browser version
+## Two ways to play the browser version
+
+- **On the web, on any computer with StarCraft II installed.** Open the game's page and point it at your StarCraft II
+  folder once (the card shows the usual path for Windows or macOS with a copy button; you can also drag the folder
+  onto it). Your browser reads the game's files in place: nothing is uploaded or copied anywhere else. The art the
+  game uses is kept in the browser's cache, so later visits start without asking again. Works in current Chrome, Edge,
+  Firefox and Safari.
+- **From this repository, also on your phone.** Run the companion server below on the computer with StarCraft II and
+  open it from your phone on the same network.
+
+### Hosting the web edition
+
+The web edition is the `client/` folder as static files plus a built worker: run `npm install`, then
+`npm run build:web` (writes `client/gen/sc2-worker.js`), and publish `client/` on any HTTPS static host. It needs
+HTTPS (service workers), and it fetches the M3 structure description from the m3addon repository on GitHub at
+runtime. No StarCraft II files are ever part of the site.
+
+## Quick start: companion server
 
 ### 1. Install StarCraft II and Node.js
 
@@ -207,6 +224,8 @@ look all the way round and pinch to zoom. Tap it again for the overhead view.
 | Problem | Fix |
 | --- | --- |
 | "Could not find a StarCraft II install" | Set `SC2_DIR` (see above). The folder must contain `.build.info`. |
+| Web edition: "That folder has no SC2Data/data in it" | Pick the StarCraft II folder itself (the one with `SC2Data` in it), not a parent folder or a shortcut. |
+| Web edition: some art is missing on a later visit | Use **Link StarCraft II folder again** on the start screen; the cache only has what earlier visits read. |
 | Phone cannot connect | Same Wi-Fi as the computer? Allow Node.js through the firewall (Windows) or accept incoming connections (macOS). Some guest and office networks block devices from seeing each other. |
 | Units are missing or invisible | Let the first wave stream in; refresh if a model failed to load. Check the server window for errors. |
 | Choppy on a phone | Lane mode in portrait is lighter. The game already lowers its resolution and zerg cap on phones. |
@@ -221,6 +240,10 @@ look all the way round and pinch to zoom. Tap it again for the overhead view.
 - `client/` is a plain JavaScript game on top of [mdx-m3-viewer](https://github.com/flowtsohg/mdx-m3-viewer)
   (WebGL M3 renderer, patched by `scripts/patch-viewer.js` for newer StarCraft II material versions) with its own
   particle player, terrain (`client/js/terrain.js`) and HUD.
+- The web edition runs the same reader and routes (`server/routes.js`) in a browser worker (`web/sc2-worker.js`,
+  bundled by `scripts/build-web.js`) over the folder the player picked; `client/sw.js` answers the game's asset URLs
+  from that worker and from the browser's cache, and `client/js/link.js` decides which edition is running: with the
+  companion server reachable it is used, otherwise the page asks for the folder.
 - `scripts/export-assets.js` converts the same assets into files for the Unreal version (see its README). Those
   exports are derived from your copy of the game: they are gitignored and must not be shared.
 

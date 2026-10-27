@@ -176,6 +176,17 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .mode em { position: absolute; top: -9px; right: 14px; padding: 2px 8px; border-radius: 99px; font: 700 10px var(--body); font-style: normal; letter-spacing: 0.08em; color: var(--cyan); background: #12303c; }
 .mode em:empty { display: none; }
 #start .foot { text-align: center; }
+#relink { margin-top: 8px; padding: 8px 14px; border-radius: 10px; background: transparent; color: var(--muted); border: 1px solid rgba(156, 239, 255, 0.3); font: 700 11px var(--body); letter-spacing: 0.1em; }
+#link { z-index: 20; background: rgba(5, 8, 12, 0.8); }
+#link .card { width: min(460px, calc(100% - 32px)); }
+#link .card.drag, #link.drag .card { border-color: #9cefff; box-shadow: 0 0 0 2px rgba(156, 239, 255, 0.4); }
+#link h2 { font-size: 24px; }
+#link p { font: 400 13px/1.45 var(--body); color: var(--muted); margin: 0 0 12px; }
+#link p.hint { font-size: 12px; }
+#link p.err { color: var(--red); }
+#link .path { display: flex; gap: 8px; align-items: center; margin: 0 0 8px; padding: 8px 10px; border-radius: 10px; background: rgba(0, 0, 0, 0.35); }
+#link .path code { flex: 1; min-width: 0; overflow-wrap: anywhere; text-align: left; font: 12px ui-monospace, Consolas, monospace; color: #cfeff7; }
+#link .path button { padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(156, 239, 255, 0.4); background: transparent; color: #9cefff; font: 700 11px var(--body); }
 #start .foot p { margin: 4px 0; font: 700 11px var(--body); letter-spacing: 0.1em; color: var(--muted); }
 #start #status { color: var(--green); opacity: 0.8; }
 

@@ -21,3 +21,5 @@ __pycache__/
 Unreal/BunkerSurvivors/Samples/
 # Agent worktrees
 .claude/worktrees/
+# Built by scripts/build-web.js (npm run build:web)
+client/gen/
