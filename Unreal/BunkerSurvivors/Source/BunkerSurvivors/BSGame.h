@@ -154,6 +154,7 @@ struct FBSEnemy
 	// Late game: overlord drop / nydus worm state, spellcasting, winged hops.
 	int32 State = 0, Cargo = 0, NextSpell = 0;
 	float T = 0, SpawnT = 0, UnloadT = 0, CastUntil = 0, Seed = 0, Idle = 0;
+	bool bBackOff = false;                    // brood queen: drawing back out of reach after a Spawn Broodling
 	FVector2D Drop = FVector2D::ZeroVector, Exit = FVector2D::ZeroVector;
 	TArray<FString> CargoList;
 	FString Anim, ModelKey, DeathKey;
@@ -161,7 +162,7 @@ struct FBSEnemy
 	bool Alive() const { return Hp > 0; }
 };
 
-enum class EBSProjKind : uint8 { Shell, Grenade, Rocket, Acid, Spine, Bullet, Glaive, Spines, Brood, Yamato, Sam, Missile, Guardian, Spores };
+enum class EBSProjKind : uint8 { Shell, Grenade, Rocket, Acid, Spine, Bullet, Glaive, Spines, Brood, Yamato, Sam, Missile, Guardian, Spores, BroodSpell };
 
 struct FBSProjectile
 {
@@ -369,6 +370,10 @@ private:
 	void UpdateOverlord(const TSharedPtr<FBSEnemy>& E, float Dt);
 	void UpdateNydus(const TSharedPtr<FBSEnemy>& E, float Dt);
 	void CastSpell(FBSEnemy& E, const FBSTarget& T);
+	// Brood queen: Spawn Broodling (target pick, the dart, and what it does when it lands).
+	const FBSTarget* BroodTarget(const FBSEnemy& E) const;
+	void CastBroodling(FBSEnemy& E);
+	void BroodlingHit(const FBSTarget& T);
 	void UpdateSpells(float Dt);
 	void BuildAirTargets();
 	void KillAir(const FBSTarget& T);

@@ -41,6 +41,11 @@ window.BS = window.BS || {};
     overlord: U + 'zerg/overlordtransport/overlordtransport.m3',
     overlordDeath: U + 'zerg/overlordtranportdeath/overlordtranportdeath.m3',
     nydus: U + 'zerg/nydusworm/nydusworm.m3',
+    // The Brood War queen (Stukov's classic queen) and the broodlings her Spawn Broodling hatches (brood lords' too).
+    broodqueen: U + 'zerg/queenclassic/queenclassic.m3',
+    broodqueenDeath: U + 'zerg/queenclassic_death/queenclassic_death.m3',
+    broodling: U + 'zerg/broodling_rcz/broodling_rcz.m3',
+    broodlingDeath: U + 'zerg/broodling_rcz_death/broodling_rcz_death.m3',
     // Terran
     bunker: 'assets/buildings/terran/bunker/bunker.m3',
     bunkerDeath: 'assets/buildings/terran/bunkerdeath/bunkerdeath.m3',
@@ -133,6 +138,9 @@ window.BS = window.BS || {};
   devourerMissile: [E + 'zerg/devourermissile/devourermissile.m3', null, true], acidSpores: [E + 'zerg/devourer_acidspores_impact/devourer_acidspores_impact.m3'],
   darkSwarm: [E + 'zerg/defiler_darkswarm_aoe/defiler_darkswarm_aoe.m3', null, true], plague: [E + 'zerg/defiler_plague/defiler_plague.m3'],
   nydusBirth: [E + 'zerg/nyduscreepspoutbirth/nyduscreepspoutbirth.m3'], viperTongueImpact: [E + 'zerg/vipertongueimpact/vipertongueimpact.m3'],
+  // Brood queen: Spawn Broodling flies as a parasite dart and bursts into broodlings on the victim.
+  broodSpellMissile: [E + 'zerg/infestorparasitemissile/infestorparasitemissile.m3', null, true],
+  broodSpellImpact: [E + 'zerg/kerriganspawnbroodlingsimpact/kerriganspawnbroodlingsimpact.m3'],
   };
   // Every death model also carries its blood/acid burst: the plain "Death" one (the numbered sequences are SC2's
   // damage-type variants, which blow body parts up; m3fx falls back to them only when there is no plain one).
@@ -196,6 +204,10 @@ window.BS = window.BS || {};
     nydusUnload: [S + 'zerg/nydusworm/nydusworm_unload00.wav', S + 'zerg/nydusworm/nydusworm_unload01.wav'],
     viperAbduct: [1, 2, 3].map(i => S + 'ac_viper_attackimpact_0' + i + '.wav'),
     plague: [0, 1, 2].map(i => S + 'zerg/infestor/infestor_plagueattackimpact' + i + '.wav'),
+    broodSpell: [1, 2, 3, 4, 5].map(i => S + 'si_queen_broodling_impact0' + i + '.wav'),
+    broodlingBirth: [1, 2, 3, 4, 5].map(i => S + 'stukov_broodling_birth_0' + i + '.wav'),
+    broodlingDeath: [0, 1, 2, 3, 4].map(i => S + 'zerg/broodling/broodling_death' + i + '.wav'),
+    broodqueenDeath: [0, 1, 2].map(i => S + 'zerg/queen/queen_death' + i + '.wav'),
   };
 
   // Zerg attackers. hp/armor/damage/cooldown/range/speed are SC2 values; bounty and budget are ours.
@@ -227,10 +239,13 @@ window.BS = window.BS || {};
     scourge: { name: 'Scourge', model: 'scourge', death: 'scourgeDeath', hp: 25, armor: 0, dmg: 110, cd: 1, range: 0.2, speed: 6.5, radius: 0.4, light: true, flying: true, fly: 4.6, antiAir: true, suicide: true, bounty: 8, budget: 3, unlock: 1, late: 2, weight: 4, hitFrac: 0, height: 0.6 },
     defiler: { name: 'Defiler', model: 'defiler', death: 'defilerDeath', hp: 80, armor: 1, dmg: 0, cd: 8, range: 9, speed: 2.6, radius: 0.6, spell: 'defiler', bounty: 50, budget: 14, unlock: 1, late: 2, weight: 2, hitFrac: 0, height: 1.2 },
     viper: { name: 'Viper', model: 'viper', death: 'viperDeath', hp: 150, armor: 1, dmg: 0, cd: 11, range: 9, speed: 4, radius: 0.75, flying: true, fly: 4, spell: 'abduct', bounty: 50, budget: 16, unlock: 1, late: 3, weight: 1.5, hitFrac: 0, height: 1.4 },
+    // Mid game on: the Brood War queen hangs back and casts Spawn Broodling (see Game.castBroodling). Not tech-gated:
+    // she joins at wave 14, and ramp makes her more common with every tech card (weight x (1 + ramp x tier)).
+    broodqueen: { name: 'Brood Queen', model: 'broodqueen', death: 'broodqueenDeath', hp: 120, armor: 1, dmg: 0, cd: 9, range: 9, speed: 3.8, radius: 0.75, flying: true, fly: 4, spell: 'broodling', bounty: 45, budget: 14, unlock: 14, ramp: 0.5, weight: 1.2, hitFrac: 0, soundDeath: 'broodqueenDeath', height: 1.4 },
     // Not bought from the wave budget: special events scheduled by startWave.
     overlord: { name: 'Overlord', model: 'overlord', death: 'overlordDeath', hp: 400, armor: 1, dmg: 0, cd: 1, range: 0, speed: 3, radius: 1.0, armored: true, flying: true, fly: 4.2, transport: true, bounty: 25, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2 },
     nydus: { name: 'Nydus Worm', model: 'nydus', death: null, hp: 450, armor: 1, dmg: 0, cd: 1, range: 0, speed: 0, radius: 1.3, armored: true, nydus: true, bounty: 60, budget: 0, unlock: 999, weight: 0, hitFrac: 0, height: 3 },
-    broodling: { name: 'Broodling', model: 'zergling', death: 'zerglingDeath', scale: 0.55, hp: 30, armor: 0, dmg: 4, cd: 0.46, range: 0.1, speed: 4.13, radius: 0.25, light: true, life: 8, bounty: 1, budget: 0, unlock: 999, weight: 0, hitFrac: 0.45, attackSeq: /^attack/i, height: 0.5, impactFx: 'zerglingImpact' },
+    broodling: { name: 'Broodling', model: 'broodling', death: 'broodlingDeath', scale: 0.75, hp: 30, armor: 0, dmg: 4, cd: 0.46, range: 0.1, speed: 4.13, radius: 0.25, light: true, life: 8, bounty: 1, budget: 0, unlock: 999, weight: 0, hitFrac: 0.45, attackSeq: /^attack/i, soundDeath: 'broodlingDeath', height: 0.5, impactFx: 'zerglingImpact' },
   };
 
   // Bunker occupants.

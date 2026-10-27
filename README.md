@@ -160,6 +160,7 @@ When the bunker is full, new recruits stand behind it, up to 48.
 | Scourge, devourer | Only come when you have air: scourge fly into the battlecruiser, vikings and banshees and explode; devourer acid makes them fire slower. Air support can now be shot down (the battlecruiser can be bought again). |
 | Defiler | Casts dark swarm (zerg under it take a quarter damage from shots; blasts and flame still work) and plague (your units bleed, but it cannot kill). |
 | Viper | Abducts a trooper, goliath or thor, yanking it out toward the swarm. |
+| Brood queen | The Brood War queen. Not tech-gated: she joins from wave 14 (12 in the arena) and grows commoner with every tech card. Hangs back out of reach and casts Spawn Broodling every 9 s on the best ground target in range (a sieged tank, then a goliath, thor or odin, then a trooper outside the bunker, then an SCV): troopers and SCVs die outright, tanks and mechs take 120; two broodlings hatch from the victim and fight for 8 s. With nothing to hatch on she presses in under the bunker's guns. |
 | Overlord drop | Flies in from a flank and drops zerglings behind your lines (early, if badly hurt). |
 | Nydus worm | Breaches behind the bunker and disgorges zerg until it is killed or sinks away. |
 

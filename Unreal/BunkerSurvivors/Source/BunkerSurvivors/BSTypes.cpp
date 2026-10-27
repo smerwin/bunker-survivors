@@ -117,6 +117,13 @@ namespace
 			D.Hp = 150; D.Armor = 1; D.Dmg = 0; D.Cd = 11; D.Range = 9; D.Speed = 4; D.Radius = 0.75f; D.bFlying = true; D.Fly = 4; D.Spell = TEXT("abduct");
 			D.Bounty = 50; D.Budget = 16; D.Late = 3; D.Weight = 1.5f; D.HitFrac = 0; D.Height = 1.4f;
 		}
+		// Mid game on: the Brood War queen hangs back and casts Spawn Broodling (see ABSGame::CastBroodling). Not tech-gated:
+		// she joins at wave 14, and Ramp makes her more common with every tech card.
+		{
+			FBSZergDef& D = Add(TEXT("broodqueen"), TEXT("Brood Queen"), TEXT("broodqueen"), TEXT("broodqueenDeath"), TEXT("btn-unit-zerg-broodqueen"));
+			D.Hp = 120; D.Armor = 1; D.Dmg = 0; D.Cd = 9; D.Range = 9; D.Speed = 3.8f; D.Radius = 0.75f; D.bFlying = true; D.Fly = 4; D.Spell = TEXT("broodling");
+			D.Bounty = 45; D.Budget = 14; D.Unlock = 14; D.Ramp = 0.5f; D.Weight = 1.2f; D.HitFrac = 0; D.SoundDeath = TEXT("broodqueenDeath"); D.Height = 1.4f;
+		}
 		// Not bought from the wave budget: special events scheduled by StartWave.
 		{
 			FBSZergDef& D = Add(TEXT("overlord"), TEXT("Overlord"), TEXT("overlord"), TEXT("overlordDeath"), TEXT("btn-unit-zerg-overlord"));
@@ -129,9 +136,9 @@ namespace
 			D.Bounty = 60; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0; D.Height = 3;
 		}
 		{
-			FBSZergDef& D = Add(TEXT("broodling"), TEXT("Broodling"), TEXT("zergling"), TEXT("zerglingDeath"), TEXT("btn-unit-zerg-zergling"));
-			D.ImpactFx = TEXT("zerglingImpact");
-			D.Scale = 0.55f; D.Hp = 30; D.Dmg = 4; D.Cd = 0.46f; D.Range = 0.1f; D.Speed = 4.13f; D.Radius = 0.25f; D.bLight = true; D.Life = 8;
+			FBSZergDef& D = Add(TEXT("broodling"), TEXT("Broodling"), TEXT("broodling"), TEXT("broodlingDeath"), TEXT("btn-unit-zerg-zergling"));
+			D.ImpactFx = TEXT("zerglingImpact"); D.SoundDeath = TEXT("broodlingDeath");
+			D.Scale = 0.75f; D.Hp = 30; D.Dmg = 4; D.Cd = 0.46f; D.Range = 0.1f; D.Speed = 4.13f; D.Radius = 0.25f; D.bLight = true; D.Life = 8;
 			D.Bounty = 1; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0.45f; D.AttackAnims = { TEXT("attack") }; D.Height = 0.5f;
 		}
 		return Out;

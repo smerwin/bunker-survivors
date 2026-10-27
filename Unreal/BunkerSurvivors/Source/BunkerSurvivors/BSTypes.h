@@ -26,7 +26,8 @@ struct FBSZergDef
 	int32 Late = 0;
 	bool bHops = false, bAntiAir = false, bPreferMech = false, bTransport = false, bNydus = false;
 	float Acid = 0;                   // devourer: seconds the target fires slower
-	FString Spell;                    // "defiler" (dark swarm / plague) or "abduct" (viper)
+	FString Spell;                    // "defiler" (dark swarm / plague), "abduct" (viper) or "broodling" (brood queen)
+	float Ramp = 0;                   // brood queen: weight x (1 + Ramp x tech cards unlocked), without being tech-gated
 };
 
 struct FBSInfantryDef

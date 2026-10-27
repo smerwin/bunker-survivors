@@ -14,6 +14,10 @@ window.BS = window.BS || {};
   // The SC2 bunker's four firing slits (Attach_Weapon, 02, 04, 06) in model space.
   const BUNKER_SLITS = [[-0.60, -0.01], [-0.04, 0.58], [0.55, 0.03], [0.01, -0.56]];
   const SLIT_Z = 0.6;
+  // Brood queens: who Spawn Broodling goes for first (higher first; the bunker and buildings are never targets), and
+  // what it does to a tank or mech (troopers and SCVs die outright).
+  const BROOD_PRIORITY = { tank: 4, mech: 3, trooper: 2, scv: 1 };
+  const BROOD_SPELL_DMG = 120;
   // Mech weapon bones and their rest-pose positions (model space: x right, y up, z forward) for the fallback.
   const MECH_MUZZLES = {
     goliath: { g: [['Ref_Weapon', [-0.83, 1.56, 0.87]], ['Ref_Weapon 01', [0.89, 1.56, 0.87]]],
@@ -862,9 +866,9 @@ window.BS = window.BS || {};
       const w = this.wave;
       let budget = (20 + 10 * w + 0.45 * w * w) * (this.hard ? 1.15 : 1);
       // Late game: every high-tech card unlocked brings stranger zerg, and more of them. Guardians come for the mechs;
-      // scourge and devourers only when there is Terran air to hunt.
+      // scourge and devourers only when there is Terran air to hunt. Brood queens (ramp) grow commoner with every card.
       const tier = this.lateTier(), air = this.airPresence();
-      const wt = d => d.weight * (d.late ? 0.6 + 0.4 * tier : 1) * (d.prefer === 'mech' && this.mechs.length ? 2 : 1) * (d.antiAir && !air ? 0 : 1);
+      const wt = d => d.weight * (d.late ? 0.6 + 0.4 * tier : 1) * (1 + (d.ramp || 0) * tier) * (d.prefer === 'mech' && this.mechs.length ? 2 : 1) * (d.antiAir && !air ? 0 : 1);
       const types = Object.entries(BS.ZERG).filter(([, d]) => d.budget > 0 && w >= Math.ceil(d.unlock * (this.hard ? 0.85 : 1)) && (!d.late || tier >= d.late));
       const list = [];
       for (let guard = 0; budget > 0 && guard < 400; guard++) {
@@ -996,9 +1000,45 @@ window.BS = window.BS || {};
       e.z = gz - 3 * clamp(e.t / 1.6, 0, 1);
       if (e.t >= 1.6) this.despawn(e);
     }
+    // Brood queen (Brood War): Spawn Broodling on the most valuable ground unit in reach: a sieged tank, then a goliath,
+    // thor or odin, then a trooper outside the bunker, then an SCV (the nearest within each).
+    broodTarget(e) {
+      let best = null, bs = -1e9;
+      for (const tg of this.tgs) {
+        const pr = BROOD_PRIORITY[tg.kind];
+        if (!pr || !this.valid(tg)) continue;
+        const dd = dist(e.x, e.y, tg.obj.x, tg.obj.y) - tg.radius - e.radius;
+        if (dd > e.def.range + 1) continue;
+        if (pr * 100 - dd > bs) { bs = pr * 100 - dd; best = tg; }
+      }
+      return best;
+    }
+    // A parasite dart flies at the victim (see broodlingHit); then the queen backs off while the next one grows.
+    castBroodling(e) {
+      const tg = this.broodTarget(e);
+      if (!tg) { e.cd = 1; return; }                 // nothing worth it in reach: look again in a second
+      e.anim = 'spell'; e.castUntil = this.time + 1; e.handle.play(/^spell/i, false);
+      e.backOff = true;
+      const o = tg.obj, fz = e.z + e.def.height * 0.6;
+      const p = { kind: 'broodspell', friendly: false, def: e.def, target: tg, src: e, fx: e.x, fy: e.y, fz, tx: o.x, ty: o.y, tz: BS.Terrain.height(o.x, o.y) + 0.8,
+        t: 0, arc: 0.6, dur: clamp(dist(e.x, e.y, o.x, o.y) / 16, 0.25, 0.8) };
+      this.projectileModel(p, null, 'broodSpellMissile');
+      this.projectiles.push(p);
+    }
+    // Spawn Broodling lands. Troopers and SCVs die outright, as in Brood War; tanks and mechs are too big to hatch in one go
+    // here and take BROOD_SPELL_DMG (armour ignored) instead. Two broodlings burst out of the victim and fight for 8 s.
+    broodlingHit(tg) {
+      const o = tg.obj, x = o.x, y = o.y, gz = BS.Terrain.height(x, y), kill = tg.kind === 'trooper' || tg.kind === 'scv';
+      this.fx.play('broodSpellImpact', x, y, gz + 0.3, 0);
+      BS.audio.play('broodSpell', { vol: 0.8 }); BS.audio.play('broodlingBirth', { vol: 0.5 });
+      this.damageDefender(tg, kill ? o.hp + 100 : BROOD_SPELL_DMG + (o.armor || 0));
+      this.floater(x, y, gz + 3, kill ? 'BROODLINGS' : 'BROODLINGS -' + BROOD_SPELL_DMG, '#b6ff5a');
+      for (let k = 0; k < 2; k++) if (this.enemies.length < this.maxAlive()) this.spawnEnemy('broodling', 0, [x, y]);
+    }
     // Defiler (alternating dark swarm and plague) and viper (abduct) spells.
     castSpell(e, t) {
       const d = e.def;
+      if (d.spell === 'broodling') return this.castBroodling(e);
       e.anim = 'spell'; e.castUntil = this.time + 1; e.handle.play(/^spell/i, false);
       if (d.spell === 'abduct') {
         // Yank the nearest trooper outside, goliath or thor out of position toward the viper.
@@ -1280,11 +1320,11 @@ window.BS = window.BS || {};
         if (d.nydus) { this.updateNydus(e, dt); continue; }
         e.retarget -= dt;
         if (!this.valid(e.target) || e.retarget <= 0) {
-          // Scourge and devourers hunt Terran air; guardians single out mechs.
+          // Scourge and devourers hunt Terran air; guardians single out mechs; brood queens make for tanks, mechs, troopers.
           let best = null, bd = 1e9;
           for (const t of d.antiAir ? this.airTgs : targets) {
             if (t.kind === 'scv' && Math.random() < 0.5) continue;
-            const dd = dist(e.x, e.y, t.x, t.y) - t.radius - (d.prefer && t.kind === d.prefer ? 12 : 0);
+            const dd = dist(e.x, e.y, t.x, t.y) - t.radius - (d.prefer && t.kind === d.prefer ? 12 : 0) - (d.spell === 'broodling' ? 4 * (BROOD_PRIORITY[t.kind] || 0) : 0);
             if (dd < bd) { bd = dd; best = t; }
           }
           e.target = best; e.retarget = rnd(0.5, 0.8);
@@ -1307,11 +1347,29 @@ window.BS = window.BS || {};
         }
         t.x = t.obj.x !== undefined ? t.obj.x : t.x; t.y = t.obj.y !== undefined ? t.obj.y : t.y;
         const dx = t.x - e.x, dy = t.y - e.y, dd = Math.hypot(dx, dy);
-        const reach = dd - t.radius - e.radius, range = d.range + (t.kind === 'bunker' ? 0.2 : 0), slowed = e.slowUntil > this.time;
+        // A brood queen with no prey about (only the bunker or buildings) presses in under the guns to find some.
+        const prey = d.spell !== 'broodling' || BROOD_PRIORITY[t.kind];
+        const reach = dd - t.radius - e.radius, range = (prey ? d.range : 4) + (t.kind === 'bunker' ? 0.2 : 0), slowed = e.slowUntil > this.time;
         if (d.suicide && reach <= range) {
           if (d.antiAir) { this.damageDefender(t, d.dmg); this.fx.play('mutaliskImpact', e.x, e.y, e.z, e.yaw, 1.6); BS.audio.play('scourgeHit', { vol: 0.6, gap: 0.1 }); }
           else this.banelingBlast(e, false);
           this.killEnemy(e, true); continue;
+        }
+        if (e.backOff) {
+          // Brood queen after a cast: draw back out of reach while the next broodling grows, then sweep in again.
+          e.cd -= dt * (slowed ? 0.8 : 1);
+          if (e.cd <= 1.5) e.backOff = false;
+          else {
+            e.attacking = false;
+            if (reach < range + 3 && dd > 0.01) {
+              const s = d.speed * 0.8 * dt;
+              e.x -= dx / dd * s; e.y -= dy / dd * s;
+              if (this.mode === 'lane') { e.x = clamp(e.x, -21, 21); e.y = Math.min(e.y, 34); }
+            }
+            e.yaw += clamp(angDelta(e.yaw, Math.atan2(dy, dx)), -3 * dt, 3 * dt);     // keeps an eye on her prey
+            if (!(e.castUntil > this.time)) this.playAnim(e, reach < range + 3 ? 'walk' : 'stand');
+            continue;
+          }
         }
         if (d.burrows) {
           if (!e.burrowed && reach <= range - 1) { e.burrowed = true; e.burrowT = 1; this.playAnim(e, 'burrow'); }
@@ -1380,7 +1438,7 @@ window.BS = window.BS || {};
         case 'glaive': p.bounces = d.bounces; p.hit = []; p.impact = 'mutaliskImpact'; this.projectileModel(p, 'projMutalisk', 'mutaliskMissile'); break;
         case 'guardian': p.arc = 2; p.impact = 'roachImpact'; this.projectileModel(p, null, 'guardianMissile', 1.2); break;
         case 'spores': p.impact = 'acidSpores'; this.projectileModel(p, null, 'devourerMissile'); break;
-        case 'brood': p.arc = 3; p.model = this.r.spawn('zergling', p.fx, p.fy, p.fz, 0).setScale(0.45).setTeam(3); p.model.play(/^stand/i, true); break;
+        case 'brood': p.arc = 3; p.model = this.r.spawn('broodling', p.fx, p.fy, p.fz, 0).setScale(0.6).setTeam(3); p.model.play(/^stand/i, true); break;
       }
       this.projectiles.push(p);
     }
@@ -1619,6 +1677,7 @@ window.BS = window.BS || {};
         }
         const tg = p.target, d = p.def;
         if (!this.valid(tg)) continue;
+        if (p.kind === 'broodspell') { this.broodlingHit(tg); continue; }
         let dmg = d.dmg + (tg.light && d.dmgLight ? d.dmgLight : 0) + (tg.armored && d.dmgArmored ? d.dmgArmored : 0);
         if (p.kind === 'spines') {
           const sx = p.src.hp > 0 ? p.src.x : p.fx, sy = p.src.hp > 0 ? p.src.y : p.fy, L = Math.max(0.01, dist(sx, sy, tg.x, tg.y));

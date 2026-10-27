@@ -32,6 +32,13 @@ namespace
 	const TArray<FString> StandNames = { TEXT("stand"), TEXT("stand 01") };
 	// Extra yaw applied to the sieged tank's turret bone on top of its aim (SC2's model rests it in line with the hull).
 	constexpr float TankTurretOffsetDeg = 0.f;
+	// Brood queens: who Spawn Broodling goes for first (higher first; the bunker and buildings are never targets), and
+	// what it does to a tank or mech (troopers and SCVs die outright).
+	int32 BroodPriority(FBSTarget::EKind K)
+	{
+		switch (K) { case FBSTarget::Tank: return 4; case FBSTarget::Mech: return 3; case FBSTarget::Trooper: return 2; case FBSTarget::Scv: return 1; default: return 0; }
+	}
+	constexpr float BroodSpellDmg = 120.f;
 }
 
 ABSGame::ABSGame()
@@ -1664,10 +1671,10 @@ void ABSGame::StartWave()
 	const int32 Wv = Wave;
 	float Budget = (20 + 10 * Wv + 0.45f * Wv * Wv) * (bHard ? 1.15f : 1.f);
 	// Late game: every high-tech card unlocked brings stranger zerg, and more of them. Guardians come for the mechs;
-	// scourge and devourers only when there is Terran air to hunt.
+	// scourge and devourers only when there is Terran air to hunt. Brood queens (Ramp) grow commoner with every card.
 	const int32 Tier = LateTier();
 	const bool bAirUp = AirPresence();
-	auto Wt = [&](const FBSZergDef* D) { return D->Weight * (D->Late ? 0.6f + 0.4f * Tier : 1.f) * (D->bPreferMech && Mechs.Num() ? 2.f : 1.f) * (D->bAntiAir && !bAirUp ? 0.f : 1.f); };
+	auto Wt = [&](const FBSZergDef* D) { return D->Weight * (D->Late ? 0.6f + 0.4f * Tier : 1.f) * (1 + D->Ramp * Tier) * (D->bPreferMech && Mechs.Num() ? 2.f : 1.f) * (D->bAntiAir && !bAirUp ? 0.f : 1.f); };
 	TArray<const FBSZergDef*> Types;
 	for (const FBSZergDef& D : BSDefs::Zerg())
 		if (D.Budget > 0 && Wv >= FMath::CeilToInt(D.Unlock * (bHard ? 0.85f : 1.f)) && (!D.Late || Tier >= D.Late)) Types.Add(&D);
@@ -1869,10 +1876,68 @@ void ABSGame::UpdateNydus(const TSharedPtr<FBSEnemy>& EP, float Dt)
 	if (E.T >= 1.6f) Despawn(EP);
 }
 
+// Brood queen (Brood War): Spawn Broodling on the most valuable ground unit in reach: a sieged tank, then a goliath,
+// thor or odin, then a trooper outside the bunker, then an SCV (the nearest within each).
+const FBSTarget* ABSGame::BroodTarget(const FBSEnemy& E) const
+{
+	const FBSTarget* Best = nullptr; float Bs = -1e9f;
+	for (const FBSTarget& T : Targets)
+	{
+		const int32 Pr = BroodPriority(T.Kind);
+		if (!Pr || !T.IsValid(Bunker)) continue;
+		const float Dd = FMath::Sqrt(Dist2(E.X, E.Y, T.X, T.Y)) - T.Radius - E.Radius;
+		if (Dd > E.Def->Range + 1) continue;
+		if (Pr * 100 - Dd > Bs) { Bs = Pr * 100 - Dd; Best = &T; }
+	}
+	return Best;
+}
+
+// A parasite dart flies at the victim (see BroodlingHit); then the queen backs off while the next one grows.
+void ABSGame::CastBroodling(FBSEnemy& E)
+{
+	const FBSTarget* Tg = BroodTarget(E);
+	if (!Tg) { E.Cd = 1; return; }                 // nothing worth it in reach: look again in a second
+	E.Anim = TEXT("spell"); E.CastUntil = Time + 1;
+	if (E.Actor) E.Actor->Play(TEXT("spell"), false);
+	E.bBackOff = true;
+	FBSProjectile P;
+	P.bFriendly = false; P.Kind = EBSProjKind::BroodSpell; P.ZDef = E.Def; P.TargetDef = *Tg;
+	P.From = FVector(E.X, E.Y, E.Z + E.Def->Height * 0.6f);
+	P.To = FVector(Tg->X, Tg->Y, BSTerrain::Height(Tg->X, Tg->Y) + 0.8f);
+	P.Arc = 0.6f; P.Dur = FMath::Clamp(FMath::Sqrt(Dist2(E.X, E.Y, Tg->X, Tg->Y)) / 16.f, 0.25f, 0.8f);
+	AddProjectileModel(P, nullptr, TEXT("broodSpellMissile"));
+	if (!P.Trail) AddProjectileVisual(P, FLinearColor(0.7f, 1, 0.35f), 0.2f);
+	Projectiles.Add(P);
+}
+
+// Spawn Broodling lands. Troopers and SCVs die outright, as in Brood War; tanks and mechs are too big to hatch in one go
+// here and take BroodSpellDmg (armour ignored) instead. Two broodlings burst out of the victim and fight for 8 s.
+void ABSGame::BroodlingHit(const FBSTarget& T)
+{
+	float Hp = 0, Armor = 0;
+	switch (T.Kind)
+	{
+	case FBSTarget::Tank: if (auto P = T.TankRef.Pin()) { Hp = P->Hp; Armor = P->Armor; } break;
+	case FBSTarget::Mech: if (auto P = T.MechRef.Pin()) { Hp = P->Hp; Armor = P->Def->Armor; } break;
+	case FBSTarget::Trooper: if (auto P = T.TrooperRef.Pin()) Hp = P->Hp; break;
+	case FBSTarget::Scv: if (auto P = T.ScvRef.Pin()) Hp = P->Hp; break;
+	default: return;
+	}
+	const bool bKill = T.Kind == FBSTarget::Trooper || T.Kind == FBSTarget::Scv;
+	const float X = T.X, Y = T.Y, Gz = BSTerrain::Height(X, Y);
+	if (!PlayFx(TEXT("broodSpellImpact"), FVector(X, Y, Gz + 0.3f), 0))
+		AddFx(EBSFxKind::Blast, FVector(X, Y, Gz + 0.05f), FVector::ZeroVector, 0.4f, 0.9f, FLinearColor(0.6f, 1, 0.25f), 6);
+	PlaySound(TEXT("broodSpell"), 0.8f); PlaySound(TEXT("broodlingBirth"), 0.5f);
+	DamageDefender(T, bKill ? Hp + 100 : BroodSpellDmg + Armor);
+	Floater(X, Y, Gz + 3, bKill ? FString(TEXT("BROODLINGS")) : FString::Printf(TEXT("BROODLINGS -%d"), FMath::RoundToInt(BroodSpellDmg)), FLinearColor(0.71f, 1.f, 0.35f));
+	for (int32 k = 0; k < 2; k++) if (Enemies.Num() < (bHard ? 200 : 160)) { const FVector2D At(X, Y); SpawnEnemy(TEXT("broodling"), 0, &At); }
+}
+
 // Defiler (alternating dark swarm and plague) and viper (abduct) spells.
 void ABSGame::CastSpell(FBSEnemy& E, const FBSTarget& T)
 {
 	const FBSZergDef* D = E.Def;
+	if (D->Spell == TEXT("broodling")) { CastBroodling(E); return; }
 	E.Anim = TEXT("spell"); E.CastUntil = Time + 1;
 	if (E.Actor) E.Actor->Play(TEXT("spell"), false);
 	if (D->Spell == TEXT("abduct"))
@@ -2329,7 +2394,9 @@ void ABSGame::UpdateEnemies(float Dt)
 			for (const FBSTarget& T : Pool)
 			{
 				if (T.Kind == FBSTarget::Scv && FMath::FRand() < 0.5f) continue;
-				const float Dd = FMath::Sqrt(Dist2(E.X, E.Y, T.X, T.Y)) - T.Radius - (D->bPreferMech && T.Kind == FBSTarget::Mech ? 12.f : 0.f);
+				// Guardians single out mechs; brood queens make for tanks, mechs, troopers.
+				const float Dd = FMath::Sqrt(Dist2(E.X, E.Y, T.X, T.Y)) - T.Radius - (D->bPreferMech && T.Kind == FBSTarget::Mech ? 12.f : 0.f)
+					- (D->Spell == TEXT("broodling") ? 4.f * BroodPriority(T.Kind) : 0.f);
 				if (Dd < Bd) { Bd = Dd; BestT = &T; }
 			}
 			if (BestT) { E.Target = *BestT; E.Idle = 0; } else E.Target = FBSTarget();
@@ -2362,13 +2429,34 @@ void ABSGame::UpdateEnemies(float Dt)
 		const FBSTarget& T = E.Target;
 		const float Dx = T.X - E.X, Dy = T.Y - E.Y, Dd = FMath::Sqrt(Dx * Dx + Dy * Dy);
 		const float Reach = Dd - T.Radius - E.Radius;
-		const float Range = D->Range + (T.Kind == FBSTarget::Bunker ? 0.2f : 0);
+		// A brood queen with no prey about (only the bunker or buildings) presses in under the guns to find some.
+		const bool bPrey = D->Spell != TEXT("broodling") || BroodPriority(T.Kind) > 0;
+		const float Range = (bPrey ? D->Range : 4.f) + (T.Kind == FBSTarget::Bunker ? 0.2f : 0);
 		const bool bSlowed = E.SlowUntil > Time;
 		if (D->bSuicide && Reach <= Range)
 		{
 			if (D->bAntiAir) { DamageDefender(T, D->Dmg); PlayFx(TEXT("mutaliskImpact"), FVector(E.X, E.Y, E.Z), E.Yaw, 1.6f); PlaySound(TEXT("scourgeHit"), 0.6f, 0.1f); }
 			else BanelingBlast(E, false);
 			KillEnemy(EP, true); continue;
+		}
+		if (E.bBackOff)
+		{
+			// Brood queen after a cast: draw back out of reach while the next broodling grows, then sweep in again.
+			E.Cd -= Dt * (bSlowed ? 0.8f : 1.f);
+			if (E.Cd <= 1.5f) E.bBackOff = false;
+			else
+			{
+				E.bAttacking = false;
+				if (Reach < Range + 3 && Dd > 0.01f)
+				{
+					const float S = D->Speed * 0.8f * Dt;
+					E.X -= Dx / Dd * S; E.Y -= Dy / Dd * S;
+					if (Mode == EBSMode::Lane) { E.X = FMath::Clamp(E.X, -21.f, 21.f); E.Y = FMath::Min(E.Y, 34.f); }
+				}
+				E.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(E.Yaw, FMath::Atan2(Dy, Dx)), -3 * Dt, 3 * Dt);     // keeps an eye on her prey
+				if (E.CastUntil <= Time) PlayEnemyAnim(E, Reach < Range + 3 ? TEXT("walk") : TEXT("stand"));
+				continue;
+			}
 		}
 		if (D->bBurrows)
 		{
@@ -2874,6 +2962,7 @@ void ABSGame::UpdateProjectiles(float Dt)
 			const FBSTarget& Tg = Done.TargetDef;
 			const FBSZergDef* D = Done.ZDef;
 			if (!Tg.IsValid(Bunker)) continue;
+			if (Done.Kind == EBSProjKind::BroodSpell) { BroodlingHit(Tg); continue; }
 			float Dmg = D->Dmg;
 			if (Tg.bLight) Dmg += D->DmgLight;
 			if (Tg.bArmored) Dmg += D->DmgArmored;
