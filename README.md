@@ -163,6 +163,7 @@ When the bunker is full, new recruits stand behind it, up to 48.
 | Brood queen | The Brood War queen. Not tech-gated: she joins from wave 14 (12 in the arena) and grows commoner with every tech card. Hangs back out of reach and casts Spawn Broodling every 9 s on the best ground target in range (a sieged tank, then a goliath, thor or odin, then a trooper outside the bunker, then an SCV): troopers and SCVs die outright, tanks and mechs take 120; two broodlings hatch from the victim and fight for 8 s. With nothing to hatch on she presses in under the bunker's guns. |
 | Overlord drop | Flies in from a flank and drops zerglings behind your lines (early, if badly hurt). |
 | Nydus worm | Breaches behind the bunker and disgorges zerg until it is killed or sinks away. |
+| Creep (from wave 8, whatever your tech) | Queens walk with the waves planting creep tumors; each tumor spreads creep and buds one more toward the bunker, and from wave 10 overlords drift in overhead generating creep (shoot them down with anti-air). Zerg on creep move 30% faster, and creep lingers after its tumors die. Firebat flames burn it back and singe tumors. |
 
 **Stimpacks** send the soldiers standing outside charging at the nearest zerg until they are in range.
 

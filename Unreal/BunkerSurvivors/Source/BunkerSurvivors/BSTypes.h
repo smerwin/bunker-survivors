@@ -28,7 +28,25 @@ struct FBSZergDef
 	float Acid = 0;                   // devourer: seconds the target fires slower
 	FString Spell;                    // "defiler" (dark swarm / plague), "abduct" (viper) or "broodling" (brood queen)
 	float Ramp = 0;                   // brood queen: weight x (1 + Ramp x tech cards unlocked), without being tech-gated
+	// Creep (see BSCreep): queens plant tumors, tumors spread creep, creep overlords generate it from the sky.
+	bool bTumors = false, bTumor = false, bCreeper = false;
 };
+
+// Creep: a coarse grid (Cell metres) of coverage 0..1 that grows where a source reaches and slowly fades (lingers) where
+// none does. Zerg ground units on creep move faster (SC2: +30%). Firebat flames burn it back and scorch the ground for a
+// while, and singe tumors. Queens join from FromWave, creep overlords two waves later. The swarm may keep more tumors
+// alive each wave (TumorBase + TumorPerWave per creep wave, up to TumorMax), so the creep spreads further as the waves go
+// on. Port of BS.CREEP in units.js.
+namespace BSCreep
+{
+	constexpr float Cell = 1, Update = 0.25f, On = 0.35f, Grow = 0.6f, Decay = 0.012f, Speed = 1.3f;
+	constexpr int32 FromWave = 8;
+	constexpr float TumorRadius = 4.5f, TumorGrowth = 0.45f, TumorSpread = 12, TumorHop0 = 3, TumorHop1 = 4.5f, TumorMinBunker = 6, TumorGap = 2;
+	constexpr int32 TumorBase = 4, TumorPerWave = 3, TumorMax = 30;
+	constexpr float QueenEvery = 9, QueenFirst0 = 3, QueenFirst1 = 6;
+	constexpr float OverlordRadius = 3.2f, OverlordLife = 50, OverlordDrift = 0.3f, OverlordMinDist = 6;
+	constexpr float BurnRadius = 1.6f, BurnRegrow = 5, BurnTumorDmg = 10;
+}
 
 struct FBSInfantryDef
 {

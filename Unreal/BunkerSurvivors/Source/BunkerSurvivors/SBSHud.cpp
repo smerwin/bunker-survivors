@@ -1224,6 +1224,7 @@ int32 SBSHud::PaintWorld(const FGeometry& G, FSlateWindowElementList& Out, int32
 	TMap<int32, int32> Buckets;
 	for (const TSharedPtr<FBSEnemy>& E : Gm->Enemies)
 	{
+		if (E->Def->bTumor) continue;                 // creep tumors stay put: not a threat to point at
 		FVector2D P;
 		if (WorldToLocal(BSSpace::ToWorld(E->X, E->Y, 0), P) && P.X >= 0 && P.Y >= 0 && P.X <= S.X && P.Y <= S.Y) continue;
 		const FVector2f Rp = ToRadar(E->X, E->Y) - Rc;

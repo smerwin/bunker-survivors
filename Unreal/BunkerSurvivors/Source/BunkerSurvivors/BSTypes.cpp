@@ -141,6 +141,24 @@ namespace
 			D.Scale = 0.75f; D.Hp = 30; D.Dmg = 4; D.Cd = 0.46f; D.Range = 0.1f; D.Speed = 4.13f; D.Radius = 0.25f; D.bLight = true; D.Life = 8;
 			D.Bounty = 1; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0.45f; D.AttackAnims = { TEXT("attack") }; D.Height = 0.5f;
 		}
+		// Creep (see BSCreep): queens walk with the waves planting creep tumors; tumors spread creep and bud one more tumor
+		// each; overlords drift over the field generating creep beneath them.
+		{
+			FBSZergDef& D = Add(TEXT("queen"), TEXT("Queen"), TEXT("queen"), TEXT("queenDeath"), TEXT("btn-unit-zerg-queen"));
+			D.Hp = 175; D.Armor = 1; D.Dmg = 8; D.Cd = 0.71f; D.Range = 5; D.Speed = 2.4f; D.Radius = 0.875f; D.bTumors = true;
+			D.Bounty = 30; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0.3f; D.AttackAnims = { TEXT("attack") };
+			D.Projectile = EBSProjectile::Spine; D.SoundDeath = TEXT("queenDeath"); D.Height = 1.8f;
+		}
+		{
+			FBSZergDef& D = Add(TEXT("creeptumor"), TEXT("Creep Tumor"), TEXT("creeptumor"), TEXT("creeptumorDeath"), TEXT("btn-building-zerg-creeptumor"));
+			D.Hp = 50; D.Dmg = 0; D.Cd = 1; D.Range = 0; D.Speed = 0; D.Radius = 0.5f; D.bTumor = true;
+			D.Bounty = 3; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0; D.Height = 0.6f;
+		}
+		{
+			FBSZergDef& D = Add(TEXT("overlordCreep"), TEXT("Overlord"), TEXT("overlordCreep"), TEXT("overlordCreepDeath"), TEXT("btn-unit-zerg-overlord"));
+			D.Hp = 200; D.Dmg = 0; D.Cd = 1; D.Range = 0; D.Speed = 1.4f; D.Radius = 1.0f; D.bArmored = true; D.bFlying = true; D.Fly = 4.8f; D.bCreeper = true;
+			D.Bounty = 20; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0; D.SoundDeath = TEXT("overlordDeath"); D.Height = 2;
+		}
 		return Out;
 	}
 

@@ -140,6 +140,9 @@ async function main() {
   // Cliff faces of the lane chokepoint.
   const cliffBuf = sc2.read(BS.CLIFF_TEXTURE.replace(/\.png$/, '.dds'));
   if (cliffBuf) { write('Textures/Cliff_Diffuse.png', ddsToPng(cliffBuf)); manifest.textures.cliff = 'Textures/Cliff_Diffuse.png'; }
+  // Zerg creep (the creep overlay, M_Creep).
+  const creepBuf = sc2.read(BS.CREEP_TEXTURE.replace(/\.png$/, '.dds'));
+  if (creepBuf) { write('Textures/Creep_Diffuse.png', ddsToPng(creepBuf)); manifest.textures.creep = 'Textures/Creep_Diffuse.png'; }
 
   write('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2)));
   console.log('done: ' + Object.keys(manifest.models).length + ' models, ' + manifest.failures.length + ' failures');

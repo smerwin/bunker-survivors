@@ -426,12 +426,20 @@ window.BS = window.BS || {};
         'void main(){ v_pos = a_pos; v_nrm = a_nrm; v_ao = a_ao; gl_Position = u_vp * vec4(a_pos, 1.0); }';
       const fs = 'precision mediump float; uniform sampler2D u_tex; uniform sampler2D u_cliff; uniform float u_hasCliff; uniform float u_h;' +
         ' uniform vec2 u_center; uniform vec2 u_scale; uniform float u_radius; uniform float u_creep;' +
+        ' uniform sampler2D u_creepMap; uniform sampler2D u_creepTex; uniform vec4 u_creepBox; uniform float u_hasCreep; uniform float u_hasCreepTex;' +
         ' varying vec3 v_pos; varying vec3 v_nrm; varying float v_ao;' +
         'void main(){ vec3 n = normalize(v_nrm);' +
         ' vec3 g = texture2D(u_tex, v_pos.xy / 6.0).rgb;' +
         ' float v = 0.92 + 0.08 * sin(v_pos.x * 1.3 + 0.5) * sin(v_pos.y * 1.1);' +
         ' float cr = smoothstep(u_creep - 6.0, u_creep + 6.0, v_pos.y) * 0.45;' +
         ' g = mix(g * v, g * vec3(0.45, 0.2, 0.5) * 1.6, cr);' +
+        // Live creep (the simulation's coverage grid, filtered): SC2's creep texture tinted purple, with ragged edges and a
+        // darker wet rim where it is still spreading or burning back.
+        ' if (u_hasCreep > 0.5) { float cv = texture2D(u_creepMap, (v_pos.xy - u_creepBox.xy) / u_creepBox.zw).r;' +
+        '  float nz = 0.5 + 0.5 * sin(v_pos.x * 2.3 + sin(v_pos.y * 1.7) * 2.0) * sin(v_pos.y * 2.1 + sin(v_pos.x * 1.3) * 2.0);' +
+        '  float k = smoothstep(0.3, 0.55, cv + (nz - 0.5) * 0.3);' +
+        '  vec3 ct = mix(vec3(0.3, 0.13, 0.34), texture2D(u_creepTex, v_pos.xy / 5.0).rgb * vec3(1.35, 0.8, 1.55) * 1.7, u_hasCreepTex);' +
+        '  g = mix(g, ct * (1.0 - 1.4 * k * (1.0 - k)), k); }' +
         ' float cliff = smoothstep(0.12, 0.38, 1.0 - n.z) * u_hasCliff;' +
         ' float vv = clamp(1.0 - v_pos.z / u_h, 0.03, 0.97) * 0.92;' +
         ' vec3 cx = texture2D(u_cliff, vec2(v_pos.y * 0.22, vv)).rgb, cy = texture2D(u_cliff, vec2(v_pos.x * 0.22, vv)).rgb;' +
@@ -454,6 +462,7 @@ window.BS = window.BS || {};
         a_pos: gl.getAttribLocation(prog, 'a_pos'), a_nrm: gl.getAttribLocation(prog, 'a_nrm'), a_ao: gl.getAttribLocation(prog, 'a_ao'),
         u_vp: U('u_vp'), u_tex: U('u_tex'), u_cliff: U('u_cliff'), u_hasCliff: U('u_hasCliff'), u_h: U('u_h'),
         u_center: U('u_center'), u_scale: U('u_scale'), u_radius: U('u_radius'), u_creep: U('u_creep'),
+        u_creepMap: U('u_creepMap'), u_creepTex: U('u_creepTex'), u_creepBox: U('u_creepBox'), u_hasCreep: U('u_hasCreep'), u_hasCreepTex: U('u_hasCreepTex'),
         center: [0, 8], scale: [1, 0.7], radius: 30, creep: 24, cliffs: false,
       };
       this.setGroundShape('lane');
@@ -479,10 +488,52 @@ window.BS = window.BS || {};
         this.cliffTex = t;
       };
       img.src = '/fxtex/' + BS.CLIFF_TEXTURE;
+      const cimg = new Image();
+      cimg.onload = () => {
+        const t = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, t);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cimg);
+        gl.generateMipmap(gl.TEXTURE_2D);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        this.creepTex = t;
+      };
+      cimg.src = '/fxtex/' + BS.CREEP_TEXTURE;
+    }
+    // The simulation's creep grid (Game.creep): uploaded as a small filtered texture, at most five times a second and
+    // only when it has changed.
+    setCreep(grid) { this.creepSrc = grid; this.creepVer = -1; }
+    uploadCreep() {
+      const gl = this.gl, g = this.creepSrc;
+      if (!g || g.version === this.creepVer || this.time - (this.creepAt || 0) < 0.2) return;
+      this.creepVer = g.version; this.creepAt = this.time;
+      gl.activeTexture(gl.TEXTURE2);
+      if (!this.creepMap || this.creepMapW !== g.nx || this.creepMapH !== g.ny) {
+        if (this.creepMap) gl.deleteTexture(this.creepMap);
+        this.creepMap = gl.createTexture(); this.creepMapW = g.nx; this.creepMapH = g.ny;
+        this.creepBytes = new Uint8Array(g.nx * g.ny);
+        gl.bindTexture(gl.TEXTURE_2D, this.creepMap);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      }
+      const b = this.creepBytes;
+      for (let k = 0; k < b.length; k++) b[k] = g.c[k] * 255;
+      const align = gl.getParameter(gl.UNPACK_ALIGNMENT), flip = gl.getParameter(gl.UNPACK_FLIP_Y_WEBGL), pre = gl.getParameter(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.bindTexture(gl.TEXTURE_2D, this.creepMap);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, g.nx, g.ny, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, b);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, align); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, flip); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, pre);
     }
     setGroundShape(mode) {
       const gl = this.gl, g = this.ground;
       BS.Terrain.setMode(mode);
+      this.creepSrc = null;
       let x0, x1, y0, y1;
       if (mode === 'lane') { x0 = -24; x1 = 24; y0 = -18; y1 = 50; g.center = [0, 9]; g.scale = [1.0, 0.62]; g.radius = 34; g.creep = 28; }
       else { x0 = -50; x1 = 50; y0 = -50; y1 = 50; g.center = [0, 0]; g.scale = [1, 1]; g.radius = 40; g.creep = 1000; }
@@ -532,10 +583,17 @@ window.BS = window.BS || {};
       gl.uniform1f(g.u_hasCliff, g.cliffs && this.cliffTex ? 1 : 0); gl.uniform1f(g.u_h, BS.Terrain.H);
       gl.uniform2f(g.u_center, g.center[0], g.center[1]); gl.uniform2f(g.u_scale, g.scale[0], g.scale[1]);
       gl.uniform1f(g.u_radius, g.radius); gl.uniform1f(g.u_creep, g.creep);
+      const cg = this.creepSrc, creepOn = !!(cg && this.creepMap);
+      gl.uniform1f(g.u_hasCreep, creepOn ? 1 : 0); gl.uniform1f(g.u_hasCreepTex, this.creepTex ? 1 : 0);
+      if (creepOn) gl.uniform4f(g.u_creepBox, cg.x0, cg.y0, cg.nx * cg.cell, cg.ny * cg.cell);
+      gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, creepOn ? this.creepMap : this.groundTex); gl.uniform1i(g.u_creepMap, 2);
+      gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, this.creepTex || this.groundTex); gl.uniform1i(g.u_creepTex, 3);
       gl.disable(gl.BLEND); gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.CULL_FACE);
       gl.drawElements(gl.TRIANGLES, g.count, g.indexType, 0);
       gl.disableVertexAttribArray(g.a_pos); gl.disableVertexAttribArray(g.a_nrm); gl.disableVertexAttribArray(g.a_ao);
       gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+      gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, null);
       gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, null);
       gl.useProgram(null);
@@ -557,6 +615,7 @@ window.BS = window.BS || {};
       if (this.shake > 0.01) this.updateCamera();
       v.startFrame();
       this.scene.startFrame();
+      this.uploadCreep();
       this.drawGround();
       this.corpseScene.startFrame();
       this.corpseScene.renderOpaque();

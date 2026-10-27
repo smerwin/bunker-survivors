@@ -53,6 +53,7 @@ window.BS = window.BS || {};
       this.bunker.handle = this.r.spawn('bunker', 0, 0, 0, this.bunker.yaw).setTeam(1);
       this.bunker.handle.play(/^stand$/i, true);
       this.addScv(true);
+      this.initCreep();
     }
 
     layout() {
@@ -901,6 +902,18 @@ window.BS = window.BS || {};
         for (let i = 0; i < drops; i++) this.spawnQueue.push({ t: 4 + rnd(0, spread), type: 'overlord', ang: 0 });
         if (tier >= 2 && Math.random() < 0.25 + 0.08 * tier) this.spawnQueue.push({ t: 6 + rnd(0, spread * 0.6), type: 'nydus', ang: 0 });
       }
+      // Mid game on: queens walk with the wave planting creep tumors, and (two waves later) overlords drift over the field
+      // generating creep.
+      const cw = this.creepWave();
+      if (w >= cw) {
+        const queens = Math.min(4, 1 + Math.floor((w - cw) / 6));
+        for (let i = 0; i < queens; i++) this.spawnQueue.push({ t: 1 + rnd(0, spread * 0.7), type: 'queen', ang: packAng(0.3) });
+        if (w === cw) this.toast('Zerg queens are spreading creep');
+      }
+      if (w >= cw + 2) {
+        const lords = Math.min(3, 1 + Math.floor((w - cw - 2) / 8));
+        for (let i = 0; i < lords; i++) this.spawnQueue.push({ t: 2 + rnd(0, spread), type: 'overlordCreep', ang: 0 });
+      }
       this.spawnQueue.sort((a, b) => a.t - b.t);
       this.spawnTimer = 0; this.waveTimer = this.waveLen;
       this.minerals += 20 + 8 * w;
@@ -914,6 +927,7 @@ window.BS = window.BS || {};
       if (at) { x = at[0] + rnd(-0.6, 0.6); y = at[1] + rnd(-0.6, 0.6); }
       else if (d.transport) { x = lane ? side * 23 : Math.cos(ar) * 27; y = lane ? rnd(-3, 6) : Math.sin(ar) * 27; }        // overlords come in from a flank
       else if (d.nydus) { const r = rnd(5.5, 8); x = lane ? side * rnd(2.5, 4.5) : Math.cos(ar) * r; y = lane ? rnd(-8.5, -7) : Math.sin(ar) * r; }   // behind our lines
+      else if (d.creeper) { x = lane ? side * rnd(10, 18) : Math.cos(ar) * 29; y = lane ? rnd(30, 34) : Math.sin(ar) * 29; }   // creep overlords drift in from afar
       else if (this.mode === 'lane') {
         if (ang === 1 || ang === 2) {
           // Somewhere down the arm (see terrain.js), not on the cliffs beside it.
@@ -949,6 +963,7 @@ window.BS = window.BS || {};
         this.fx.play('nydusBirth', x, y, BS.Terrain.height(x, y), 0, 1.4);
         this.toast('Nydus worm breaching behind our lines!');
       }
+      this.setupCreeper(e);
       this.enemies.push(e);
       return e;
     }
@@ -1035,6 +1050,137 @@ window.BS = window.BS || {};
       this.floater(x, y, gz + 3, kill ? 'BROODLINGS' : 'BROODLINGS -' + BROOD_SPELL_DMG, '#b6ff5a');
       for (let k = 0; k < 2; k++) if (this.enemies.length < this.maxAlive()) this.spawnEnemy('broodling', 0, [x, y]);
     }
+
+    // ---- Creep ------------------------------------------------------------------------------------------
+    // A coarse coverage grid over the field (see BS.CREEP); the renderer tints the ground from it.
+    initCreep() {
+      const lane = this.mode === 'lane', C = BS.CREEP;
+      const x0 = lane ? -24 : -30, y0 = lane ? -18 : -30, nx = Math.round((lane ? 48 : 60) / C.cell), ny = Math.round((lane ? 52 : 60) / C.cell);
+      this.creep = { x0, y0, cell: C.cell, nx, ny, c: new Float32Array(nx * ny), burn: new Float32Array(nx * ny), src: new Uint8Array(nx * ny), t: 0, version: 0, cover: 0 };
+      if (this.r.setCreep) this.r.setCreep(this.creep);
+    }
+    creepAt(x, y) {
+      const g = this.creep, i = Math.floor((x - g.x0) / g.cell), j = Math.floor((y - g.y0) / g.cell);
+      return i < 0 || j < 0 || i >= g.nx || j >= g.ny ? 0 : g.c[j * g.nx + i];
+    }
+    onCreep(x, y) { return this.creepAt(x, y) > BS.CREEP.on; }
+    // Visit the cells whose centres lie within r of (x, y).
+    creepCells(x, y, r, fn) {
+      const g = this.creep;
+      const i0 = Math.max(0, Math.floor((x - r - g.x0) / g.cell)), i1 = Math.min(g.nx - 1, Math.floor((x + r - g.x0) / g.cell));
+      const j0 = Math.max(0, Math.floor((y - r - g.y0) / g.cell)), j1 = Math.min(g.ny - 1, Math.floor((y + r - g.y0) / g.cell));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const cx = g.x0 + (i + 0.5) * g.cell, cy = g.y0 + (j + 0.5) * g.cell;
+        if ((cx - x) * (cx - x) + (cy - y) * (cy - y) <= r * r) fn(j * g.nx + i);
+      }
+    }
+    // Four times a second: creep grows where a tumor or a generating overlord reaches, fades slowly (lingers) elsewhere,
+    // and stays away for a while where firebats scorched the ground.
+    updateCreep(dt) {
+      const g = this.creep, C = BS.CREEP;
+      g.t += dt;
+      if (g.t < C.update) return;
+      const st = g.t; g.t = 0;
+      g.src.fill(0);
+      const mark = k => { g.src[k] = 1; };
+      for (const e of this.enemies) {
+        if (e.hp <= 0) continue;
+        if (e.def.tumor) this.creepCells(e.x, e.y, e.creepR, mark);
+        else if (e.def.creeper && e.state === 'creep') this.creepCells(e.x, e.y, C.overlord.radius, mark);
+      }
+      let cover = 0, changed = false;
+      for (let k = 0; k < g.c.length; k++) {
+        if (g.burn[k] > 0) g.burn[k] = Math.max(0, g.burn[k] - st);
+        const v = g.c[k], nv = g.src[k] && g.burn[k] <= 0 ? Math.min(1, v + C.grow * st) : Math.max(0, v - C.decay * st);
+        if (nv !== v) { g.c[k] = nv; changed = true; }
+        if (nv > C.on) cover++;
+      }
+      g.cover = cover * g.cell * g.cell;            // square metres under creep
+      if (changed) g.version++;
+    }
+    // Firebat flames: the creep in the burst burns away and the ground stays scorched for a while; tumors there are singed.
+    burnCreep(x, y, r, singe) {
+      const g = this.creep, C = BS.CREEP;
+      let hit = false;
+      this.creepCells(x, y, r, k => { if (g.c[k] > 0) hit = true; g.c[k] = Math.max(0, g.c[k] - 0.85); g.burn[k] = C.burn.regrow; });
+      if (hit) g.version++;
+      if (singe) for (const e of this.enemies.slice()) if (e.def.tumor && e.hp > 0 && dist(x, y, e.x, e.y) - e.radius <= r) this.hurtEnemy(e, C.burn.tumorDmg, true);
+    }
+    tumorCount() { let n = 0; for (const e of this.enemies) if (e.def.tumor && e.hp > 0) n++; return n; }
+    creepWave() { return Math.ceil(BS.CREEP.fromWave * (this.hard ? 0.85 : 1)); }
+    tumorCap() { const T = BS.CREEP.tumor; return Math.min(T.max, T.base + T.perWave * Math.max(0, this.wave - this.creepWave() + 1)); }
+    // A creep tumor at (x, y), if the spot is open ground clear of the bunker and of other tumors, and under the cap.
+    plantTumor(x, y) {
+      const T = BS.CREEP.tumor;
+      if (!BS.Terrain.walkable(x, y) || Math.hypot(x, y) < T.minBunker || this.tumorCount() >= this.tumorCap()) return null;
+      if (this.enemies.some(e => e.def.tumor && e.hp > 0 && dist(e.x, e.y, x, y) < T.gap)) return null;
+      const e = this.spawnEnemy('creeptumor', 0, [x, y]);
+      BS.audio.play('tumorBirth', { vol: 0.5, gap: 0.3 });
+      return e;
+    }
+    setupCreeper(e) {
+      const d = e.def, C = BS.CREEP;
+      if (d.creeper) {
+        const a = Math.random() * Math.PI * 2, r = rnd(9, 14);
+        e.state = 'in'; e.t = 0; e.exit = [e.x, e.y];
+        e.hover = this.mode === 'lane' ? [rnd(-7, 7), rnd(10, 18)] : [Math.cos(a) * r, Math.sin(a) * r];
+      }
+      if (d.tumor) { e.burrowed = true; e.t = 0; e.animT = 0; e.creepR = 0.6; e.spread = false; e.anim = 'birth'; e.handle.play(/^stand morph start/i, false); }
+      if (d.tumors) e.tumorCd = rnd(C.queen.first[0], C.queen.first[1]);
+    }
+    // Creep tumor: buds, burrows, spreads creep out to its radius, and after a while buds one more tumor nearby on its
+    // creep, toward the bunker (trying again a little later if there is no room).
+    updateTumor(e, dt) {
+      const T = BS.CREEP.tumor;
+      e.t += dt; e.animT += dt;
+      e.creepR = Math.min(T.radius, e.creepR + T.growth * dt);
+      if (e.anim === 'birth' && e.animT > 1.3) { e.anim = 'cover'; e.animT = 0; e.handle.play(/^cover start/i, false); }
+      else if (e.anim !== 'stand' && e.anim !== 'birth' && e.animT > 1.3) { e.anim = 'stand'; e.handle.play(/^cover$/i, true); }
+      if (e.spread || e.t < T.spread) return;
+      e.spread = true;
+      const toward = Math.atan2(-e.y, -e.x);
+      for (let k = 0; k < 6; k++) {
+        const a = toward + rnd(-1.1, 1.1), r = rnd(T.hop[0], T.hop[1]), x = e.x + Math.cos(a) * r, y = e.y + Math.sin(a) * r;
+        if (this.onCreep(x, y) && this.plantTumor(x, y)) { e.anim = 'spell'; e.animT = 0; e.handle.play(/^cover spell start/i, false); return; }
+      }
+      e.spread = false; e.t = T.spread - 4;
+    }
+    // Queens plant a creep tumor every few seconds as they walk with the wave (standing still while they do).
+    queenCreep(e, dt) {
+      if (e.castUntil > this.time) { e.attacking = false; return true; }
+      if ((e.tumorCd -= dt) > 0) return false;
+      e.tumorCd = BS.CREEP.queen.every;
+      if (!this.plantTumor(e.x + Math.cos(e.yaw) * 0.9, e.y + Math.sin(e.yaw) * 0.9)) { e.tumorCd = 2; return false; }
+      e.castUntil = this.time + 0.9; e.anim = 'spell'; e.attacking = false;
+      e.handle.play(/^spell$/i, false);
+      BS.audio.play('tumorPlant', { vol: 0.6, gap: 0.3 });
+      return true;
+    }
+    // Creep overlord: drifts in over the field, then hangs there generating creep beneath it while edging toward the
+    // bunker (into anti-air reach), and finally drifts back out.
+    updateCreeper(e, dt) {
+      const d = e.def, C = BS.CREEP.overlord;
+      e.t += dt;
+      if (e.state === 'creep') {
+        const r = Math.hypot(e.hover[0], e.hover[1]);
+        if (r > C.minDist) { const k = Math.max(C.minDist, r - C.drift * dt) / r; e.hover[0] *= k; e.hover[1] *= k; }
+        if (e.t > C.life) { e.state = 'out'; this.playAnim(e, 'walk'); }
+      }
+      const [gx, gy] = e.state === 'out' ? e.exit : e.hover, dx = gx - e.x, dy = gy - e.y, dd = Math.hypot(dx, dy);
+      if (e.state === 'in' && dd < 0.5) {
+        e.state = 'creep'; e.t = 0; e.anim = 'work'; e.handle.play(/^stand work$/i, true);
+        BS.audio.play('generateCreep', { vol: 0.6 });
+        this.toast('Overlord generating creep');
+      }
+      if (e.state === 'out' && dd < 0.5) { this.despawn(e); return; }
+      if (dd > 0.05) {
+        const s = Math.min(dd, d.speed * dt);
+        e.x += dx / dd * s; e.y += dy / dd * s;
+        if (e.state !== 'creep') e.yaw += clamp(angDelta(e.yaw, Math.atan2(dy, dx)), -2 * dt, 2 * dt);
+      }
+    }
+    // Zerg still to beat this wave (creep tumors linger and do not hold up the next one).
+    waveAlive() { return this.enemies.some(e => !e.def.tumor); }
     // Defiler (alternating dark swarm and plague) and viper (abduct) spells.
     castSpell(e, t) {
       const d = e.def;
@@ -1271,8 +1417,8 @@ window.BS = window.BS || {};
       for (const k of ['stimCd', 'strikeCd', 'repairCd', 'yamatoCd']) this.ab[k] = Math.max(0, this.ab[k] - dt);
       for (const k of ['nuke', 'vikings']) this.techCd[k] = Math.max(0, this.techCd[k] - dt);
       this.waveTimer -= dt;
-      if (this.waveTimer <= 0 || (!this.spawnQueue.length && !this.enemies.length && this.wave > 0 && this.waveTimer < this.waveLen - 6)) {
-        if (this.wave > 0 && !this.enemies.length) { this.minerals += 10 + 5 * this.wave; this.score += 100 * this.wave; }
+      if (this.waveTimer <= 0 || (!this.spawnQueue.length && !this.waveAlive() && this.wave > 0 && this.waveTimer < this.waveLen - 6)) {
+        if (this.wave > 0 && !this.waveAlive()) { this.minerals += 10 + 5 * this.wave; this.score += 100 * this.wave; }
         this.startWave();
       }
       this.spawnTimer += dt;
@@ -1283,6 +1429,7 @@ window.BS = window.BS || {};
       }
       this.tgs = this.targets(); this.airTgs = this.airTargets();
       this.updateEnemies(dt);
+      this.updateCreep(dt);
       this.updateSpells(dt);
       this.updateBunker(dt);
       this.updateTanks(dt);
@@ -1318,6 +1465,9 @@ window.BS = window.BS || {};
         if (e.life > 0) { e.life -= dt; if (e.life <= 0) { this.killEnemy(e, true); this.kills--; continue; } }
         if (d.transport) { this.updateOverlord(e, dt); continue; }
         if (d.nydus) { this.updateNydus(e, dt); continue; }
+        if (d.tumor) { this.updateTumor(e, dt); continue; }
+        if (d.creeper) { this.updateCreeper(e, dt); continue; }
+        if (d.tumors && this.queenCreep(e, dt)) continue;
         e.retarget -= dt;
         if (!this.valid(e.target) || e.retarget <= 0) {
           // Scourge and devourers hunt Terran air; guardians single out mechs; brood queens make for tanks, mechs, troopers.
@@ -1413,7 +1563,9 @@ window.BS = window.BS || {};
             if (Math.hypot(gx - e.x, gy - e.y) < 0.9) { e.route.shift(); if (!e.route.length && e.highRoute) e.perched = true; }
           }
           const gd = Math.hypot(gx - e.x, gy - e.y) || 1;
-          const sp = d.speed * (slowed ? 0.5 : 1), nx = (gx - e.x) / gd, ny = (gy - e.y) / gd;
+          // Zerg on creep move faster (ground units only).
+          e.onCreep = !d.flying && this.onCreep(e.x, e.y);
+          const sp = d.speed * (slowed ? 0.5 : 1) * (e.onCreep ? BS.CREEP.speed : 1), nx = (gx - e.x) / gd, ny = (gy - e.y) / gd;
           const mx = nx * sp * dt + e.sx * 0.8, my = ny * sp * dt + e.sy * 0.8;
           // Cliffs: ground units steer around them; flyers ignore them.
           // Winged zerglings hop straight over cliffs and the mesa.
@@ -1488,6 +1640,9 @@ window.BS = window.BS || {};
         BS.audio.play('marineFire', { vol: 0.3, gap: 0.09 });
       } else if (u.type === 'firebat') {
         if (dmg) for (const v of this.enemiesInRange(hx, hy, d.splash, pred)) this.hurtEnemy(v, dmg + (v.def.light ? d.dmgLight : 0), true);
+        // The flames burn the creep away where they land and along the way.
+        this.burnCreep(hx, hy, BS.CREEP.burn.radius, true);
+        this.burnCreep((sx + hx) / 2, (sy + hy) / 2, BS.CREEP.burn.radius * 0.6, false);
         this.fx.play('firebatLaunch', sx, sy, sz, ang, 1.2);
         BS.audio.play('firebatFire', { vol: 0.45, gap: 0.3 });
       } else {
