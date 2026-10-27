@@ -1759,8 +1759,8 @@ void ABSGame::UpdateBc(float Dt)
 // closest devourer. Scourge only have to touch the ship, so they always come first.
 TSharedPtr<FBSEnemy> ABSGame::BcThreat() const
 {
-	TSharedPtr<FBSEnemy> Best;
-	if (!Bc.IsValid()) return Best;
+	TSharedPtr<FBSEnemy> Pick;
+	if (!Bc.IsValid()) return Pick;
 	float Bs = 1e9f;
 	for (const TSharedPtr<FBSEnemy>& E : Enemies)
 	{
@@ -1768,9 +1768,9 @@ TSharedPtr<FBSEnemy> ABSGame::BcThreat() const
 		const float D = FMath::Sqrt(Dist2(Bc->X, Bc->Y, E->X, E->Y)) - E->Radius;
 		if (D > BSDefs::BcRange + BSDefs::BcPdRange) continue;
 		const float S = D - (E->Def->bSuicide ? 100.f : 0.f);
-		if (S < Bs) { Bs = S; Best = E; }
+		if (S < Bs) { Bs = S; Pick = E; }
 	}
-	return Best;
+	return Pick;
 }
 
 // Warnings so the battlecruiser never dies unannounced: scourge or devourers going for it (at most every few seconds)
