@@ -1093,10 +1093,10 @@ void ABSGame::UpdateExpansion(float Dt)
 		{
 			// An SCV goes up to build it (the one nearest the way up).
 			const FVector2D& W0 = FwdRoute[0];
-			TSharedPtr<FBSScv> Best;
+			TSharedPtr<FBSScv> BestScv;
 			for (const TSharedPtr<FBSScv>& S : Scvs)
-				if (!S->Fwd.bOn && (!Best || Dist2(S->X, S->Y, W0.X, W0.Y) < Dist2(Best->X, Best->Y, W0.X, W0.Y))) Best = S;
-			if (Best) { Best->Fwd.bOn = true; Best->Fwd.bBack = false; Best->Fwd.Leg = 0; Best->Fwd.Post = FwdScv; }
+				if (!S->Fwd.bOn && (!BestScv || Dist2(S->X, S->Y, W0.X, W0.Y) < Dist2(BestScv->X, BestScv->Y, W0.X, W0.Y))) BestScv = S;
+			if (BestScv) { BestScv->Fwd.bOn = true; BestScv->Fwd.bBack = false; BestScv->Fwd.Leg = 0; BestScv->Fwd.Post = FwdScv; }
 		}
 	}
 	else if (Expand == EExpand::Held && !Cc) { Expand = EExpand::Advance; ExpandT = 0; }
@@ -2098,21 +2098,21 @@ bool ABSGame::UpdateKerrigan(const TSharedPtr<FBSEnemy>& EP, const FBSTarget& T,
 	if (E.ApocCd <= 0 && Reach <= BSDefs::ApocRange)
 	{
 		// The defender with the most others round it.
-		const FBSTarget* Best = nullptr; int32 BestN = -1;
+		const FBSTarget* Knot = nullptr; int32 BestN = -1;
 		for (const FBSTarget& O : Targets)
 		{
 			if (FMath::Sqrt(Dist2(E.X, E.Y, O.X, O.Y)) - O.Radius > BSDefs::ApocRange + E.Radius) continue;
 			int32 N = 0;
 			for (const FBSTarget& Q : Targets) N += Dist2(Q.X, Q.Y, O.X, O.Y) < BSDefs::ApocRadius * BSDefs::ApocRadius;
-			if (N > BestN) { BestN = N; Best = &O; }
+			if (N > BestN) { BestN = N; Knot = &O; }
 		}
-		if (Best)
+		if (Knot)
 		{
 			E.ApocCd = BSDefs::ApocCd; E.CastUntil = Time + BSDefs::ApocDelay; E.Anim = TEXT("spell");
 			if (E.Actor) E.Actor->Play(TEXT("spell"), false);
-			E.Yaw = FMath::Atan2(Best->Y - E.Y, Best->X - E.X);
-			E.Blast = FVector2D(Best->X, Best->Y); E.BlastAt = Time + BSDefs::ApocDelay;
-			E.BlastFx = PlayFx(TEXT("apocalypseChannel"), FVector(Best->X, Best->Y, BSTerrain::Height(Best->X, Best->Y)), 0, 1.2f);
+			E.Yaw = FMath::Atan2(Knot->Y - E.Y, Knot->X - E.X);
+			E.Blast = FVector2D(Knot->X, Knot->Y); E.BlastAt = Time + BSDefs::ApocDelay;
+			E.BlastFx = PlayFx(TEXT("apocalypseChannel"), FVector(Knot->X, Knot->Y, BSTerrain::Height(Knot->X, Knot->Y)), 0, 1.2f);
 			PlaySound(TEXT("kerriganPsi"), 0.8f);
 			Floater(E.X, E.Y, E.Z + 3, TEXT("APOCALYPSE"), FLinearColor(0.75f, 0.55f, 1.f));
 			return true;
@@ -2305,16 +2305,16 @@ void ABSGame::UpdateNydus(const TSharedPtr<FBSEnemy>& EP, float Dt)
 // thor or odin, then a trooper outside the bunker, then an SCV (the nearest within each).
 const FBSTarget* ABSGame::BroodTarget(const FBSEnemy& E) const
 {
-	const FBSTarget* Best = nullptr; float Bs = -1e9f;
+	const FBSTarget* Pick = nullptr; float Bs = -1e9f;
 	for (const FBSTarget& T : Targets)
 	{
 		const int32 Pr = BroodPriority(T.Kind);
 		if (!Pr || !T.IsValid(Bunker)) continue;
 		const float Dd = FMath::Sqrt(Dist2(E.X, E.Y, T.X, T.Y)) - T.Radius - E.Radius;
 		if (Dd > E.Def->Range + 1) continue;
-		if (Pr * 100 - Dd > Bs) { Bs = Pr * 100 - Dd; Best = &T; }
+		if (Pr * 100 - Dd > Bs) { Bs = Pr * 100 - Dd; Pick = &T; }
 	}
-	return Best;
+	return Pick;
 }
 
 // A parasite dart flies at the victim (see BroodlingHit); then the queen backs off while the next one grows.
@@ -2356,6 +2356,8 @@ void ABSGame::BroodlingHit(const FBSTarget& T)
 	DamageDefender(T, bKill ? Hp + 100 : BroodSpellDmg + Armor);
 	Floater(X, Y, Gz + 3, bKill ? FString(TEXT("BROODLINGS")) : FString::Printf(TEXT("BROODLINGS -%d"), FMath::RoundToInt(BroodSpellDmg)), FLinearColor(0.71f, 1.f, 0.35f));
 	for (int32 k = 0; k < 2; k++) if (Enemies.Num() < (bHard ? 200 : 160)) { const FVector2D At(X, Y); SpawnEnemy(TEXT("broodling"), 0, &At); }
+}
+
 // ---- Creep ------------------------------------------------------------------------------------------------
 namespace { enum ECreeperState : int32 { CreeperIn = 0, CreeperWork = 1, CreeperOut = 2 }; }
 
@@ -2597,9 +2599,9 @@ void ABSGame::UpdateCreepMesh()
 	for (int32 j = 0; j < CreepVy; j++)
 		for (int32 i = 0; i < CreepVx; i++)
 		{
-			const float Fx = FMath::Clamp(i * Step / Creep.Cell - 0.5f, 0.f, Creep.Nx - 1.f), Fy = FMath::Clamp(j * Step / Creep.Cell - 0.5f, 0.f, Creep.Ny - 1.f);
-			const int32 I0 = FMath::FloorToInt(Fx), J0 = FMath::FloorToInt(Fy), I1 = FMath::Min(I0 + 1, Creep.Nx - 1), J1 = FMath::Min(J0 + 1, Creep.Ny - 1);
-			const float Tx = Fx - I0, Ty = Fy - J0;
+			const float Cx = FMath::Clamp(i * Step / Creep.Cell - 0.5f, 0.f, Creep.Nx - 1.f), Fy = FMath::Clamp(j * Step / Creep.Cell - 0.5f, 0.f, Creep.Ny - 1.f);
+			const int32 I0 = FMath::FloorToInt(Cx), J0 = FMath::FloorToInt(Fy), I1 = FMath::Min(I0 + 1, Creep.Nx - 1), J1 = FMath::Min(J0 + 1, Creep.Ny - 1);
+			const float Tx = Cx - I0, Ty = Fy - J0;
 			const float V = FMath::Lerp(FMath::Lerp(C[J0 * Creep.Nx + I0], C[J0 * Creep.Nx + I1], Tx), FMath::Lerp(C[J1 * Creep.Nx + I0], C[J1 * Creep.Nx + I1], Tx), Ty);
 			CreepCol[j * CreepVx + i].A = V;
 			bAny |= V > 0.01f;

@@ -158,6 +158,7 @@ namespace
 			FBSZergDef& D = Add(TEXT("overlordCreep"), TEXT("Overlord"), TEXT("overlordCreep"), TEXT("overlordCreepDeath"), TEXT("btn-unit-zerg-overlord"));
 			D.Hp = 200; D.Dmg = 0; D.Cd = 1; D.Range = 0; D.Speed = 1.4f; D.Radius = 1.0f; D.bArmored = true; D.bFlying = true; D.Fly = 4.8f; D.bCreeper = true;
 			D.Bounty = 20; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0; D.SoundDeath = TEXT("overlordDeath"); D.Height = 2;
+		}
 		// Wave 100 finale (see ABSGame::StartFinale): Kerrigan casts Leaping Strike and Apocalypse; the leviathan bombards and
 		// spawns mutalisks.
 		{
