@@ -53,17 +53,46 @@ window.BS = window.BS || {};
     if (r && r.k > 0) h = h + (H * r.t - h) * r.k;
     return h;
   }
+  // The simulation asks for heights and slopes constantly (every zerg step), and the exact field is a stack of noise and
+  // distance terms. Cache both on a 10 cm grid over the play area, filled lazily: heights interpolated between exact
+  // corner samples, slopes per cell. Outside the grid (and for the renderer's ground mesh) the exact functions answer.
+  const GX0 = -40, GY0 = -40, GS = 0.1, GNX = 800, GNY = 900;
+  let hGrid = null, sGrid = null;
+  function hCorner(i, j) {
+    const k = j * (GNX + 1) + i;
+    let v = hGrid[k];
+    if (v !== v) v = hGrid[k] = height(GX0 + i * GS, GY0 + j * GS);
+    return v;
+  }
+  function heightFast(x, y) {
+    if (!BS.Terrain.active) return 0;
+    const fx = (x - GX0) / GS, fy = (y - GY0) / GS, i = Math.floor(fx), j = Math.floor(fy);
+    if (i < 0 || j < 0 || i >= GNX || j >= GNY) return height(x, y);
+    if (!hGrid) { hGrid = new Float32Array((GNX + 1) * (GNY + 1)).fill(NaN); sGrid = new Float32Array(GNX * GNY).fill(NaN); }
+    const tx = fx - i, ty = fy - j;
+    const a = hCorner(i, j), b = hCorner(i + 1, j), c = hCorner(i, j + 1), d = hCorner(i + 1, j + 1);
+    return (a + (b - a) * tx) * (1 - ty) + (c + (d - c) * tx) * ty;
+  }
+  function slopeFast(x, y) {
+    const i = Math.floor((x - GX0) / GS), j = Math.floor((y - GY0) / GS);
+    if (i < 0 || j < 0 || i >= GNX || j >= GNY || !BS.Terrain.active) return slope(x, y);
+    if (!sGrid) heightFast(x, y);
+    const k = j * GNX + i;
+    let v = sGrid[k];
+    if (v !== v) v = sGrid[k] = slope(GX0 + (i + 0.5) * GS, GY0 + (j + 0.5) * GS);
+    return v;
+  }
   function slope(x, y) {
     const e = 0.15;
     return Math.hypot(height(x + e, y) - height(x - e, y), height(x, y + e) - height(x, y - e)) / (2 * e);
   }
 
   BS.Terrain = {
-    active: false, H, height, slope, lowSdf, ramps: RAMPS, arm: ARM,
+    active: false, H, height: heightFast, heightExact: height, slope: slopeFast, lowSdf, ramps: RAMPS, arm: ARM,
     setMode(mode) { this.active = mode === 'lane'; },
     // Ground units cannot climb cliff faces (the ramps are gentle enough to walk).
-    walkable(x, y) { return !this.active || slope(x, y) < 1.05; },
-    onHigh(x, y) { return this.active && height(x, y) > H * 0.6; },
+    walkable(x, y) { return !this.active || slopeFast(x, y) < 1.05; },
+    onHigh(x, y) { return this.active && heightFast(x, y) > H * 0.6; },
     // Waypoints for a ground unit spawning at (x, y): down an arm into the stem, or up a ramp to a perch.
     route(x, y, high) {
       if (!this.active) return [];

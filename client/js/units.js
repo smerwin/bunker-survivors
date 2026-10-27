@@ -309,6 +309,29 @@ window.BS = window.BS || {};
   // land all round the base, behind the lines too (podMinR..podMaxR from the bunker): podLand is when the pod hits the
   // ground (its Birth sequence), crushing what it lands on (podDmg within podRadius), then it lets out podCargo zerg.
   // victory: score for killing both bosses.
+  // The difficulty curve, waves 1-100. Early waves are short and ramp fast; past their knees the budget grows gently
+  // (perWave[0] x + perWave[1] x^2 more, x waves past the knee) and the zergling swarm linearly (+swarmPerWave a wave, up
+  // to swarmMax), so a maxed-out player meets a steady climb (new strains, creep, drops, milestone assaults) rather than
+  // a wall of zerglings. len: wave length in seconds, len[0] at wave 1 to len[1] by lenBy. hp: zerg hit points x
+  // (1 + hp x waves past hpFrom).
+  // alive/aliveHard: how many zerg may be on the field at once, rising from [0] at wave aliveFrom to [1] by aliveBy (phones
+  // scale it down); the rest wait their turn. The cap is what the late game leans on hardest: at 240 the wave-100 finale
+  // overruns a maxed-out army, at 200 it can be won.
+  // tierFrom/tierEvery: the swarm evolves on its own as well as answering your tech: from tierFrom, every tierEvery waves
+  // count as one more tech card for the late-game strains (see Game.lateTier). milestones: a named assault every ten
+  // waves from 30, on top of the budget: extra zerg, drop pods or nydus breaches.
+  BS.WAVES = { alive: [160, 200], aliveHard: [200, 250], aliveFrom: 20, aliveBy: 60, len: [22, 30], lenBy: 12, knee: 16, perWave: [16, 0.12], swarmKnee: 12, swarmPerWave: 5, swarmMax: 360, hp: 0.02, hpFrom: 10,
+    tierFrom: 20, tierEvery: 10,
+    milestones: {
+      30: { name: 'ULTRALISK STAMPEDE', toast: 'Ultralisks stampeding down the lane!', zerg: { ultralisk: 6 } },
+      40: { name: 'AIR ARMADA', toast: 'A swarm of fliers darkens the sky!', zerg: { mutalisk: 12, guardian: 4, devourer: 3, broodlord: 2 } },
+      50: { name: 'THE LEVIATHAN', toast: 'A leviathan looms over the field!', zerg: { leviathan: 1 } },
+      60: { name: 'DROP POD ASSAULT', toast: 'Drop pods landing all round the base!', pods: 6 },
+      70: { name: 'NYDUS BREACH', toast: 'Nydus worms breaching behind our lines!', nydus: 3 },
+      80: { name: 'DARK SWARM', toast: 'Defilers lead a lurker siege!', zerg: { defiler: 4, lurker: 8, ultralisk: 4 } },
+      90: { name: 'BROOD WAR', toast: 'The old brood returns in force!', zerg: { broodqueen: 4, guardian: 6, defiler: 2, ultralisk: 4 } },
+    } };
+
   BS.FINALE = { wave: 100, budget: 1.5, pods: 8, podStart: 6, podEvery: 2, podLand: 2.7, podCargo: 4, podDmg: 60, podRadius: 2, podMinR: 7, podMaxR: 13,
     podZerg: ['hydralisk', 'hydralisk', 'roach', 'roach', 'lurker'],        // every other pod brings an ultralisk too
     leap: { cd: 8, min: 3, max: 9, dur: 0.7, dmg: 90, radius: 1.8 },        // Leaping Strike onto a defender out of reach

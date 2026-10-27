@@ -343,6 +343,15 @@ public:
 	int32 UpgradeLevel(const FString& Id) const;
 	FString DebugState() const;
 	void DebugSpawn(const FString& Type, float X, float Y) { const FVector2D At(X, Y); SpawnEnemy(Type, 0, &At); }
+	int32 MaxAlive() const
+	{
+		const int32* A = bHard ? BSDefs::AliveHard : BSDefs::Alive;
+		const float K = FMath::Clamp((Wave - BSDefs::AliveFrom) / float(BSDefs::AliveBy - BSDefs::AliveFrom), 0.f, 1.f);
+		return FMath::RoundToInt(A[0] + (A[1] - A[0]) * K);
+	}
+	// Stress test (-BSCrowd=N): keeps N unkillable zerg on the field and logs the frame time every 5 s.
+	int32 CrowdTest = 0; float CrowdT = 0, CrowdSum = 0; int32 CrowdFrames = 0;
+	void CrowdTick(float Dt);
 
 	// StarCraft II particle effects (BSFx.cpp). Pos in sim metres, Yaw is the sim facing. Returns a handle (0 if missing).
 	int32 PlayFx(const FString& Key, const FVector& Pos, float Yaw = 0, float Scale = 1, float Delay = 0);
@@ -412,7 +421,11 @@ private:
 	void MuzzleMesh(const FVector& At, float Yaw, float Delay, float Scale = 1.f);
 	TArray<FVector> MechMuzzles(const FBSMech& M, bool bAir) const;
 	// Late-game zerg.
-	int32 LateTier() const { return TechUnlocked.Num(); }
+	int32 LateTier() const
+	{
+		const int32 ByWave = Wave >= BSDefs::TierFrom ? (Wave - BSDefs::TierFrom) / BSDefs::TierEvery + 1 : 0;
+		return FMath::Min(BSDefs::Tech().Num(), FMath::Max(TechUnlocked.Num(), ByWave));
+	}
 	bool AirPresence() const { return Bc.IsValid() || VikingWing.Num() || Banshees.Num(); }
 	void Despawn(const TSharedPtr<FBSEnemy>& E);
 	void UpdateOverlord(const TSharedPtr<FBSEnemy>& E, float Dt);

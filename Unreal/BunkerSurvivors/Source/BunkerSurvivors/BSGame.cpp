@@ -1935,7 +1935,9 @@ void ABSGame::StartWave()
 	Wave++;
 	const int32 Wv = Wave;
 	const bool bFinale = Wv == BSDefs::FinaleWave && !Finale.bOn;
-	float Budget = (20 + 10 * Wv + 0.45f * Wv * Wv) * (bHard ? 1.15f : 1.f) * (bFinale ? BSDefs::FinaleBudget : 1.f);
+	auto Quad = [](float X) { return 20 + 10 * X + 0.45f * X * X; };
+	WaveLen = FMath::RoundToFloat(BSDefs::WaveLenStart + (BSDefs::WaveLenEnd - BSDefs::WaveLenStart) * FMath::Clamp((Wv - 1) / float(BSDefs::WaveLenBy - 1), 0.f, 1.f));
+	float Budget = (Wv <= BSDefs::WaveKnee ? Quad(Wv) : Quad(BSDefs::WaveKnee) + BSDefs::WavePerWaveA * (Wv - BSDefs::WaveKnee) + BSDefs::WavePerWaveB * FMath::Square(float(Wv - BSDefs::WaveKnee))) * (bHard ? 1.15f : 1.f) * (bFinale ? BSDefs::FinaleBudget : 1.f);
 	// Late game: every high-tech card unlocked brings stranger zerg, and more of them. Guardians come for the mechs;
 	// scourge and devourers only when there is Terran air to hunt. Brood queens (Ramp) grow commoner with every card;
 	// the finale throws in the whole late roster.
@@ -1961,7 +1963,8 @@ void ABSGame::StartWave()
 	}
 	if (Wv % 5 == 0) { List.Add(Wv >= 10 ? TEXT("ultralisk") : TEXT("roach")); List.Add(TEXT("roach")); }
 	// On top of the budget: a zergling swarm that snowballs fast (4 at wave 1, ~50 by wave 8, ~150 by wave 15, ~260 by wave 20).
-	const int32 Swarm = FMath::RoundToInt(2 + 1.2f * Wv + 0.6f * Wv * Wv);
+	auto Sq = [](float X) { return 2 + 1.2f * X + 0.6f * X * X; };
+	const int32 Swarm = FMath::RoundToInt(Wv <= BSDefs::SwarmKnee ? Sq(Wv) : FMath::Min<float>(BSDefs::SwarmMax, Sq(BSDefs::SwarmKnee) + BSDefs::SwarmPerWave * (Wv - BSDefs::SwarmKnee)));
 	if (bHard && Wv % 10 == 0) { List.Add(TEXT("ultralisk")); List.Add(TEXT("ultralisk")); }
 	for (int32 i = List.Num() - 1; i > 0; i--) List.Swap(i, FMath::RandRange(0, i));
 
@@ -2026,6 +2029,22 @@ void ABSGame::StartWave()
 	WaveBanner = FString::Printf(TEXT("WAVE %d"), Wv);
 	if (Wv % 5 == 0) WaveBanner += TEXT("  //  HEAVY ASSAULT");
 	WaveBannerT = Time; WaveSerial++;
+	for (const BSDefs::FMilestone& Ms : BSDefs::Milestones)
+	{
+		if (Ms.Wave != Wv || bFinale) continue;
+		TArray<FString> Items; FString(Ms.Zerg).ParseIntoArray(Items, TEXT(","));
+		for (const FString& It : Items)
+		{
+			FString K, Nstr; It.Split(TEXT(":"), &K, &Nstr);
+			for (int32 i = 0; i < FCString::Atoi(*Nstr); i++) SpawnQueue.Add({ 3 + Rnd(0.f, Spread * 0.6f), K, PackAng(0.4f) });
+		}
+		for (int32 i = 0; i < Ms.Nydus; i++) SpawnQueue.Add({ 5.f + i * 4, TEXT("nydus"), 0.f });
+		SpawnQueue.Sort([](const FBSSpawn& A, const FBSSpawn& B) { return A.T < B.T; });
+		if (Ms.Pods) DropPods(Ms.Pods, 6, 2.5f);
+		WaveBanner = FString::Printf(TEXT("WAVE %d  //  %s"), Wv, Ms.Name);
+		Toast(Ms.Toast);
+		Shake = 0.6f;
+	}
 	if (bFinale) StartFinale();
 }
 
@@ -2241,7 +2260,7 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 	else { const float R = Rnd(25, 28); X = FMath::Cos(Ang + Rnd(-0.35f, 0.35f)) * R; Y = FMath::Sin(Ang + Rnd(-0.35f, 0.35f)) * R; }
 	TSharedPtr<FBSEnemy> E = MakeShared<FBSEnemy>();
 	E->Id = NextId++; E->Def = D; E->X = X; E->Y = Y; E->Z = D->bFlying ? D->Fly : BSTerrain::Height(X, Y); E->Yaw = FMath::Atan2(-Y, -X);
-	E->Hp = E->MaxHp = D->Boss.IsEmpty() ? D->Hp * (1 + (bHard ? 0.025f : 0.02f) * FMath::Max(0, Wave - 10)) : D->Hp;   // late waves get tougher
+	E->Hp = E->MaxHp = D->Boss.IsEmpty() ? D->Hp * (1 + BSDefs::WaveHp * (bHard ? 1.25f : 1.f) * FMath::Max(0, Wave - BSDefs::WaveHpFrom)) : D->Hp;   // late waves get tougher
 	if (!D->Boss.IsEmpty()) { E->LeapCd = 3; E->ApocCd = 6; E->BroodCd = 8; }
 	E->Cd = Rnd(0, D->Cd); E->Radius = D->Radius; E->Life = D->Life;
 	// Lane terrain: ground zerg follow the Y; some ranged ones climb a ramp to a ledge over the bunker.
@@ -2276,6 +2295,7 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 	if (E->Actor)
 	{
 		E->Actor->SetScale(D->Scale);
+		E->Actor->Mesh->SetCastShadow(!(D->bLight && Enemies.Num() > BSDefs::ShadowCrowd));
 		E->Actor->SetTeamColor(ZergColor);
 		E->Actor->SetSim(X, Y, E->Z, E->Yaw);
 	}
@@ -2414,7 +2434,7 @@ void ABSGame::BroodlingHit(const FBSTarget& T)
 	PlaySound(TEXT("broodSpell"), 0.8f); PlaySound(TEXT("broodlingBirth"), 0.5f);
 	DamageDefender(T, bKill ? Hp + 100 : BroodSpellDmg + Armor);
 	Floater(X, Y, Gz + 3, bKill ? FString(TEXT("BROODLINGS")) : FString::Printf(TEXT("BROODLINGS -%d"), FMath::RoundToInt(BroodSpellDmg)), FLinearColor(0.71f, 1.f, 0.35f));
-	for (int32 k = 0; k < 2; k++) if (Enemies.Num() < (bHard ? 200 : 160)) { const FVector2D At(X, Y); SpawnEnemy(TEXT("broodling"), 0, &At); }
+	for (int32 k = 0; k < 2; k++) if (Enemies.Num() < MaxAlive()) { const FVector2D At(X, Y); SpawnEnemy(TEXT("broodling"), 0, &At); }
 }
 
 // ---- Creep ------------------------------------------------------------------------------------------------
@@ -3035,6 +3055,7 @@ void ABSGame::Tick(float Dt)
 {
 	Super::Tick(Dt);
 	if (!Assets) return;
+	if (CrowdTest > 0 && bStarted) CrowdTick(Dt);
 	if (bStarted && !bPaused && !bOver)
 	{
 		Acc += FMath::Min(Dt, 0.1f) * TimeScale;
@@ -3063,13 +3084,19 @@ void ABSGame::Step(float Dt)
 		StartWave();
 	}
 	SpawnTimer += Dt;
+	// Due spawns come out in order while there is room on the field; at the alive cap they wait their turn (bosses
+	// always come through).
 	while (SpawnQueue.Num() && SpawnQueue[0].T <= SpawnTimer)
 	{
-		FBSSpawn S = SpawnQueue[0];
+		if (Enemies.Num() >= MaxAlive())
+		{
+			const int32 Bi = SpawnQueue.IndexOfByPredicate([this](const FBSSpawn& Q) { const FBSZergDef* QD = BSDefs::FindZerg(Q.Type); return Q.T <= SpawnTimer && QD && !QD->Boss.IsEmpty(); });
+			if (Bi != INDEX_NONE) { const FBSSpawn B = SpawnQueue[Bi]; SpawnQueue.RemoveAt(Bi); SpawnEnemy(B.Type, B.Ang); }
+			break;
+		}
+		const FBSSpawn S = SpawnQueue[0];
 		SpawnQueue.RemoveAt(0);
-		const FBSZergDef* SD = BSDefs::FindZerg(S.Type);
-		if (Enemies.Num() < (bHard ? 200 : 160) || (SD && !SD->Boss.IsEmpty())) SpawnEnemy(S.Type, S.Ang);
-		else SpawnQueue.Add({ SpawnTimer + 2, S.Type, S.Ang });
+		SpawnEnemy(S.Type, S.Ang);
 	}
 	BuildTargets();
 	BuildAirTargets();
@@ -3101,20 +3128,38 @@ void ABSGame::Step(float Dt)
 
 void ABSGame::UpdateEnemies(float Dt)
 {
+	// Separation: zerg push apart where they overlap. A spatial hash keeps it near-linear in the crowd size (each unit
+	// checks only the cells within its reach of the biggest unit about).
 	const int32 N = Enemies.Num();
-	for (int32 i = 0; i < N; i++) { Enemies[i]->Sx = 0; Enemies[i]->Sy = 0; }
+	constexpr float SepCell = 2.f;
+	float MaxR = 0;
+	TMap<int32, TArray<int32, TInlineAllocator<8>>> Grid;
+	auto CellKey = [](int32 Cx, int32 Cy) { return Cx * 4096 + Cy; };
+	for (int32 i = 0; i < N; i++)
+	{
+		FBSEnemy& A = *Enemies[i]; A.Sx = 0; A.Sy = 0; MaxR = FMath::Max(MaxR, A.Radius);
+		Grid.FindOrAdd(CellKey(FMath::FloorToInt(A.X / SepCell), FMath::FloorToInt(A.Y / SepCell))).Add(i);
+	}
 	for (int32 i = 0; i < N; i++)
 	{
 		FBSEnemy& A = *Enemies[i];
-		for (int32 j = i + 1; j < N; j++)
+		if (A.bBurrowed) continue;                   // burrowed lurkers are underground: walk over them
+		const int32 Cx = FMath::FloorToInt(A.X / SepCell), Cy = FMath::FloorToInt(A.Y / SepCell), Span = FMath::CeilToInt((A.Radius + MaxR + 0.1f) / SepCell);
+		for (int32 Gx = Cx - Span; Gx <= Cx + Span; Gx++) for (int32 Gy = Cy - Span; Gy <= Cy + Span; Gy++)
 		{
-			FBSEnemy& B = *Enemies[j];
-			if (A.Def->bFlying != B.Def->bFlying || A.bBurrowed || B.bBurrowed) continue;   // burrowed lurkers are underground: walk over them
-			const float Dx = B.X - A.X, Dy = B.Y - A.Y, Min = A.Radius + B.Radius + 0.1f, D2 = Dx * Dx + Dy * Dy;
-			if (D2 < Min * Min && D2 > 1e-6f)
+			const auto* Bucket = Grid.Find(CellKey(Gx, Gy));
+			if (!Bucket) continue;
+			for (const int32 j : *Bucket)
 			{
-				const float D = FMath::Sqrt(D2), Push = (Min - D) / D * 0.5f;
-				A.Sx -= Dx * Push; A.Sy -= Dy * Push; B.Sx += Dx * Push; B.Sy += Dy * Push;
+				if (j <= i) continue;
+				FBSEnemy& B = *Enemies[j];
+				if (B.bBurrowed || A.Def->bFlying != B.Def->bFlying) continue;
+				const float Dx = B.X - A.X, Dy = B.Y - A.Y, Min = A.Radius + B.Radius + 0.1f, D2 = Dx * Dx + Dy * Dy;
+				if (D2 < Min * Min && D2 > 1e-6f)
+				{
+					const float D = FMath::Sqrt(D2), Push = (Min - D) / D * 0.5f;
+					A.Sx -= Dx * Push; A.Sy -= Dy * Push; B.Sx += Dx * Push; B.Sy += Dy * Push;
+				}
 			}
 		}
 	}
@@ -3916,6 +3961,23 @@ void ABSGame::UpdateVisuals(float Dt)
 			break;
 		}
 		}
+	}
+}
+
+void ABSGame::CrowdTick(float Dt)
+{
+	WaveTimer = 1e9f;
+	static const TCHAR* Mix[] = { TEXT("zergling"), TEXT("zergling"), TEXT("zergling"), TEXT("roach"), TEXT("hydralisk"), TEXT("baneling") };
+	for (int32 i = Enemies.Num(); i < CrowdTest; i++)
+	{
+		const FVector2D At(Rnd(-12, 12), Rnd(12, 26));
+		if (TSharedPtr<FBSEnemy> E = SpawnEnemy(Mix[i % 6], 0, &At)) { E->Hp = E->MaxHp = 1e6f; }
+	}
+	CrowdT += Dt; CrowdSum += Dt; CrowdFrames++;
+	if (CrowdT >= 5)
+	{
+		UE_LOG(LogTemp, Display, TEXT("BSCrowd alive=%d frame=%.2fms fps=%.1f"), Enemies.Num(), 1000 * CrowdSum / CrowdFrames, CrowdFrames / CrowdSum);
+		CrowdT = 0; CrowdSum = 0; CrowdFrames = 0;
 	}
 }
 

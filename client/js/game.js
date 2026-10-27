@@ -7,7 +7,8 @@ window.BS = window.BS || {};
   const rnd = (a, b) => a + Math.random() * (b - a);
   const pick = arr => arr[Math.floor(Math.random() * arr.length)];
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
-  const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+  const SEP_CELL = 2;                               // metres per cell of the zerg separation hash
+  const dist = (ax, ay, bx, by) => { const dx = ax - bx, dy = ay - by; return Math.sqrt(dx * dx + dy * dy); };   // Math.hypot is slow in V8
   const angDelta = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
   const T = () => BS.TERRAN;
 
@@ -1050,7 +1051,9 @@ window.BS = window.BS || {};
       this.wave++;
       const w = this.wave;
       const finale = w === BS.FINALE.wave && !this.finale;
-      let budget = (20 + 10 * w + 0.45 * w * w) * (this.hard ? 1.15 : 1) * (finale ? BS.FINALE.budget : 1);
+      const WV = BS.WAVES, quad = x => 20 + 10 * x + 0.45 * x * x;
+      this.waveLen = Math.round(WV.len[0] + (WV.len[1] - WV.len[0]) * clamp((w - 1) / (WV.lenBy - 1), 0, 1));
+      let budget = (w <= WV.knee ? quad(w) : quad(WV.knee) + WV.perWave[0] * (w - WV.knee) + WV.perWave[1] * (w - WV.knee) * (w - WV.knee)) * (this.hard ? 1.15 : 1) * (finale ? BS.FINALE.budget : 1);
       // Late game: every high-tech card unlocked brings stranger zerg, and more of them. Guardians come for the mechs;
       // scourge and devourers only when there is Terran air to hunt. Brood queens (ramp) grow commoner with every card;
       // the finale throws in the whole late roster.
@@ -1069,7 +1072,8 @@ window.BS = window.BS || {};
       if (this.hard && w % 10 === 0) list.push('ultralisk', 'ultralisk');
       for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
       // On top of the budget: a zergling swarm that snowballs fast (4 at wave 1, ~50 by wave 8, ~150 by wave 15).
-      const swarm = Math.round(2 + 1.2 * w + 0.6 * w * w);
+      const sq = x => 2 + 1.2 * x + 0.6 * x * x;
+      const swarm = Math.round(w <= WV.swarmKnee ? sq(w) : Math.min(WV.swarmMax, sq(WV.swarmKnee) + WV.swarmPerWave * (w - WV.swarmKnee)));
       // Lane packs pick an approach: mostly true north, the rest sweeping in from the north-east and north-west.
       const packAng = flank => this.mode === 'lane' ? (Math.random() < flank ? (Math.random() < 0.5 ? 1 : 2) : 0) : Math.random() * Math.PI * 2;
       const spread = this.waveLen - 8;
@@ -1107,6 +1111,16 @@ window.BS = window.BS || {};
       this.spawnTimer = 0; this.waveTimer = this.waveLen;
       this.minerals += 20 + 8 * w;
       this.waveBanner = { text: 'WAVE ' + w + (w % 5 === 0 ? '  //  HEAVY ASSAULT' : ''), t: this.time };
+      const ms = !finale && WV.milestones[w];
+      if (ms) {
+        for (const [k, n] of Object.entries(ms.zerg || {})) for (let i = 0; i < n; i++) this.spawnQueue.push({ t: 3 + rnd(0, spread * 0.6), type: k, ang: packAng(0.4) });
+        for (let i = 0; i < (ms.nydus || 0); i++) this.spawnQueue.push({ t: 5 + i * 4, type: 'nydus', ang: 0 });
+        this.spawnQueue.sort((a, b) => a.t - b.t);
+        if (ms.pods) this.dropPods(ms.pods, 6, 2.5);
+        this.waveBanner = { text: 'WAVE ' + w + '  //  ' + ms.name, t: this.time };
+        this.toast(ms.toast);
+        this.shake = 0.6;
+      }
       if (finale) this.startFinale();
     }
 
@@ -1254,7 +1268,10 @@ window.BS = window.BS || {};
       this.toast('Victory! The swarm fights on without her');
     }
     bosses() { return this.enemies.filter(e => e.def.boss && e.hp > 0); }
-    maxAlive() { return (this.hard ? 200 : 160) * (BS.perfScale || 1); }
+    maxAlive() {
+      const W = BS.WAVES, a = this.hard ? W.aliveHard : W.alive, k = clamp((this.wave - W.aliveFrom) / (W.aliveBy - W.aliveFrom), 0, 1);
+      return Math.round((a[0] + (a[1] - a[0]) * k) * (BS.perfScale || 1));
+    }
     spawnEnemy(type, ang, at) {
       const d = BS.ZERG[type];
       let x, y;
@@ -1290,7 +1307,7 @@ window.BS = window.BS || {};
         const high = this.mode === 'lane' && ['acid', 'spine', 'bullet'].includes(d.projectile) && Math.random() < 0.4;
         e.route = BS.Terrain.route(x, y, high); e.highRoute = high;
       }
-      e.hp = e.maxHp = d.boss ? d.hp : d.hp * (1 + (this.hard ? 0.025 : 0.02) * Math.max(0, this.wave - 10));   // late waves get tougher
+      e.hp = e.maxHp = d.boss ? d.hp : d.hp * (1 + BS.WAVES.hp * (this.hard ? 1.25 : 1) * Math.max(0, this.wave - BS.WAVES.hpFrom));   // late waves get tougher
       if (d.boss) { e.leapCd = 3; e.apocCd = 6; e.broodCd = 8; }
       e.handle = this.r.spawn(model, x, y, z, e.yaw).setTeam(3);
       if (d.scale) e.handle.setScale(d.scale);
@@ -1309,10 +1326,17 @@ window.BS = window.BS || {};
       }
       this.setupCreeper(e);
       this.enemies.push(e);
+      if (this.egrid) {                               // spawned mid-tick: into the range-query hash too
+        const k = Math.floor(e.x / SEP_CELL) * 4096 + Math.floor(e.y / SEP_CELL), G = this.egrid;
+        let b = G.grid.get(k); if (!b) G.grid.set(k, b = []); b.push(e); G.maxR = Math.max(G.maxR, e.radius);
+      }
       return e;
     }
     // How far into high tech the player is (0-6 tech cards unlocked): drives the late-game zerg.
-    lateTier() { return Object.keys(this.techUnlocked).length; }
+    lateTier() {
+      const W = BS.WAVES, byWave = Math.max(0, Math.floor((this.wave - W.tierFrom) / W.tierEvery) + (this.wave >= W.tierFrom ? 1 : 0));
+      return Math.min(BS.TECH.length, Math.max(Object.keys(this.techUnlocked).length, byWave));
+    }
     airPresence() { return !!this.bc || this.vikingWing.length > 0 || this.banshees.length > 0; }
     // Gone without a kill (an overlord flying off, a nydus worm burrowing away).
     despawn(e) {
@@ -1687,12 +1711,22 @@ window.BS = window.BS || {};
     }
 
     // ---- Combat helpers --------------------------------------------------------------------------------
+    // Zerg within range of (x, y), nearest first. In a crowd it looks only in the nearby cells of this tick's separation
+    // hash (with half a metre of slack for zerg that moved since it was built).
     enemiesInRange(x, y, range, pred) {
-      const out = [];
-      for (const e of this.enemies) {
-        if (e.hp <= 0 || (pred && !pred(e))) continue;
+      const out = [], G = this.egrid, span = G ? Math.ceil((range + G.maxR + 0.5) / SEP_CELL) : 0;
+      const test = e => {
+        if (e.hp <= 0 || (pred && !pred(e))) return;
         const d = dist(x, y, e.x, e.y) - e.radius;
         if (d <= range) out.push([d, e]);
+      };
+      if (!G || (2 * span + 1) * (2 * span + 1) > this.enemies.length) for (const e of this.enemies) test(e);
+      else {
+        const cx = Math.floor(x / SEP_CELL), cy = Math.floor(y / SEP_CELL);
+        for (let gx = cx - span; gx <= cx + span; gx++) for (let gy = cy - span; gy <= cy + span; gy++) {
+          const b = G.grid.get(gx * 4096 + gy);
+          if (b) for (const e of b) test(e);
+        }
       }
       out.sort((a, b) => a[0] - b[0]);
       return out.map(p => p[1]);
@@ -1767,10 +1801,16 @@ window.BS = window.BS || {};
         this.startWave();
       }
       this.spawnTimer += dt;
+      // Due spawns come out in order while there is room on the field; at the alive cap they wait their turn (bosses
+      // always come through).
       while (this.spawnQueue.length && this.spawnQueue[0].t <= this.spawnTimer) {
+        if (this.enemies.length >= this.maxAlive()) {
+          const bi = this.spawnQueue.findIndex(q => q.t <= this.spawnTimer && BS.ZERG[q.type].boss);
+          if (bi >= 0) { const b = this.spawnQueue.splice(bi, 1)[0]; this.spawnEnemy(b.type, b.ang); }
+          break;
+        }
         const s = this.spawnQueue.shift();
-        if (this.enemies.length < this.maxAlive() || BS.ZERG[s.type].boss) this.spawnEnemy(s.type, s.ang);
-        else this.spawnQueue.push({ t: this.spawnTimer + 2, type: s.type, ang: s.ang });
+        this.spawnEnemy(s.type, s.ang);
       }
       this.tgs = this.targets(); this.airTgs = this.airTargets();
       this.updateEnemies(dt);
@@ -1795,14 +1835,23 @@ window.BS = window.BS || {};
 
     updateEnemies(dt) {
       const E = this.enemies, N = E.length;
-      for (const e of E) { e.sx = 0; e.sy = 0; }
-      for (let i = 0; i < N; i++) {
-        const a = E[i];
-        for (let j = i + 1; j < N; j++) {
-          const b = E[j];
-          if (!!a.def.flying !== !!b.def.flying || a.burrowed || b.burrowed) continue;   // burrowed lurkers are underground: walk over them
-          const dx = b.x - a.x, dy = b.y - a.y, min = a.radius + b.radius + 0.1, d2 = dx * dx + dy * dy;
-          if (d2 < min * min && d2 > 1e-6) { const d = Math.sqrt(d2), push = (min - d) / d * 0.5; a.sx -= dx * push; a.sy -= dy * push; b.sx += dx * push; b.sy += dy * push; }
+      // Separation: zerg push apart where they overlap. A spatial hash keeps it near-linear in the crowd size (each unit
+      // checks only the cells within its reach of the biggest unit about).
+      let maxR = 0;
+      for (let i = 0; i < N; i++) { const e = E[i]; e.sx = 0; e.sy = 0; e.si = i; if (e.radius > maxR) maxR = e.radius; }
+      const cell = SEP_CELL, grid = new Map(), key = (cx, cy) => cx * 4096 + cy;
+      for (const e of E) { const k = key(Math.floor(e.x / cell), Math.floor(e.y / cell)); let b = grid.get(k); if (!b) grid.set(k, b = []); b.push(e); }
+      this.egrid = { grid, maxR };                    // also answers enemiesInRange for the rest of the tick
+      for (const a of E) {
+        if (a.burrowed) continue;                     // burrowed lurkers are underground: walk over them
+        const cx = Math.floor(a.x / cell), cy = Math.floor(a.y / cell), span = Math.ceil((a.radius + maxR + 0.1) / cell);
+        for (let gx = cx - span; gx <= cx + span; gx++) for (let gy = cy - span; gy <= cy + span; gy++) {
+          const bucket = grid.get(key(gx, gy));
+          if (bucket) for (const b of bucket) {
+            if (b.si <= a.si || b.burrowed || !!a.def.flying !== !!b.def.flying) continue;
+            const dx = b.x - a.x, dy = b.y - a.y, min = a.radius + b.radius + 0.1, d2 = dx * dx + dy * dy;
+            if (d2 < min * min && d2 > 1e-6) { const d = Math.sqrt(d2), push = (min - d) / d * 0.5; a.sx -= dx * push; a.sy -= dy * push; b.sx += dx * push; b.sy += dy * push; }
+          }
         }
       }
       const targets = this.tgs;

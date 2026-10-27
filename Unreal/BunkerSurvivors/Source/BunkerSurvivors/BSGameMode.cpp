@@ -81,6 +81,7 @@ void ABSGameMode::StartGame(EBSMode Mode)
 		for (int32 i = 0; i < 8; i++) Game->DebugSpawn(TEXT("zergling"), -2.5f + (i % 4) * 1.7f, 6.5f + (i / 4) * 1.4f);
 		Game->DebugSpawn(TEXT("roach"), 0.5f, 9.f);
 	}
+	FParse::Value(Cmd, TEXT("BSCrowd="), Game->CrowdTest);
 	// Debug spawns: -BSSpawn=ultralisk,roach places zerg in a row up the lane.
 	FString SpawnList;
 	if (FParse::Value(Cmd, TEXT("BSSpawn="), SpawnList, false))

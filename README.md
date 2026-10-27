@@ -109,6 +109,14 @@ npm start
 Zerg pour down the lane toward your bunker. Every kill pays minerals; spend them between and during waves. Every
 fifth wave is a heavy assault. When the bunker falls, the run is over.
 
+**The road to wave 100.** Early waves are short and ramp up fast. Past wave 16 the swarm stops simply getting bigger
+and starts getting stranger: from wave 20 it evolves on its own (one more late-game strain every ten waves, on top of
+whatever your tech provokes), more zerg can be on the field at once (160 rising to 200 by wave 60), and every tenth
+wave from 30 is a named assault: an ultralisk stampede (30), an air armada (40), a lone leviathan (50), drop pods all
+round the base (60), a nydus breach (70), a defiler-led lurker siege (80) and the old brood in force (90), before
+Kerrigan herself at 100. In bot playtests a player who has the whole tech tree out by about wave 25 gets into the
+70s; near-perfect play reaches the finale.
+
 **The lane** is a Y-shaped chokepoint: zerg come down from the north and along the north-east and north-west arms.
 Ranged zerg sometimes climb the ramps to the ledges overlooking the bunker, where they get extra reach and a third of
 your bunker's shots at them miss. Flyers ignore the cliffs.
