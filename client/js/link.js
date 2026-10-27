@@ -31,7 +31,7 @@ window.BS = window.BS || {};
   function openWorker(entries) {
     entries = entries.filter(x => wanted(x.path));
     return new Promise((resolve, reject) => {
-      const w = new Worker('/gen/sc2-worker.js');
+      const w = new Worker('gen/sc2-worker.js');
       w.onmessage = e => {
         if (e.data.type !== 'opened') return;
         if (e.data.ok) { worker = w; resolve(e.data); } else { w.terminate(); reject(new Error(e.data.error)); }
@@ -88,25 +88,25 @@ window.BS = window.BS || {};
 
   // Art requested before the service worker could answer (start-screen icons, the UI fonts) is fetched again.
   function refreshArt() {
-    document.querySelectorAll('img[src^="/icon/"]').forEach(img => { img.src = img.getAttribute('src').split('?')[0] + '?l=1'; });
+    document.querySelectorAll('img[src^="icon/"]').forEach(img => { img.src = img.getAttribute('src').split('?')[0] + '?l=1'; });
     for (const [file, family, weight] of [['eurostile-reg', 'Eurostile', '400'], ['eurostile-bol', 'Eurostile', '700'], ['eurostileext-med', 'Eurostile Wide', '500']]) {
-      const f = new FontFace(family, 'url(/font/' + file + '.otf?l=1)', { weight });
+      const f = new FontFace(family, 'url(font/' + file + '.otf?l=1)', { weight });
       f.load().then(x => document.fonts.add(x)).catch(() => {});
     }
   }
 
   BS.linkSC2 = async function () {
     try {
-      const r = await fetch('/api/status');
+      const r = await fetch('api/status');
       if (r.ok) return Object.assign({ mode: 'server' }, await r.json());
     } catch (e) { /* no companion server: the web edition */ }
     if (!('serviceWorker' in navigator)) throw new Error('This browser cannot run the web edition (no service workers). Try Chrome, Edge, Firefox or Safari.');
     navigator.serviceWorker.addEventListener('message', relay);
-    await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.register('sw.js');
     await navigator.serviceWorker.ready;
     if (!navigator.serviceWorker.controller) await new Promise(r => navigator.serviceWorker.addEventListener('controllerchange', r, { once: true }));
     const was = store(LINKED);
-    const cached = was && await caches.open('bs-sc2-v1').then(c => c.match(location.origin + '/asset/' + (BS.MODELS.bunker.path || BS.MODELS.bunker))).catch(() => null);
+    const cached = was && await caches.open('bs-sc2-v1').then(c => c.match(new URL('asset/' + (BS.MODELS.bunker.path || BS.MODELS.bunker), location.href).href)).catch(() => null);
     const st = cached ? { mode: 'cached', sc2Version: was } : await setup();
     refreshArt();
     return st;

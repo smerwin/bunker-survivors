@@ -4,13 +4,16 @@
 'use strict';
 const CACHE = 'bs-sc2-v1';
 const SC2 = /^\/(asset|fx|fxtex|icon|font)\//;
+// The site may live in a subfolder (GitHub Pages: /bunker-survivors/); routes are relative to it, as on the server.
+const BASE = new URL(self.registration.scope).pathname;
+const route = u => '/' + u.pathname.slice(BASE.length);
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 
 self.addEventListener('fetch', e => {
   const u = new URL(e.request.url);
-  if (u.origin !== location.origin || !SC2.test(u.pathname)) return;
+  if (u.origin !== location.origin || !u.pathname.startsWith(BASE) || !SC2.test(route(u))) return;
   e.respondWith(serve(e, u));
 });
 
@@ -24,7 +27,7 @@ async function serve(e, u) {
   const r = await new Promise(resolve => {
     const ch = new MessageChannel(), t = setTimeout(() => resolve(null), 120000);
     ch.port1.onmessage = m => { clearTimeout(t); resolve(m.data); };
-    client.postMessage({ type: 'sc2-get', path: u.pathname }, [ch.port2]);
+    client.postMessage({ type: 'sc2-get', path: route(u) }, [ch.port2]);
   });
   if (!r) return new Response('timed out reading StarCraft II', { status: 504 });
   const resp = new Response(r.body, { status: r.status, headers: { 'Content-Type': r.type } });

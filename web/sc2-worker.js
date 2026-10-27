@@ -45,7 +45,7 @@ async function open(entries) {
   const src = fileSource(entries);
   // The game's effect table (BS.fxList) lives in units.js, which only assigns into window.BS.
   self.window = self;
-  importScripts('/js/units.js');
+  importScripts('../js/units.js');
   const xml = await fetch(XML_URL).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status + ' for ' + XML_URL); return r.text(); });
   setStructuresXml(xml);
   const sc2 = new SC2Assets(src);

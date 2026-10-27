@@ -1,7 +1,7 @@
 /* StarCraft II's own UI typefaces, streamed from the player's install by the companion server. */
-@font-face { font-family: 'Eurostile'; src: url('/font/eurostile-reg.otf') format('opentype'); font-weight: 400; font-display: swap; }
-@font-face { font-family: 'Eurostile'; src: url('/font/eurostile-bol.otf') format('opentype'); font-weight: 700; font-display: swap; }
-@font-face { font-family: 'Eurostile Wide'; src: url('/font/eurostileext-med.otf') format('opentype'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'Eurostile'; src: url('font/eurostile-reg.otf') format('opentype'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Eurostile'; src: url('font/eurostile-bol.otf') format('opentype'); font-weight: 700; font-display: swap; }
+@font-face { font-family: 'Eurostile Wide'; src: url('font/eurostileext-med.otf') format('opentype'); font-weight: 500; font-display: swap; }
 
 :root {
   --bg: #0b0f16; --glass: rgba(20, 28, 38, 0.82); --glass-hi: rgba(32, 44, 58, 0.9); --hair: rgba(150, 190, 230, 0.16);

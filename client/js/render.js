@@ -195,7 +195,7 @@ window.BS = window.BS || {};
       this.corpseScene = this.viewer.addScene();
       this.corpseScene.alpha = true;
       this.corpseScene.lightPosition = this.scene.lightPosition;
-      this.solver = (src) => '/asset/' + String(src).replace(/\\/g, '/');
+      this.solver = (src) => 'asset/' + String(src).replace(/\\/g, '/');
       this.models = new Map();            // key -> Promise<model>
       this.pools = new Map();             // model -> instance[]
       this.handles = new Set();
@@ -266,7 +266,7 @@ window.BS = window.BS || {};
           Object.assign(em, { active: 1, texture: { texture: { webglResource: tex }, wrapS: gl.CLAMP_TO_EDGE, wrapT: gl.CLAMP_TO_EDGE },
             textureUnit: 5, op: 2, colorChannels: 0, uvCoordinate: am.uvCoordinate, invert: 0, clampResult: 0, teamColorMode: 0 });
         };
-        img.src = '/fxtex/' + am.source.replace(/\.dds$/i, '.png');
+        img.src = 'fxtex/' + am.source.replace(/\.dds$/i, '.png');
       }
     }
     async preload(keys, onProgress) {
@@ -487,7 +487,7 @@ window.BS = window.BS || {};
         gl.bindTexture(gl.TEXTURE_2D, null);
         this.cliffTex = t;
       };
-      img.src = '/fxtex/' + BS.CLIFF_TEXTURE;
+      img.src = 'fxtex/' + BS.CLIFF_TEXTURE;
       const cimg = new Image();
       cimg.onload = () => {
         const t = gl.createTexture();
@@ -500,7 +500,7 @@ window.BS = window.BS || {};
         gl.bindTexture(gl.TEXTURE_2D, null);
         this.creepTex = t;
       };
-      cimg.src = '/fxtex/' + BS.CREEP_TEXTURE;
+      cimg.src = 'fxtex/' + BS.CREEP_TEXTURE;
     }
     // The simulation's creep grid (Game.creep): uploaded as a small filtered texture, at most five times a second and
     // only when it has changed.

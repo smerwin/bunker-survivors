@@ -5,7 +5,7 @@ window.BS = window.BS || {};
   'use strict';
 
   const $ = id => document.getElementById(id);
-  const icon = name => '/icon/' + name + '.png';
+  const icon = name => 'icon/' + name + '.png';
   const pad2 = n => (n < 10 ? '0' : '') + n;
 
   class Hud {

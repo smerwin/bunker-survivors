@@ -40,7 +40,7 @@ window.BS = window.BS || {};
 
     load(path) {
       if (this.buffers.has(path)) return this.buffers.get(path);
-      const p = fetch('/asset/' + path).then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error(r.status)))
+      const p = fetch('asset/' + path).then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error(r.status)))
         .then(ab => new Promise((res, rej) => this.ctx.decodeAudioData(ab, res, rej)))
         .catch(() => null);
       this.buffers.set(path, p);

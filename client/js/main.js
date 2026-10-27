@@ -51,7 +51,7 @@ window.BS = window.BS || {};
     const total = keys.length + icons.size + 1;
     const tick = () => { done++; $('progress').textContent = done < total ? 'CACHING SC2 ART ' + Math.round(done / total * 100) + '%' : ''; };
     for (const k of keys) { try { await renderer.ensureModel(k); } catch (e) { /* logged */ } tick(); }
-    await Promise.all([...icons].map(i => fetch('/icon/' + i + '.png').catch(() => null).then(tick)));
+    await Promise.all([...icons].map(i => fetch('icon/' + i + '.png').catch(() => null).then(tick)));
     renderer.fx.preload(Object.keys(BS.fxList()));
     BS.audio.preload();
     tick();

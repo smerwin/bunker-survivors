@@ -76,7 +76,7 @@ window.BS = window.BS || {};
     // ---- Loading ----------------------------------------------------------------------------------
     load(key) {
       if (this.defs.has(key)) return this.defs.get(key);
-      const p = fetch('/fx/' + encodeURIComponent(key) + '.json').then(r => r.ok ? r.json() : null).then(j => {
+      const p = fetch('fx/' + encodeURIComponent(key) + '.json').then(r => r.ok ? r.json() : null).then(j => {
         if (!j || !j.variants || !j.variants.length) return null;
         const def = { key, loop: !!j.loop, variants: j.variants.map(v => ({ duration: Math.max(0.05, v.duration), emitters: v.emitters.map(parseEmitter) })) };
         for (const v of def.variants) for (const e of v.emitters) this.texture(e.texture);
@@ -105,7 +105,7 @@ window.BS = window.BS || {};
         gl.bindTexture(gl.TEXTURE_2D, null);
         this.textures.set(path, t);
       };
-      img.src = '/fxtex/' + path.replace(/\.dds$/i, '.png');
+      img.src = 'fxtex/' + path.replace(/\.dds$/i, '.png');
     }
 
     // ---- Playback ---------------------------------------------------------------------------------
