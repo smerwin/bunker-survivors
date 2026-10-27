@@ -1662,10 +1662,11 @@ void ABSGame::StartWave()
 	Tele.KillsAtStart = Kills; Tele.WaveStart = Time;
 	Wave++;
 	const int32 Wv = Wave;
-	float Budget = (20 + 10 * Wv + 0.45f * Wv * Wv) * (bHard ? 1.15f : 1.f);
+	const bool bFinale = Wv == BSDefs::FinaleWave && !Finale.bOn;
+	float Budget = (20 + 10 * Wv + 0.45f * Wv * Wv) * (bHard ? 1.15f : 1.f) * (bFinale ? BSDefs::FinaleBudget : 1.f);
 	// Late game: every high-tech card unlocked brings stranger zerg, and more of them. Guardians come for the mechs;
-	// scourge and devourers only when there is Terran air to hunt.
-	const int32 Tier = LateTier();
+	// scourge and devourers only when there is Terran air to hunt. The finale throws in the whole late roster.
+	const int32 Tier = bFinale ? FMath::Max(LateTier(), BSDefs::Tech().Num()) : LateTier();
 	const bool bAirUp = AirPresence();
 	auto Wt = [&](const FBSZergDef* D) { return D->Weight * (D->Late ? 0.6f + 0.4f * Tier : 1.f) * (D->bPreferMech && Mechs.Num() ? 2.f : 1.f) * (D->bAntiAir && !bAirUp ? 0.f : 1.f); };
 	TArray<const FBSZergDef*> Types;
@@ -1735,6 +1736,194 @@ void ABSGame::StartWave()
 	WaveBanner = FString::Printf(TEXT("WAVE %d"), Wv);
 	if (Wv % 5 == 0) WaveBanner += TEXT("  //  HEAVY ASSAULT");
 	WaveBannerT = Time; WaveSerial++;
+	if (bFinale) StartFinale();
+}
+
+// ---- Wave 100 finale ------------------------------------------------------------------------------------
+// Kerrigan leads a leviathan and a maxed-out wave in person, while drop pods slam down all round the base.
+void ABSGame::StartFinale()
+{
+	Finale.bOn = true; Finale.T = Time;
+	SpawnQueue.Add({ 2.f, TEXT("leviathan"), 0.f });
+	SpawnQueue.Add({ 5.f, TEXT("kerrigan"), 0.f });
+	SpawnQueue.Sort([](const FBSSpawn& A, const FBSSpawn& B) { return A.T < B.T; });
+	DropPods(BSDefs::FinalePods, BSDefs::PodStart, BSDefs::PodEvery);
+	WaveBanner = FString::Printf(TEXT("WAVE %d  //  THE QUEEN OF BLADES"), Wave); WaveBannerT = Time; WaveSerial++;
+	Toast(TEXT("Kerrigan leads the swarm in person!"));
+	PlaySound(TEXT("finaleRoar"), 1.f);
+	Shake = 1;
+}
+
+// Drop pods: N of them, one every few seconds, each from a different side (behind our lines too), on open low ground.
+void ABSGame::DropPods(int32 N, float T0, float Every)
+{
+	static const TCHAR* PodZerg[] = { TEXT("hydralisk"), TEXT("hydralisk"), TEXT("roach"), TEXT("roach"), TEXT("lurker") };
+	const bool bLane = Mode == EBSMode::Lane;
+	const float A0 = FMath::FRand() * 2 * PI;
+	for (int32 i = 0; i < N; i++)
+	{
+		const int32 Slot = (i * 3) % N;               // stepping round the compass, so consecutive pods come from far apart
+		float X = 0, Y = -Rnd(5, 9);
+		bool bOk = false;
+		for (int32 Guard = 0; Guard < 40 && !bOk; Guard++)
+		{
+			const float A = A0 + Slot * 2 * PI / N + Rnd(-0.3f, 0.3f) + Guard * 0.05f, R = Rnd(BSDefs::PodMinR, BSDefs::PodMaxR);
+			const float Px = FMath::Cos(A) * R, Py = FMath::Sin(A) * R;
+			if (bLane && (FMath::Abs(Px) > 20 || BSTerrain::LowSdf(Px, Py) > -0.4f || !BSTerrain::Walkable(Px, Py))) continue;
+			X = Px; Y = Py; bOk = true;
+		}
+		FBSPod P;
+		P.X = X; P.Y = Y; P.Yaw = Rnd(0, 2 * PI); P.T = -(T0 + i * Every + Rnd(0, 0.5f));
+		if (i % 2 == 0) P.Cargo.Add(TEXT("ultralisk"));
+		while (P.Cargo.Num() < BSDefs::PodCargo) P.Cargo.Add(PodZerg[FMath::RandRange(0, 4)]);
+		Pods.Add(P);
+	}
+}
+
+void ABSGame::UpdatePods(float Dt)
+{
+	for (int32 i = Pods.Num() - 1; i >= 0; i--)
+	{
+		FBSPod& P = Pods[i];
+		P.T += Dt;
+		if (P.T < 0) continue;
+		const float Gz = BSTerrain::Height(P.X, P.Y);
+		if (!P.bDropped)
+		{
+			P.bDropped = true;
+			// The pod model streaks down and bursts open by itself (its Birth sequence); its trail rides along.
+			P.Actor = AcquireModel(TEXT("droppod"));
+			if (P.Actor) { P.Actor->SetTeamColor(ZergColor); P.Actor->SetSim(P.X, P.Y, Gz, P.Yaw); P.Actor->Play(TEXT("birth"), false); }
+			PlayFx(TEXT("podFall"), FVector(P.X, P.Y, Gz), P.Yaw);
+			PlaySound(TEXT("podDrop"), 0.6f, 0.2f);
+		}
+		if (!P.bLanded && P.T >= BSDefs::PodLand)
+		{
+			P.bLanded = true;
+			if (!PlayFx(TEXT("podImpact"), FVector(P.X, P.Y, Gz), P.Yaw))
+				EmitExplosion(FVector(P.X, P.Y, Gz + 0.3f), 1.6f, FLinearColor(0.8f, 1.f, 0.4f), FLinearColor(0.3f, 0.5f, 0.05f), 16);
+			PlaySound(TEXT("podImpact"), 0.7f, 0.15f);
+			Shake = FMath::Min(1.f, Shake + 0.3f);
+			const TArray<FBSTarget> Under = Targets;
+			for (const FBSTarget& T : Under) if (FMath::Sqrt(Dist2(P.X, P.Y, T.X, T.Y)) - T.Radius <= BSDefs::PodRadius) DamageDefender(T, BSDefs::PodDmg);
+			if (!bPodsLanded) { bPodsLanded = true; Toast(TEXT("Drop pods landing all round the base!")); }
+		}
+		if (P.bLanded && P.T >= BSDefs::PodLand + 0.5f && P.Cargo.Num() && (P.SpawnT -= Dt) <= 0)
+		{
+			P.SpawnT = 0.3f;
+			const FString K = P.Cargo[0]; P.Cargo.RemoveAt(0);
+			const FVector2D At(P.X + Rnd(-1.2f, 1.2f), P.Y + Rnd(-1.2f, 1.2f));
+			SpawnEnemy(K, 0, &At);
+		}
+		if (!P.Cargo.Num() && P.T > BSDefs::PodLand + 6) { ReleaseModel(P.Actor); Pods.RemoveAt(i); }
+	}
+}
+
+// Kerrigan: Leaping Strike onto a defender out of reach, Apocalypse on the thickest knot of defenders. Returns true while
+// she is in the air or channelling (her usual walking and fighting wait).
+bool ABSGame::UpdateKerrigan(const TSharedPtr<FBSEnemy>& EP, const FBSTarget& T, float Dt)
+{
+	FBSEnemy& E = *EP;
+	E.LeapCd -= Dt; E.ApocCd -= Dt;
+	if (E.BlastAt >= 0 && Time >= E.BlastAt)
+	{
+		E.BlastAt = -1;
+		StopFx(E.BlastFx); E.BlastFx = 0;
+		const FVector At(E.Blast.X, E.Blast.Y, BSTerrain::Height(E.Blast.X, E.Blast.Y));
+		if (!PlayFx(TEXT("apocalypse"), At, 0, 1.2f)) EmitExplosion(At + FVector(0, 0, 0.3f), BSDefs::ApocRadius, FLinearColor(0.85f, 0.5f, 1.f), FLinearColor(0.35f, 0.1f, 0.6f), 24);
+		const TArray<FBSTarget> Under = Targets;
+		for (const FBSTarget& O : Under) if (FMath::Sqrt(Dist2(E.Blast.X, E.Blast.Y, O.X, O.Y)) - O.Radius <= BSDefs::ApocRadius) DamageDefender(O, BSDefs::ApocDmg);
+		PlaySound(BSSounds::Explosion, 0.9f);
+		Shake = FMath::Min(1.f, Shake + 0.5f);
+	}
+	if (E.LeapT >= 0)
+	{
+		E.LeapT += Dt;
+		const float K = FMath::Clamp(E.LeapT / BSDefs::LeapDur, 0.f, 1.f);
+		E.X = E.LeapFrom.X + (E.LeapTo.X - E.LeapFrom.X) * K; E.Y = E.LeapFrom.Y + (E.LeapTo.Y - E.LeapFrom.Y) * K;
+		E.Z = BSTerrain::Height(E.X, E.Y) + FMath::Sin(K * PI) * 3;
+		if (K >= 1)
+		{
+			E.LeapT = -1; E.Z = BSTerrain::Height(E.X, E.Y); E.Anim.Reset();
+			PlayFx(TEXT("leapImpact"), FVector(E.X, E.Y, E.Z), E.Yaw, 1.4f);
+			const TArray<FBSTarget> Under = Targets;
+			for (const FBSTarget& O : Under) if (FMath::Sqrt(Dist2(E.X, E.Y, O.X, O.Y)) - O.Radius <= BSDefs::LeapRadius) DamageDefender(O, BSDefs::LeapDmg);
+			PlaySound(TEXT("ultraliskAttack"), 0.6f);
+			Shake = FMath::Min(1.f, Shake + 0.4f);
+		}
+		return true;
+	}
+	if (E.CastUntil > Time) return true;
+	const float Reach = FMath::Sqrt(Dist2(E.X, E.Y, T.X, T.Y)) - T.Radius - E.Radius;
+	if (E.ApocCd <= 0 && Reach <= BSDefs::ApocRange)
+	{
+		// The defender with the most others round it.
+		const FBSTarget* Best = nullptr; int32 BestN = -1;
+		for (const FBSTarget& O : Targets)
+		{
+			if (FMath::Sqrt(Dist2(E.X, E.Y, O.X, O.Y)) - O.Radius > BSDefs::ApocRange + E.Radius) continue;
+			int32 N = 0;
+			for (const FBSTarget& Q : Targets) N += Dist2(Q.X, Q.Y, O.X, O.Y) < BSDefs::ApocRadius * BSDefs::ApocRadius;
+			if (N > BestN) { BestN = N; Best = &O; }
+		}
+		if (Best)
+		{
+			E.ApocCd = BSDefs::ApocCd; E.CastUntil = Time + BSDefs::ApocDelay; E.Anim = TEXT("spell");
+			if (E.Actor) E.Actor->Play(TEXT("spell"), false);
+			E.Yaw = FMath::Atan2(Best->Y - E.Y, Best->X - E.X);
+			E.Blast = FVector2D(Best->X, Best->Y); E.BlastAt = Time + BSDefs::ApocDelay;
+			E.BlastFx = PlayFx(TEXT("apocalypseChannel"), FVector(Best->X, Best->Y, BSTerrain::Height(Best->X, Best->Y)), 0, 1.2f);
+			PlaySound(TEXT("kerriganPsi"), 0.8f);
+			Floater(E.X, E.Y, E.Z + 3, TEXT("APOCALYPSE"), FLinearColor(0.75f, 0.55f, 1.f));
+			return true;
+		}
+	}
+	if (E.LeapCd <= 0 && Reach > BSDefs::LeapMin && Reach < BSDefs::LeapMax)
+	{
+		const float A = FMath::Atan2(E.Y - T.Y, E.X - T.X), Off = T.Radius + E.Radius + 0.2f;
+		const float Tx = T.X + FMath::Cos(A) * Off, Ty = T.Y + FMath::Sin(A) * Off;
+		if (BSTerrain::Walkable(Tx, Ty))
+		{
+			E.LeapCd = BSDefs::LeapCd; E.Route.Reset(); E.bPerched = false;
+			E.LeapT = 0; E.LeapFrom = FVector2D(E.X, E.Y); E.LeapTo = FVector2D(Tx, Ty);
+			E.Yaw = FMath::Atan2(Ty - E.Y, Tx - E.X); E.Anim = TEXT("leap");
+			if (E.Actor) E.Actor->Play(TEXT("jump"), true);
+			PlayFx(TEXT("psionicShift"), FVector(E.X, E.Y, E.Z + 1), E.Yaw);
+			PlaySound(TEXT("kerriganLeap"), 0.8f);
+			Floater(E.X, E.Y, E.Z + 3, TEXT("LEAPING STRIKE"), FLinearColor(0.75f, 0.55f, 1.f));
+			return true;
+		}
+		E.LeapCd = 1;
+	}
+	return false;
+}
+
+// The leviathan bombards like any ranged zerg (bile, see UpdateProjectiles) and every so often spawns a brood of mutalisks.
+void ABSGame::UpdateLeviathan(const TSharedPtr<FBSEnemy>& EP, float Dt)
+{
+	FBSEnemy& E = *EP;
+	if ((E.BroodCd -= Dt) > 0) return;
+	E.BroodCd = BSDefs::BroodCd;
+	for (int32 k = 0; k < BSDefs::BroodCount; k++) { const FVector2D At(E.X + Rnd(-2.5f, 2.5f), E.Y + Rnd(-2.5f, 2.5f)); SpawnEnemy(TEXT("mutalisk"), 0, &At); }
+	E.CastUntil = Time + 1.2f; E.Anim = TEXT("spell");
+	if (E.Actor) E.Actor->Play(TEXT("spell"), false);
+	PlaySound(TEXT("finaleRoar"), 0.7f, 2.f);
+	Floater(E.X, E.Y, E.Z + 2, TEXT("MUTALISKS"), FLinearColor(0.75f, 0.55f, 1.f));
+}
+
+// A boss is down; both down (with none still to come) wins the finale. The game carries on.
+void ABSGame::BossDown(FBSEnemy& E)
+{
+	if (E.BlastAt >= 0) { StopFx(E.BlastFx); E.BlastFx = 0; E.BlastAt = -1; }
+	Toast(E.Def->Name + TEXT(" is down!"));
+	Floater(E.X, E.Y, E.Z + 3, E.Def->Name.ToUpper() + TEXT(" DOWN"), FLinearColor(1.f, 0.83f, 0.3f));
+	Shake = 1;
+	if (!Finale.bOn || Finale.bWon || Bosses().Num()) return;
+	for (const FBSSpawn& S : SpawnQueue) { const FBSZergDef* D = BSDefs::FindZerg(S.Type); if (D && !D->Boss.IsEmpty()) return; }
+	Finale.bWon = true; Finale.WonAt = Time;
+	Score += BSDefs::FinaleVictory;
+	WaveBanner = TEXT("VICTORY  //  THE QUEEN OF BLADES HAS FALLEN"); WaveBannerT = Time; WaveSerial++;
+	Toast(TEXT("Victory! The swarm fights on without her"));
 }
 
 TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const FVector2D* At)
@@ -1761,7 +1950,8 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 	else { const float R = Rnd(25, 28); X = FMath::Cos(Ang + Rnd(-0.35f, 0.35f)) * R; Y = FMath::Sin(Ang + Rnd(-0.35f, 0.35f)) * R; }
 	TSharedPtr<FBSEnemy> E = MakeShared<FBSEnemy>();
 	E->Id = NextId++; E->Def = D; E->X = X; E->Y = Y; E->Z = D->bFlying ? D->Fly : BSTerrain::Height(X, Y); E->Yaw = FMath::Atan2(-Y, -X);
-	E->Hp = E->MaxHp = D->Hp * (1 + (bHard ? 0.025f : 0.02f) * FMath::Max(0, Wave - 10));   // late waves get tougher
+	E->Hp = E->MaxHp = D->Boss.IsEmpty() ? D->Hp * (1 + (bHard ? 0.025f : 0.02f) * FMath::Max(0, Wave - 10)) : D->Hp;   // late waves get tougher
+	if (!D->Boss.IsEmpty()) { E->LeapCd = 3; E->ApocCd = 6; E->BroodCd = 8; }
 	E->Cd = Rnd(0, D->Cd); E->Radius = D->Radius; E->Life = D->Life;
 	// Lane terrain: ground zerg follow the Y; some ranged ones climb a ramp to a ledge over the bunker.
 	if (!D->bFlying && !At && !D->bHops && !D->bNydus)
@@ -2166,6 +2356,7 @@ void ABSGame::KillEnemy(const TSharedPtr<FBSEnemy>& E, bool bSuicide)
 	ReleaseModel(E->Actor); E->Actor = nullptr;
 	if (D->Death.IsEmpty()) PlayFx(TEXT("nydusBirth"), FVector(E->X, E->Y, BSTerrain::Height(E->X, E->Y)), 0, 1.6f);      // the nydus worm has no death model
 	else Corpse(E->DeathKey.IsEmpty() ? D->Death : E->DeathKey, E->X, E->Y, E->Z, E->Yaw, D->DeathHold, D->Scale);
+	if (!D->Boss.IsEmpty()) BossDown(*E);
 }
 
 void ABSGame::BanelingBlast(const FBSEnemy& E, bool bFromDeath)
@@ -2265,7 +2456,8 @@ void ABSGame::Step(float Dt)
 	{
 		FBSSpawn S = SpawnQueue[0];
 		SpawnQueue.RemoveAt(0);
-		if (Enemies.Num() < (bHard ? 200 : 160)) SpawnEnemy(S.Type, S.Ang);
+		const FBSZergDef* SD = BSDefs::FindZerg(S.Type);
+		if (Enemies.Num() < (bHard ? 200 : 160) || (SD && !SD->Boss.IsEmpty())) SpawnEnemy(S.Type, S.Ang);
 		else SpawnQueue.Add({ SpawnTimer + 2, S.Type, S.Ang });
 	}
 	BuildTargets();
@@ -2282,6 +2474,7 @@ void ABSGame::Step(float Dt)
 	UpdateBc(Dt);
 	UpdateVikings(Dt);
 	UpdateNukes(Dt);
+	UpdatePods(Dt);
 	UpdateProjectiles(Dt);
 	UpdateReinforcements(Dt);
 	if (bAutoPlay) { AutoT -= Dt; if (AutoT <= 0) { AutoT = 0.8f; AutoPlay(); } }
@@ -2360,6 +2553,8 @@ void ABSGame::UpdateEnemies(float Dt)
 		// Refresh the target position (tanks, SCVs and air support move).
 		for (const FBSTarget& T : Pool) if (T.Same(E.Target)) { E.Target.X = T.X; E.Target.Y = T.Y; E.Target.Z = T.Z; break; }
 		const FBSTarget& T = E.Target;
+		if (D->Boss == TEXT("kerrigan") && UpdateKerrigan(EP, T, Dt)) continue;
+		if (D->Boss == TEXT("leviathan")) UpdateLeviathan(EP, Dt);
 		const float Dx = T.X - E.X, Dy = T.Y - E.Y, Dd = FMath::Sqrt(Dx * Dx + Dy * Dy);
 		const float Reach = Dd - T.Radius - E.Radius;
 		const float Range = D->Range + (T.Kind == FBSTarget::Bunker ? 0.2f : 0);
@@ -2406,6 +2601,7 @@ void ABSGame::UpdateEnemies(float Dt)
 					case EBSProjectile::Spine: P.Kind = EBSProjKind::Spine; AddProjectileModel(P, TEXT("projHydralisk"), nullptr); if (!P.Model) AddProjectileVisual(P, FLinearColor(0.8f, 1, 0.5f), 0.15f); break;
 					case EBSProjectile::Bullet: P.Kind = EBSProjKind::Bullet; P.ImpactFx = TEXT("marineImpact"); if (!PlayFx(TEXT("marineLaunch"), P.From, FMath::Atan2(T.Y - E.Y, T.X - E.X))) AddProjectileVisual(P, FLinearColor(1, 0.85f, 0.5f), 0.08f); break;
 					case EBSProjectile::Glaive: P.Kind = EBSProjKind::Glaive; P.Bounces = 3; P.ImpactFx = TEXT("mutaliskImpact"); AddProjectileModel(P, TEXT("projMutalisk"), TEXT("mutaliskMissile")); if (!P.Model) AddProjectileVisual(P, FLinearColor(0.6f, 1, 0.3f), 0.25f); break;
+					case EBSProjectile::Bile: P.Kind = EBSProjKind::Bile; P.Arc = 2.5f; P.ImpactFx = TEXT("roachImpact"); P.ImpactScale = 2.2f; AddProjectileModel(P, TEXT("projLeviathan"), TEXT("guardianMissile"), 1.6f); if (!P.Model && !P.Trail) AddProjectileVisual(P, FLinearColor(0.7f, 1, 0.3f), 0.6f); break;
 					case EBSProjectile::Brood: P.Kind = EBSProjKind::Brood; AddProjectileVisual(P, FLinearColor(0.9f, 0.6f, 0.3f), 0.4f); P.Arc = 3; break;
 					case EBSProjectile::Spines: P.Kind = EBSProjKind::Spines; break;
 					case EBSProjectile::Guardian: P.Kind = EBSProjKind::Guardian; P.Arc = 2; P.ImpactFx = TEXT("roachImpact"); AddProjectileModel(P, nullptr, TEXT("guardianMissile"), 1.2f); if (!P.Trail) AddProjectileVisual(P, FLinearColor(0.7f, 1, 0.4f), 0.35f); break;
@@ -2873,6 +3069,15 @@ void ABSGame::UpdateProjectiles(float Dt)
 		{
 			const FBSTarget& Tg = Done.TargetDef;
 			const FBSZergDef* D = Done.ZDef;
+			if (D->Bombard > 0)
+			{
+				// Leviathan bile: everything of ours under the splash, whether or not the target is still there.
+				const TArray<FBSTarget> Under = Targets;
+				for (const FBSTarget& O : Under) if (FMath::Sqrt(Dist2(Done.To.X, Done.To.Y, O.X, O.Y)) - O.Radius <= D->Bombard) DamageDefender(O, D->Dmg);
+				if (!bImpactFx) AddFx(EBSFxKind::Blast, FVector(Done.To.X, Done.To.Y, 0.05f), FVector::ZeroVector, 0.45f, D->Bombard, FLinearColor(0.55f, 1, 0.2f), 5);
+				Shake = FMath::Min(1.f, Shake + 0.15f);
+				continue;
+			}
 			if (!Tg.IsValid(Bunker)) continue;
 			float Dmg = D->Dmg;
 			if (Tg.bLight) Dmg += D->DmgLight;

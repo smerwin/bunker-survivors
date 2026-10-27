@@ -134,6 +134,22 @@ namespace
 			D.Scale = 0.55f; D.Hp = 30; D.Dmg = 4; D.Cd = 0.46f; D.Range = 0.1f; D.Speed = 4.13f; D.Radius = 0.25f; D.bLight = true; D.Life = 8;
 			D.Bounty = 1; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0.45f; D.AttackAnims = { TEXT("attack") }; D.Height = 0.5f;
 		}
+		// Wave 100 finale (see ABSGame::StartFinale): Kerrigan casts Leaping Strike and Apocalypse; the leviathan bombards and
+		// spawns mutalisks.
+		{
+			FBSZergDef& D = Add(TEXT("kerrigan"), TEXT("Kerrigan"), TEXT("kerrigan"), TEXT("kerriganDeath"), TEXT("btn-unit-zerg-kerriganinfested"));
+			D.ImpactFx = TEXT("ultraliskImpact");
+			D.Scale = 1.3f; D.Hp = 6000; D.Armor = 3; D.Dmg = 45; D.Cd = 0.7f; D.Range = 1.2f; D.Speed = 3.4f; D.Radius = 0.9f; D.bArmored = true; D.Boss = TEXT("kerrigan");
+			D.Bounty = 2500; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0.4f; D.AttackAnims = { TEXT("attack"), TEXT("attack 01") };
+			D.SoundDeath = TEXT("kerriganDeath"); D.Height = 2.4f; D.DeathHold = 6;
+		}
+		{
+			FBSZergDef& D = Add(TEXT("leviathan"), TEXT("Leviathan"), TEXT("leviathan"), TEXT("leviathanDeath"), TEXT("btn-unit-zerg-leviathan"));
+			D.Scale = 1.6f; D.Hp = 6000; D.Armor = 1; D.Dmg = 40; D.Cd = 2.4f; D.Range = 6; D.Speed = 1.6f; D.Radius = 3.0f; D.bArmored = true; D.bFlying = true; D.Fly = 7.5f;
+			D.Boss = TEXT("leviathan"); D.Bombard = 2.4f;
+			D.Bounty = 2500; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0.45f; D.Projectile = EBSProjectile::Bile;
+			D.SoundAttack = TEXT("guardianFire"); D.SoundDeath = TEXT("finaleRoar"); D.Height = 4; D.DeathHold = 6;
+		}
 		return Out;
 	}
 

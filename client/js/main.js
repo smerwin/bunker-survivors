@@ -63,6 +63,9 @@ window.BS = window.BS || {};
     game.started = true;
     // Playtesting: ?tech=max researches everything (unlocking the high-tech cards) and banks minerals.
     if (new URLSearchParams(location.search).get('tech') === 'max') setTimeout(() => game.grantAllTech(), 1500);
+    // Playtesting: ?wave=100 jumps straight to that wave (the Kerrigan finale); combine with ?tech=max.
+    const jump = parseInt(new URLSearchParams(location.search).get('wave'), 10);
+    if (jump > 1) game.skipToWave(jump);
     // Stream the rest in the background: zerg in unlock order, then variants and projectiles, then effects.
     const rest = Object.keys(BS.MODELS).filter(k => !BS.CORE_MODELS.includes(k));
     rest.sort((a, b) => (BS.ZERG[a] ? BS.ZERG[a].unlock : 5) - (BS.ZERG[b] ? BS.ZERG[b].unlock : 5));

@@ -1080,6 +1080,23 @@ int32 SBSHud::PaintBanner(const FGeometry& G, FSlateWindowElementList& Out, int3
 		D::Disc(Out, L + 1, G, P + FVector2f(14, 13), 3, C::A(C::Cyan, Alpha), 12);
 		D::Text(Out, L + 2, G, T, F, FVector2f(P.X + 24, P.Y + 13 - Sz.Y * 0.5f), C::A(C::Ink, Alpha));
 	}
+	// Wave 100 finale: a long health bar per boss under the toast.
+	{
+		const TArray<TSharedPtr<FBSEnemy>> Bosses = Game()->Bosses();
+		const float W = FMath::Min(420.f, S.X - 40), X0 = S.X * 0.5f - W * 0.5f;
+		const FSlateFontInfo F = D::Label(9);
+		for (int32 i = 0; i < Bosses.Num(); i++)
+		{
+			const FBSEnemy& E = *Bosses[i];
+			const float Y = 184 + i * 34, Pct = FMath::Clamp(E.Hp / FMath::Max(1.f, E.MaxHp), 0.f, 1.f);
+			const FString Hp = FString::Printf(TEXT("%d / %d"), FMath::CeilToInt(E.Hp), FMath::RoundToInt(E.MaxHp));
+			D::RFill(Out, L, G, FVector2f(X0 - 8, Y - 4), FVector2f(W + 16, 30), 8, C::A(C::Dark, 0.85f));
+			D::Text(Out, L + 1, G, E.Def->Name.ToUpper(), F, FVector2f(X0, Y), C::Ink);
+			D::Text(Out, L + 1, G, Hp, F, FVector2f(X0 + W - D::Measure(Hp, F).X, Y), C::Violet);
+			D::RFill(Out, L + 1, G, FVector2f(X0, Y + 15), FVector2f(W, 6), 3, C::A(FLinearColor::Black, 0.6f));
+			D::RFill(Out, L + 2, G, FVector2f(X0, Y + 15), FVector2f(FMath::Max(3.f, W * Pct), 6), 3, Pct < 0.25f ? C::Red : C::Violet);
+		}
+	}
 	// Wave banner: a glass band whose hairlines draw outward from the centre.
 	const double Bs = NowS - BannerAt;
 	if (Bs < 2.6 && !BannerText.IsEmpty())
@@ -1090,7 +1107,7 @@ int32 SBSHud::PaintBanner(const FGeometry& G, FSlateWindowElementList& Out, int3
 		D::GradH(Out, L, G, FVector2f(0, Y), FVector2f(S.X * 0.5f, H), C::A(C::Dark, 0), C::A(C::Dark, 0.82f * Alpha));
 		D::GradH(Out, L, G, FVector2f(S.X * 0.5f, Y), FVector2f(S.X * 0.5f, H), C::A(C::Dark, 0.82f * Alpha), C::A(C::Dark, 0));
 		const bool bHeavy = BannerText.Contains(TEXT("//"));
-		const FLinearColor Acc = bHeavy ? C::Red : C::Amber;
+		const FLinearColor Acc = BannerText.StartsWith(TEXT("VICTORY")) ? C::Green : bHeavy ? C::Red : C::Amber;
 		const float Half = S.X * 0.42f * Ease;
 		D::Line(Out, L + 1, G, FVector2f(S.X * 0.5f - Half, Y), FVector2f(S.X * 0.5f + Half, Y), C::A(Acc, 0.8f * Alpha), 1.5f);
 		D::Line(Out, L + 1, G, FVector2f(S.X * 0.5f - Half, Y + H), FVector2f(S.X * 0.5f + Half, Y + H), C::A(Acc, 0.8f * Alpha), 1.5f);
