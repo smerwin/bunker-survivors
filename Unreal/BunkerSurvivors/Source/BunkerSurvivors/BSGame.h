@@ -70,6 +70,8 @@ struct FBSBattlecruiser
 	float Hp = BSDefs::BcHp, MaxHp = BSDefs::BcHp, Armor = BSDefs::BcArmor, AcidUntil = 0, Flash = 0;
 	float CdL = 0.3f, YamatoT = -1;             // next laser bolt; Yamato charge time (-1 = not charging)
 	int32 Next = 0, YamatoFx = 0;               // battery that fires next; the charge effect
+	float AlertAt = 0;                          // next time a threat warning may be shown
+	int32 HullWarn = 0;                         // hull warnings given (1 = half, 2 = a quarter)
 	TWeakPtr<FBSEnemy> YamatoTarget;
 	TArray<FBSBcTurret> Turrets;
 	bool bOnStation = false, bDead = false;
@@ -344,6 +346,8 @@ private:
 	void KillMech(const TSharedPtr<FBSMech>& M);
 	bool CallBattlecruiser();
 	void UpdateBc(float Dt);
+	TSharedPtr<FBSEnemy> BcThreat() const;
+	void BcAlerts();
 	bool CallVikings();
 	void UpdateVikings(float Dt);
 	bool LaunchNuke();

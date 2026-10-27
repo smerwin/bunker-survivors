@@ -1432,9 +1432,10 @@ void ABSGame::UpdateBc(float Dt)
 	auto Any = [](const FBSEnemy& E) { return E.Alive(); };
 	// Laser batteries, as in StarCraft II: ATS against ground, ATA against air, single amber bolts in quick succession (one
 	// every 0.16 s, slowed by devourer acid) that walk along the hull's six hardpoints. Each battery keeps its own target,
-	// and scourge and devourers closing on the ship are taken first (point defence). The bolt is drawn as a tracer (the
-	// wraith's laser is an M3 ribbon, which is not imported) and lands with the wraith's laser hit.
+	// and scourge and devourers closing on the ship are taken first (point defence, see BcThreat). The bolt is drawn as a
+	// tracer (the wraith's laser is an M3 ribbon, which is not imported) and lands with the wraith's laser hit.
 	B.CdL -= Dt * (B.AcidUntil > Time ? 0.7f : 1.f);
+	BcAlerts();
 	while (B.CdL <= 0)
 	{
 		B.CdL += BSDefs::BcLaserCd;
@@ -1450,9 +1451,9 @@ void ABSGame::UpdateBc(float Dt)
 				At = FVector(Wp.Y / BSSpace::UnitsPerMetre, Wp.X / BSSpace::UnitsPerMetre, Wp.Z / BSSpace::UnitsPerMetre);
 			}
 			TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(At.X, At.Y, BSDefs::BcRange, Any);
-			const TSharedPtr<FBSEnemy>* Threat = L.FindByPredicate([](const TSharedPtr<FBSEnemy>& X) { return X->Def->bAntiAir; });
+			const TSharedPtr<FBSEnemy> Threat = BcThreat();
 			TSharedPtr<FBSEnemy> E = Tu.Target.Pin();
-			if (Threat) E = *Threat;
+			if (Threat) E = Threat;
 			else if (!E || !E->Alive() || FMath::Sqrt(Dist2(At.X, At.Y, E->X, E->Y)) - E->Radius > BSDefs::BcRange)
 				E = L.Num() ? L[FMath::RandRange(0, FMath::Min(4, L.Num()) - 1)] : nullptr;
 			Tu.Target = E;
@@ -1468,10 +1469,12 @@ void ABSGame::UpdateBc(float Dt)
 		if (!bFired) { B.CdL = 0.2f; break; }
 	}
 	// Missile pods (the Wings of Liberty armoury upgrade): an anti-air volley every few seconds, splashing other flyers.
+	// Scourge and devourers closing on the ship get the first missiles.
 	B.CdM -= Dt;
 	if (B.CdM <= 0)
 	{
 		TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(B.X, B.Y, BSDefs::BcRange + 2, [](const FBSEnemy& E) { return E.Def->bFlying; });
+		L.StableSort([](const TSharedPtr<FBSEnemy>& P, const TSharedPtr<FBSEnemy>& Q) { return P->Def->bAntiAir && !Q->Def->bAntiAir; });
 		B.CdM = L.Num() ? BSDefs::BcMissileCd : 0.5f;
 		for (int32 k = 0; k < FMath::Min(BSDefs::BcMissiles, L.Num()); k++)
 		{
@@ -1524,6 +1527,50 @@ void ABSGame::UpdateBc(float Dt)
 			PlaySound(TEXT("bcYamatoCharge"), 0.7f);
 			Floater(B.X, B.Y, B.Sz + 1, TEXT("YAMATO CHARGING"), FLinearColor(0.74f, 0.42f, 1));
 		}
+	}
+}
+
+// Point defence: the closest scourge within reach of the hull (a little past the batteries' normal range), else the
+// closest devourer. Scourge only have to touch the ship, so they always come first.
+TSharedPtr<FBSEnemy> ABSGame::BcThreat() const
+{
+	TSharedPtr<FBSEnemy> Best;
+	if (!Bc.IsValid()) return Best;
+	float Bs = 1e9f;
+	for (const TSharedPtr<FBSEnemy>& E : Enemies)
+	{
+		if (!E->Alive() || !E->Def->bAntiAir) continue;
+		const float D = FMath::Sqrt(Dist2(Bc->X, Bc->Y, E->X, E->Y)) - E->Radius;
+		if (D > BSDefs::BcRange + BSDefs::BcPdRange) continue;
+		const float S = D - (E->Def->bSuicide ? 100.f : 0.f);
+		if (S < Bs) { Bs = S; Best = E; }
+	}
+	return Best;
+}
+
+// Warnings so the battlecruiser never dies unannounced: scourge or devourers going for it (at most every few seconds)
+// and the hull dropping to half and to a quarter.
+void ABSGame::BcAlerts()
+{
+	FBSBattlecruiser& B = *Bc;
+	if (Time >= B.AlertAt)
+	{
+		int32 NScourge = 0, NDevourers = 0;
+		for (const TSharedPtr<FBSEnemy>& E : Enemies)
+			if (E->Alive() && E->Def->bAntiAir && E->Target.Kind == FBSTarget::Bc) (E->Def->bSuicide ? NScourge : NDevourers)++;
+		if (NScourge || NDevourers)
+		{
+			B.AlertAt = Time + BSDefs::BcAlertGap;
+			Toast(NScourge ? TEXT("Scourge inbound on the Battlecruiser!") : TEXT("Devourers attacking the Battlecruiser!"));
+		}
+	}
+	const float Frac = B.Hp / FMath::Max(1.f, B.MaxHp);
+	const int32 Level = Frac <= 0.25f ? 2 : Frac <= 0.5f ? 1 : 0;
+	if (Level > B.HullWarn)
+	{
+		B.HullWarn = Level;
+		Toast(Level == 2 ? TEXT("Battlecruiser hull critical!") : TEXT("Battlecruiser hull at 50%"));
+		Floater(B.X, B.Y, B.Sz + 1.5f, Level == 2 ? TEXT("HULL CRITICAL") : TEXT("HULL 50%"), FLinearColor(1.f, 0.42f, 0.35f));
 	}
 }
 
@@ -1670,7 +1717,7 @@ void ABSGame::StartWave()
 	auto Wt = [&](const FBSZergDef* D) { return D->Weight * (D->Late ? 0.6f + 0.4f * Tier : 1.f) * (D->bPreferMech && Mechs.Num() ? 2.f : 1.f) * (D->bAntiAir && !bAirUp ? 0.f : 1.f); };
 	TArray<const FBSZergDef*> Types;
 	for (const FBSZergDef& D : BSDefs::Zerg())
-		if (D.Budget > 0 && Wv >= FMath::CeilToInt(D.Unlock * (bHard ? 0.85f : 1.f)) && (!D.Late || Tier >= D.Late)) Types.Add(&D);
+		if (D.Budget > 0 && Wv >= FMath::CeilToInt(D.Unlock * (bHard ? 0.85f : 1.f)) && (!D.Late || Tier >= D.Late) && (!D.bHops || Mode == EBSMode::Lane)) Types.Add(&D);   // winged zerglings only in lane mode, where they hop the mesa
 	TArray<FString> List;
 	for (int32 Guard = 0; Budget > 0 && Guard < 400; Guard++)
 	{
@@ -1716,8 +1763,11 @@ void ABSGame::StartWave()
 		const int32 N = FMath::Min(Left, 6 + FMath::RandRange(0, 10));
 		const float T = 0.5f + Rnd(0.f, Spread);
 		const float Ang = PackAng(0.55f);
-		// Late game: some of the swarm are winged zerglings that hop straight over the mesa.
-		for (int32 k = 0; k < N; k++) { SpawnQueue.Add({ T + k * 0.04f, Tier && FMath::FRand() < FMath::Min(0.5f, 0.15f * Tier) ? TEXT("wingling") : TEXT("zergling"), Ang }); Added++; }
+		// Late game (lane mode): some of the swarm are winged zerglings that hop straight over the mesa, a few more with
+		// every tech card past the one that brings them.
+		const int32 WlLate = BSDefs::FindZerg(TEXT("wingling"))->Late;
+		const float Wl = Mode == EBSMode::Lane && Tier >= WlLate ? FMath::Min(0.4f, 0.1f * (Tier - WlLate + 1)) : 0.f;
+		for (int32 k = 0; k < N; k++) { SpawnQueue.Add({ T + k * 0.04f, FMath::FRand() < Wl ? TEXT("wingling") : TEXT("zergling"), Ang }); Added++; }
 		Left -= N;
 	}
 	// Late game: overlords drop zerglings behind our lines, and nydus worms breach there.
@@ -1750,7 +1800,7 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 	else if (Mode == EBSMode::Lane)
 	{
 		const int32 Side = FMath::RoundToInt(Ang);         // 0 north, 1 north-east, 2 north-west
-		if (Side == 1 || Side == 2)
+		if ((Side == 1 || Side == 2) && !D->bHops)        // winged zerglings always come from the north, over the mesa
 		{
 			// Somewhere down the arm (see BSTerrain), not on the cliffs beside it.
 			const FVector2D P = BSTerrain::Active() ? BSTerrain::ArmPoint(Side == 1 ? 1 : -1, Rnd(0.55f, 0.85f), Rnd(-2.2f, 2.2f)) : FVector2D((Side == 1 ? 1 : -1) * Rnd(10.f, 13.f), Rnd(17, 23));
@@ -1770,11 +1820,20 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 		E->bHighRoute = Mode == EBSMode::Lane && bRanged && FMath::FRand() < 0.4f;
 		E->Route = BSTerrain::Route(X, Y, E->bHighRoute);
 	}
-	// A strain or skin variant now and then, for variety (only models with the animations the game needs).
+	// A strain or skin variant now and then, for variety (only models with the animations the game needs). With
+	// VariantFrom the variety dials up slowly (see FBSZergDef).
 	E->ModelKey = D->Model; E->DeathKey = D->Death;
-	if (D->Variants.Num() && FMath::FRand() < 0.45f)
+	int32 Pool = D->Variants.Num();
+	float Share = 0.45f;
+	if (Pool && D->VariantFrom)
 	{
-		const FString& V = D->Variants[FMath::RandRange(0, D->Variants.Num() - 1)];
+		const int32 Vw = Wave - D->VariantFrom;
+		Pool = Vw >= 0 ? FMath::Min(Pool, 1 + Vw / FMath::Max(1, D->VariantStep)) : 0;
+		Share = FMath::Min(0.45f, 0.04f * (Vw + 1));
+	}
+	if (Pool && FMath::FRand() < Share)
+	{
+		const FString& V = D->Variants[FMath::RandRange(0, Pool - 1)];
 		const FBSModel* VM = Assets->Model(V);
 		if (VM && VM->Find(WalkNames) && (D->AttackAnims.Num() == 0 || VM->Find(D->AttackAnims)))
 		{
@@ -1800,7 +1859,7 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 	if (D->bNydus)
 	{
 		E->Z = BSTerrain::Height(X, Y) - 3;
-		static const TCHAR* Kinds[] = { TEXT("zergling"), TEXT("zergling"), TEXT("wingling"), TEXT("roach"), TEXT("hydralisk") };
+		static const TCHAR* Kinds[] = { TEXT("zergling"), TEXT("zergling"), TEXT("zergling"), TEXT("roach"), TEXT("hydralisk") };   // no winglings: they only come over the mesa
 		for (int32 i = 0; i < 6 + 2 * LateTier(); i++) E->CargoList.Add(Kinds[FMath::RandRange(0, 4)]);
 		PlayFx(TEXT("nydusBirth"), FVector(X, Y, BSTerrain::Height(X, Y)), 0, 1.4f);
 		Toast(TEXT("Nydus worm breaching behind our lines!"));
@@ -2404,7 +2463,17 @@ void ABSGame::UpdateEnemies(float Dt)
 					{
 					case EBSProjectile::Acid: P.Kind = EBSProjKind::Acid; P.Arc = 1.5f; P.ImpactFx = TEXT("roachImpact"); AddProjectileModel(P, nullptr, TEXT("roachMissile"), 0.7f); if (!P.Trail) AddProjectileVisual(P, FLinearColor(0.5f, 1, 0.15f), 0.35f); break;
 					case EBSProjectile::Spine: P.Kind = EBSProjKind::Spine; AddProjectileModel(P, TEXT("projHydralisk"), nullptr); if (!P.Model) AddProjectileVisual(P, FLinearColor(0.8f, 1, 0.5f), 0.15f); break;
-					case EBSProjectile::Bullet: P.Kind = EBSProjKind::Bullet; P.ImpactFx = TEXT("marineImpact"); if (!PlayFx(TEXT("marineLaunch"), P.From, FMath::Atan2(T.Y - E.Y, T.X - E.X))) AddProjectileVisual(P, FLinearColor(1, 0.85f, 0.5f), 0.08f); break;
+					case EBSProjectile::Bullet:
+					{
+						// Infested marines: a rifle burst from the muzzle with the same SC2 muzzle mesh and launch sparks as our marines.
+						const float Aim = FMath::Atan2(T.Y - E.Y, T.X - E.X);
+						P.From = FVector(E.X + FMath::Cos(Aim) * 0.45f, E.Y + FMath::Sin(Aim) * 0.45f, E.Z + D->Height * 0.7f);
+						P.Kind = EBSProjKind::Bullet; P.ImpactFx = TEXT("marineImpact");
+						bool bFx = true;
+						for (int32 r = 0; r < 3; r++) { bFx = PlayFx(TEXT("marineLaunch"), P.From, Aim, 1.4f, r * 0.08f) != 0 && bFx; MuzzleMesh(P.From, Aim, r * 0.08f); }
+						if (!bFx) AddProjectileVisual(P, FLinearColor(1, 0.85f, 0.5f), 0.08f);
+						break;
+					}
 					case EBSProjectile::Glaive: P.Kind = EBSProjKind::Glaive; P.Bounces = 3; P.ImpactFx = TEXT("mutaliskImpact"); AddProjectileModel(P, TEXT("projMutalisk"), TEXT("mutaliskMissile")); if (!P.Model) AddProjectileVisual(P, FLinearColor(0.6f, 1, 0.3f), 0.25f); break;
 					case EBSProjectile::Brood: P.Kind = EBSProjKind::Brood; AddProjectileVisual(P, FLinearColor(0.9f, 0.6f, 0.3f), 0.4f); P.Arc = 3; break;
 					case EBSProjectile::Spines: P.Kind = EBSProjKind::Spines; break;

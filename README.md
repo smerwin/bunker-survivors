@@ -148,16 +148,16 @@ When the bunker is full, new recruits stand behind it, up to 48.
 | Tactical Nuke (400) | Infantry Weapons maxed | A ghost calls a nuke on the densest pack clear of the bunker. 45 s to reload. |
 | Viking Wing (300) | every bunker system (Stimpack, Neosteel, Hi-Sec, Magnetic Rails, Medivac) | Four fighters patrol overhead for 20 s, hunting air. |
 | Thor (600, up to 2) | Building Armor maxed | Heavy walkers firing long-range from behind the bunker. |
-| Battlecruiser (1500) | every tree maxed | Parks nose-south over the fork of the lane. As in StarCraft II, its laser batteries fire rapid amber bolts along six hardpoints (8 against ground, 5 against air), taking scourge and devourers first; missile pods fire at air only, and the Yamato charges at the bow for two seconds before it fires. |
+| Battlecruiser (1500) | every tree maxed | Parks nose-south over the fork of the lane. As in StarCraft II, its laser batteries fire rapid amber bolts along six hardpoints (8 against ground, 5 against air), taking scourge (then devourers) first, a little beyond their usual range; missile pods fire at air only, and the Yamato charges at the bow for two seconds before it fires. |
 | Odin (2500) | the battlecruiser on station | Heavy artillery from behind the bunker. |
 
 **The Swarm answers.** Every tech card you unlock brings stranger zerg into the waves, and more of them:
 
 | Zerg | What it does |
 | --- | --- |
-| Winged zergling | Hops straight over the cliffs and the mesa instead of following the lane. |
+| Winged zergling | Lane defence only, from the second tech card: comes in from the north and hops straight over the mesa instead of following the lane. |
 | Guardian | Flying artillery that outranges most of your guns and goes for the mechs first. |
-| Scourge, devourer | Only come when you have air: scourge fly into the battlecruiser, vikings and banshees and explode; devourer acid makes them fire slower. Air support can now be shot down (the battlecruiser can be bought again). |
+| Scourge, devourer | Only come when you have air: scourge fly into the battlecruiser, vikings and banshees and explode; devourer acid makes them fire slower. Air support can now be shot down (the battlecruiser can be bought again). The HUD warns when scourge or devourers go for the battlecruiser and at half and a quarter hull, and shows its hull under the squad card. |
 | Defiler | Casts dark swarm (zerg under it take a quarter damage from shots; blasts and flame still work) and plague (your units bleed, but it cannot kill). |
 | Viper | Abducts a trooper, goliath or thor, yanking it out toward the swarm. |
 | Overlord drop | Flies in from a flank and drops zerglings behind your lines (early, if badly hurt). |
