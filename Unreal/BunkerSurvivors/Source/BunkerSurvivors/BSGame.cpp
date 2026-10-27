@@ -2408,7 +2408,7 @@ void ABSGame::UpdateEnemies(float Dt)
 					case EBSProjectile::Glaive: P.Kind = EBSProjKind::Glaive; P.Bounces = 3; P.ImpactFx = TEXT("mutaliskImpact"); AddProjectileModel(P, TEXT("projMutalisk"), TEXT("mutaliskMissile")); if (!P.Model) AddProjectileVisual(P, FLinearColor(0.6f, 1, 0.3f), 0.25f); break;
 					case EBSProjectile::Brood: P.Kind = EBSProjKind::Brood; AddProjectileVisual(P, FLinearColor(0.9f, 0.6f, 0.3f), 0.4f); P.Arc = 3; break;
 					case EBSProjectile::Spines: P.Kind = EBSProjKind::Spines; break;
-					case EBSProjectile::Guardian: P.Kind = EBSProjKind::Guardian; P.Arc = 2; P.ImpactFx = TEXT("roachImpact"); AddProjectileModel(P, nullptr, TEXT("guardianMissile"), 1.2f); if (!P.Trail) AddProjectileVisual(P, FLinearColor(0.7f, 1, 0.4f), 0.35f); break;
+					case EBSProjectile::Guardian: P.Kind = EBSProjKind::Guardian; P.Arc = 2; P.ImpactFx = TEXT("guardianImpact"); AddProjectileModel(P, TEXT("projGuardian"), TEXT("guardianMissile"), 1.6f); if (P.Model) P.Model->SetScale(2.4f); if (!P.Model && !P.Trail) AddProjectileVisual(P, FLinearColor(0.7f, 1, 0.4f), 0.35f); break;
 					case EBSProjectile::Spores: P.Kind = EBSProjKind::Spores; P.ImpactFx = TEXT("acidSpores"); AddProjectileModel(P, nullptr, TEXT("devourerMissile")); if (!P.Trail) AddProjectileVisual(P, FLinearColor(0.6f, 1, 0.2f), 0.3f); break;
 					default: break;
 					}

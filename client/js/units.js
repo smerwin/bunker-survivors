@@ -101,6 +101,7 @@ window.BS = window.BS || {};
   projYamato: E + 'terran/yamatomissile/yamatomissile.m3', projHydralisk: E + 'zerg/hydraliskmissile/hydraliskmissile.m3',
   projRoach: E + 'zerg/roachmissile/roachmissile.m3', projMarauder: E + 'terran/maraudermissile/maraudermissile.m3',
   projSam: E + 'terran/missileturretmissile/missileturretmissile.m3',
+  projGuardian: E + 'zerg/primalguardianmissile/primalguardianmissile.m3',  // the Brood War acid glob: a big yellow goo ball
   };
 
   // SC2 particle effects, replayed by both builds: [m3, optional sequence filter, loops].
@@ -129,7 +130,7 @@ window.BS = window.BS || {};
   laserImpact: [E + 'terran/wraithlasermissileimpact/wraithlasermissileimpact.m3'],
   samMissile: [E + 'terran/missileturretmissile/missileturretmissile.m3', null, true], samImpact: [E + 'terran/missileturretmissileimpact/missileturretmissileimpact.m3'],
   // Late-game zerg.
-  guardianMissile: [E + 'zerg/guardianmissile/guardianmissile.m3', null, true],      // its hit is a sprite with no particles: the roach's acid splash stands in
+  guardianMissile: [E + 'zerg/primalguardianmissile/primalguardianmissile.m3', null, true], guardianImpact: [E + 'zerg/primalguardianmissileimpact/primalguardianmissileimpact.m3'],
   devourerMissile: [E + 'zerg/devourermissile/devourermissile.m3', null, true], acidSpores: [E + 'zerg/devourer_acidspores_impact/devourer_acidspores_impact.m3'],
   darkSwarm: [E + 'zerg/defiler_darkswarm_aoe/defiler_darkswarm_aoe.m3', null, true], plague: [E + 'zerg/defiler_plague/defiler_plague.m3'],
   nydusBirth: [E + 'zerg/nyduscreepspoutbirth/nyduscreepspoutbirth.m3'], viperTongueImpact: [E + 'zerg/vipertongueimpact/vipertongueimpact.m3'],

@@ -1378,7 +1378,7 @@ window.BS = window.BS || {};
         case 'spine': this.projectileModel(p, 'projHydralisk', null); break;
         case 'bullet': p.impact = 'marineImpact'; this.fx.play('marineLaunch', p.fx, p.fy, p.fz, Math.atan2(t.y - e.y, t.x - e.x)); break;
         case 'glaive': p.bounces = d.bounces; p.hit = []; p.impact = 'mutaliskImpact'; this.projectileModel(p, 'projMutalisk', 'mutaliskMissile'); break;
-        case 'guardian': p.arc = 2; p.impact = 'roachImpact'; this.projectileModel(p, null, 'guardianMissile', 1.2); break;
+        case 'guardian': p.arc = 2; p.impact = 'guardianImpact'; this.projectileModel(p, 'projGuardian', 'guardianMissile', 1.6); if (p.model) p.model.setScale(2.4); break;
         case 'spores': p.impact = 'acidSpores'; this.projectileModel(p, null, 'devourerMissile'); break;
         case 'brood': p.arc = 3; p.model = this.r.spawn('zergling', p.fx, p.fy, p.fz, 0).setScale(0.45).setTeam(3); p.model.play(/^stand/i, true); break;
       }
