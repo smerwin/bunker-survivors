@@ -162,6 +162,7 @@ When the bunker is full, new recruits stand behind it, up to 48.
 | Viper | Abducts a trooper, goliath or thor, yanking it out toward the swarm. |
 | Overlord drop | Flies in from a flank and drops zerglings behind your lines (early, if badly hurt). |
 | Nydus worm | Breaches behind the bunker and disgorges zerg until it is killed or sinks away. |
+| Creep (from wave 8, whatever your tech) | Queens walk with the waves planting creep tumors; each tumor spreads creep and buds one more toward the bunker, and from wave 10 overlords drift in overhead generating creep (shoot them down with anti-air). Zerg on creep move 30% faster, and creep lingers after its tumors die. Firebat flames burn it back and singe tumors. |
 
 **Stimpacks** send the soldiers standing outside charging at the nearest zerg until they are in range.
 

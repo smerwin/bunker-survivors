@@ -233,6 +233,7 @@ void ABSGame::Init(UBSAssets* InAssets, EBSMode InMode)
 			if (!Taken.ContainsByPredicate([&P](const FVector2D& T) { return FVector2D::Distance(T, P) < 1.0f; })) SquadSpots.Add(P);
 		}
 	BuildWorld(Mode);
+	InitCreep();
 	Bunker.Actor = AcquireModel(TEXT("bunker"));
 	if (Bunker.Actor) { Bunker.Actor->SetSim(0, 0, 0, PI / 2); Bunker.Actor->SetTeamColor(TerranColor); }
 	AddScv(true);
@@ -1727,6 +1728,20 @@ void ABSGame::StartWave()
 		for (int32 i = 0; i < DropsN; i++) { SpawnQueue.Add({ 4 + Rnd(0.f, Spread), TEXT("overlord"), 0.f }); Added++; }
 		if (Tier >= 2 && FMath::FRand() < 0.25f + 0.08f * Tier) { SpawnQueue.Add({ 6 + Rnd(0.f, Spread * 0.6f), TEXT("nydus"), 0.f }); Added++; }
 	}
+	// Mid game on: queens walk with the wave planting creep tumors, and (two waves later) overlords drift over the field
+	// generating creep.
+	const int32 Cw = CreepWave();
+	if (Wv >= Cw)
+	{
+		const int32 Queens = FMath::Min(4, 1 + (Wv - Cw) / 6);
+		for (int32 i = 0; i < Queens; i++) { SpawnQueue.Add({ 1 + Rnd(0.f, Spread * 0.7f), TEXT("queen"), PackAng(0.3f) }); Added++; }
+		if (Wv == Cw) Toast(TEXT("Zerg queens are spreading creep"));
+	}
+	if (Wv >= Cw + 2)
+	{
+		const int32 Lords = FMath::Min(3, 1 + (Wv - Cw - 2) / 8);
+		for (int32 i = 0; i < Lords; i++) { SpawnQueue.Add({ 2 + Rnd(0.f, Spread), TEXT("overlordCreep"), 0.f }); Added++; }
+	}
 	SpawnQueue.Sort([](const FBSSpawn& A, const FBSSpawn& B) { return A.T < B.T; });
 	Tele.Spawned = Added;
 	SpawnTimer = 0;
@@ -1747,6 +1762,7 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 	if (At) { X = At->X + Rnd(-0.6f, 0.6f); Y = At->Y + Rnd(-0.6f, 0.6f); }
 	else if (D->bTransport) { X = bLane ? SideS * 23 : FMath::Cos(Ar) * 27; Y = bLane ? Rnd(-3, 6) : FMath::Sin(Ar) * 27; }          // overlords come in from a flank
 	else if (D->bNydus) { const float R = Rnd(5.5f, 8); X = bLane ? SideS * Rnd(2.5f, 4.5f) : FMath::Cos(Ar) * R; Y = bLane ? Rnd(-8.5f, -7) : FMath::Sin(Ar) * R; }   // behind our lines
+	else if (D->bCreeper) { X = bLane ? SideS * Rnd(10, 18) : FMath::Cos(Ar) * 29; Y = bLane ? Rnd(30, 34) : FMath::Sin(Ar) * 29; }   // creep overlords drift in from afar
 	else if (Mode == EBSMode::Lane)
 	{
 		const int32 Side = FMath::RoundToInt(Ang);         // 0 north, 1 north-east, 2 north-west
@@ -1805,6 +1821,7 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 		PlayFx(TEXT("nydusBirth"), FVector(X, Y, BSTerrain::Height(X, Y)), 0, 1.4f);
 		Toast(TEXT("Nydus worm breaching behind our lines!"));
 	}
+	SetupCreeper(*E);
 	Enemies.Add(E);
 	return E;
 }
@@ -1867,6 +1884,258 @@ void ABSGame::UpdateNydus(const TSharedPtr<FBSEnemy>& EP, float Dt)
 	}
 	E.Z = Gz - 3 * FMath::Clamp(E.T / 1.6f, 0.f, 1.f);
 	if (E.T >= 1.6f) Despawn(EP);
+}
+
+// ---- Creep ------------------------------------------------------------------------------------------------
+namespace { enum ECreeperState : int32 { CreeperIn = 0, CreeperWork = 1, CreeperOut = 2 }; }
+
+// A coarse coverage grid over the field (see BSCreep); the creep overlay mesh is shaded from it.
+void ABSGame::InitCreep()
+{
+	const bool bLane = Mode == EBSMode::Lane;
+	Creep = FCreepGrid();
+	Creep.X0 = bLane ? -24.f : -30.f; Creep.Y0 = bLane ? -18.f : -30.f; Creep.Cell = BSCreep::Cell;
+	Creep.Nx = FMath::RoundToInt((bLane ? 48.f : 60.f) / BSCreep::Cell); Creep.Ny = FMath::RoundToInt((bLane ? 52.f : 60.f) / BSCreep::Cell);
+	Creep.C.Init(0.f, Creep.Nx * Creep.Ny); Creep.Burn.Init(0.f, Creep.Nx * Creep.Ny); Creep.Src.Init(0, Creep.Nx * Creep.Ny);
+	BuildCreepMesh();
+}
+
+float ABSGame::CreepAt(float X, float Y) const
+{
+	if (!Creep.Nx) return 0;
+	const int32 I = FMath::FloorToInt((X - Creep.X0) / Creep.Cell), J = FMath::FloorToInt((Y - Creep.Y0) / Creep.Cell);
+	return I < 0 || J < 0 || I >= Creep.Nx || J >= Creep.Ny ? 0.f : Creep.C[J * Creep.Nx + I];
+}
+
+// Visit the cells whose centres lie within R of (X, Y).
+void ABSGame::CreepCells(float X, float Y, float R, TFunctionRef<void(int32)> Fn) const
+{
+	const FCreepGrid& G = Creep;
+	const int32 I0 = FMath::Max(0, FMath::FloorToInt((X - R - G.X0) / G.Cell)), I1 = FMath::Min(G.Nx - 1, FMath::FloorToInt((X + R - G.X0) / G.Cell));
+	const int32 J0 = FMath::Max(0, FMath::FloorToInt((Y - R - G.Y0) / G.Cell)), J1 = FMath::Min(G.Ny - 1, FMath::FloorToInt((Y + R - G.Y0) / G.Cell));
+	for (int32 j = J0; j <= J1; j++)
+		for (int32 i = I0; i <= I1; i++)
+		{
+			const float Cx = G.X0 + (i + 0.5f) * G.Cell, Cy = G.Y0 + (j + 0.5f) * G.Cell;
+			if ((Cx - X) * (Cx - X) + (Cy - Y) * (Cy - Y) <= R * R) Fn(j * G.Nx + i);
+		}
+}
+
+// Four times a second: creep grows where a tumor or a generating overlord reaches, fades slowly (lingers) elsewhere, and
+// stays away for a while where firebats scorched the ground.
+void ABSGame::UpdateCreep(float Dt)
+{
+	FCreepGrid& G = Creep;
+	if (!G.Nx) return;
+	G.T += Dt;
+	if (G.T < BSCreep::Update) return;
+	const float St = G.T; G.T = 0;
+	FMemory::Memzero(G.Src.GetData(), G.Src.Num());
+	auto Mark = [&G](int32 K) { G.Src[K] = 1; };
+	for (const TSharedPtr<FBSEnemy>& E : Enemies)
+	{
+		if (!E->Alive()) continue;
+		if (E->Def->bTumor) CreepCells(E->X, E->Y, E->CreepR, Mark);
+		else if (E->Def->bCreeper && E->State == CreeperWork) CreepCells(E->X, E->Y, BSCreep::OverlordRadius, Mark);
+	}
+	int32 Cover = 0; bool bChanged = false;
+	for (int32 K = 0; K < G.C.Num(); K++)
+	{
+		if (G.Burn[K] > 0) G.Burn[K] = FMath::Max(0.f, G.Burn[K] - St);
+		const float V = G.C[K], Nv = G.Src[K] && G.Burn[K] <= 0 ? FMath::Min(1.f, V + BSCreep::Grow * St) : FMath::Max(0.f, V - BSCreep::Decay * St);
+		if (Nv != V) { G.C[K] = Nv; bChanged = true; }
+		if (Nv > BSCreep::On) Cover++;
+	}
+	G.Cover = Cover * G.Cell * G.Cell;           // square metres under creep
+	if (bChanged) G.Version++;
+}
+
+// Firebat flames: the creep in the burst burns away and the ground stays scorched for a while; tumors there are singed.
+void ABSGame::BurnCreep(float X, float Y, float R, bool bSinge)
+{
+	FCreepGrid& G = Creep;
+	if (!G.Nx) return;
+	bool bHit = false;
+	CreepCells(X, Y, R, [&G, &bHit](int32 K) { if (G.C[K] > 0) bHit = true; G.C[K] = FMath::Max(0.f, G.C[K] - 0.85f); G.Burn[K] = BSCreep::BurnRegrow; });
+	if (bHit) G.Version++;
+	if (!bSinge) return;
+	TArray<TSharedPtr<FBSEnemy>> Snapshot = Enemies;
+	for (const TSharedPtr<FBSEnemy>& E : Snapshot)
+		if (E->Def->bTumor && E->Alive() && FMath::Sqrt(Dist2(X, Y, E->X, E->Y)) - E->Radius <= R) HurtEnemy(E, BSCreep::BurnTumorDmg, true);
+}
+
+int32 ABSGame::TumorCount() const
+{
+	int32 N = 0;
+	for (const TSharedPtr<FBSEnemy>& E : Enemies) if (E->Def->bTumor && E->Alive()) N++;
+	return N;
+}
+
+bool ABSGame::WaveAlive() const
+{
+	for (const TSharedPtr<FBSEnemy>& E : Enemies) if (!E->Def->bTumor) return true;
+	return false;
+}
+
+// A creep tumor at (X, Y), if the spot is open ground clear of the bunker and of other tumors, and under the cap.
+TSharedPtr<FBSEnemy> ABSGame::PlantTumor(float X, float Y)
+{
+	if (!BSTerrain::Walkable(X, Y) || FMath::Sqrt(X * X + Y * Y) < BSCreep::TumorMinBunker || TumorCount() >= TumorCap()) return nullptr;
+	for (const TSharedPtr<FBSEnemy>& E : Enemies)
+		if (E->Def->bTumor && E->Alive() && Dist2(E->X, E->Y, X, Y) < BSCreep::TumorGap * BSCreep::TumorGap) return nullptr;
+	const FVector2D At(X, Y);
+	TSharedPtr<FBSEnemy> E = SpawnEnemy(TEXT("creeptumor"), 0, &At);
+	PlaySound(TEXT("tumorBirth"), 0.5f, 0.3f);
+	return E;
+}
+
+void ABSGame::SetupCreeper(FBSEnemy& E)
+{
+	const FBSZergDef* D = E.Def;
+	if (D->bCreeper)
+	{
+		const float A = FMath::FRand() * 2 * PI, R = Rnd(9, 14);
+		E.State = CreeperIn; E.T = 0; E.Exit = FVector2D(E.X, E.Y);
+		if (Mode == EBSMode::Lane) { const float Hx = Rnd(-7, 7), Hy = Rnd(10, 18); E.Hover = FVector2D(Hx, Hy); }
+		else E.Hover = FVector2D(FMath::Cos(A) * R, FMath::Sin(A) * R);
+	}
+	if (D->bTumor)
+	{
+		E.bBurrowed = true; E.T = 0; E.AnimT = 0; E.CreepR = 0.6f; E.bSpread = false; E.Anim = TEXT("birth");
+		if (E.Actor) E.Actor->Play(TEXT("stand morph start"), false);
+	}
+	if (D->bTumors) E.TumorCd = Rnd(BSCreep::QueenFirst0, BSCreep::QueenFirst1);
+}
+
+// Creep tumor: buds, burrows, spreads creep out to its radius, and after a while buds one more tumor nearby on its creep,
+// toward the bunker (trying again a little later if there is no room).
+void ABSGame::UpdateTumor(const TSharedPtr<FBSEnemy>& EP, float Dt)
+{
+	FBSEnemy& E = *EP;
+	E.T += Dt; E.AnimT += Dt;
+	E.CreepR = FMath::Min(BSCreep::TumorRadius, E.CreepR + BSCreep::TumorGrowth * Dt);
+	if (E.Anim == TEXT("birth") && E.AnimT > 1.3f) { E.Anim = TEXT("cover"); E.AnimT = 0; if (E.Actor) E.Actor->Play(TEXT("cover start"), false); }
+	else if (E.Anim != TEXT("stand") && E.Anim != TEXT("birth") && E.AnimT > 1.3f) { E.Anim = TEXT("stand"); if (E.Actor) E.Actor->Play(TEXT("cover"), true); }
+	if (E.bSpread || E.T < BSCreep::TumorSpread) return;
+	E.bSpread = true;
+	const float Toward = FMath::Atan2(-E.Y, -E.X);
+	for (int32 k = 0; k < 6; k++)
+	{
+		const float A = Toward + Rnd(-1.1f, 1.1f), R = Rnd(BSCreep::TumorHop0, BSCreep::TumorHop1);
+		const float X = E.X + FMath::Cos(A) * R, Y = E.Y + FMath::Sin(A) * R;
+		if (OnCreep(X, Y) && PlantTumor(X, Y)) { E.Anim = TEXT("spell"); E.AnimT = 0; if (E.Actor) E.Actor->Play(TEXT("cover spell start"), false); return; }
+	}
+	E.bSpread = false; E.T = BSCreep::TumorSpread - 4;
+}
+
+// Queens plant a creep tumor every few seconds as they walk with the wave (standing still while they do).
+bool ABSGame::QueenCreep(FBSEnemy& E, float Dt)
+{
+	if (E.CastUntil > Time) { E.bAttacking = false; return true; }
+	E.TumorCd -= Dt;
+	if (E.TumorCd > 0) return false;
+	E.TumorCd = BSCreep::QueenEvery;
+	if (!PlantTumor(E.X + FMath::Cos(E.Yaw) * 0.9f, E.Y + FMath::Sin(E.Yaw) * 0.9f)) { E.TumorCd = 2; return false; }
+	E.CastUntil = Time + 0.9f; E.Anim = TEXT("spell"); E.bAttacking = false;
+	if (E.Actor) E.Actor->Play(TEXT("spell"), false);
+	PlaySound(TEXT("tumorPlant"), 0.6f, 0.3f);
+	return true;
+}
+
+// Creep overlord: drifts in over the field, then hangs there generating creep beneath it while edging toward the bunker
+// (into anti-air reach), and finally drifts back out.
+void ABSGame::UpdateCreeper(const TSharedPtr<FBSEnemy>& EP, float Dt)
+{
+	FBSEnemy& E = *EP;
+	E.T += Dt;
+	if (E.State == CreeperWork)
+	{
+		const float R = (float)E.Hover.Size();
+		if (R > BSCreep::OverlordMinDist) E.Hover *= FMath::Max(BSCreep::OverlordMinDist, R - BSCreep::OverlordDrift * Dt) / R;
+		if (E.T > BSCreep::OverlordLife) { E.State = CreeperOut; PlayEnemyAnim(E, TEXT("walk")); }
+	}
+	const FVector2D G = E.State == CreeperOut ? E.Exit : E.Hover;
+	const float Dx = G.X - E.X, Dy = G.Y - E.Y, Dd = FMath::Sqrt(Dx * Dx + Dy * Dy);
+	if (E.State == CreeperIn && Dd < 0.5f)
+	{
+		E.State = CreeperWork; E.T = 0; E.Anim = TEXT("work");
+		if (E.Actor) E.Actor->Play(TEXT("stand work"), true);
+		PlaySound(TEXT("generateCreep"), 0.6f);
+		Toast(TEXT("Overlord generating creep"));
+	}
+	if (E.State == CreeperOut && Dd < 0.5f) { Despawn(EP); return; }
+	if (Dd > 0.05f)
+	{
+		const float S = FMath::Min(Dd, E.Def->Speed * Dt);
+		E.X += Dx / Dd * S; E.Y += Dy / Dd * S;
+		if (E.State != CreeperWork) E.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(E.Yaw, FMath::Atan2(Dy, Dx)), -2 * Dt, 2 * Dt);
+	}
+}
+
+// The creep overlay: a translucent grid laid 5 cm over the ground (half-metre vertices over the creep grid). Vertex alpha
+// is the coverage (bilinear between cell centres) and vertex colour the ground's lighting (as the browser's ground shader
+// lights it), so the unlit M_Creep shades like the terrain under it.
+void ABSGame::BuildCreepMesh()
+{
+	if (!Assets->CreepMaterial || !Creep.Nx) return;
+	CreepMesh = NewObject<UProceduralMeshComponent>(this, TEXT("CreepMesh"));
+	CreepMesh->SetupAttachment(GetRootComponent());
+	CreepMesh->RegisterComponent();
+	CreepMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	CreepMesh->SetCastShadow(false);
+	CreepMesh->SetWorldLocation(FVector::ZeroVector);
+	const float Step = Creep.Cell * 0.5f, E = 0.15f;
+	const FVector Sun = FVector(-0.45f, -0.35f, 0.82f).GetSafeNormal();      // sim space
+	CreepVx = Creep.Nx * 2 + 1; CreepVy = Creep.Ny * 2 + 1;
+	CreepV.Reset(); CreepN.Reset(); CreepUv.Reset(); CreepCol.Reset(); CreepShade.Reset();
+	for (int32 j = 0; j < CreepVy; j++)
+		for (int32 i = 0; i < CreepVx; i++)
+		{
+			const float X = Creep.X0 + i * Step, Y = Creep.Y0 + j * Step;
+			const float Hx = (BSTerrain::Height(X + E, Y) - BSTerrain::Height(X - E, Y)) / (2 * E), Hy = (BSTerrain::Height(X, Y + E) - BSTerrain::Height(X, Y - E)) / (2 * E);
+			const FVector Ns = FVector(-Hx, -Hy, 1).GetSafeNormal();                  // sim space
+			CreepV.Add(BSSpace::ToWorld(X, Y, BSTerrain::Height(X, Y) + 0.05f));
+			CreepN.Add(FVector(Ns.Y, Ns.X, Ns.Z));                                     // world axes (sim x/y swap)
+			CreepUv.Add(FVector2D(X / 5, Y / 5));
+			const float Shade = 0.62f + 0.5f * FMath::Max(0.f, (float)FVector::DotProduct(Ns, Sun));
+			CreepShade.Add(Shade);
+			CreepCol.Add(FLinearColor(Shade, Shade, Shade, 0));
+		}
+	TArray<int32> Tri;
+	Tri.Reserve((CreepVx - 1) * (CreepVy - 1) * 6);
+	for (int32 j = 0; j < CreepVy - 1; j++)
+		for (int32 i = 0; i < CreepVx - 1; i++)
+		{
+			const int32 A = j * CreepVx + i, B = A + 1, C = A + CreepVx, D = C + 1;
+			Tri.Append({ A, B, D, A, D, C });                    // front faces up, as the terrain mesh
+		}
+	TArray<FVector2D> NoUv; TArray<FProcMeshTangent> Tan;
+	CreepMesh->CreateMeshSection_LinearColor(0, CreepV, Tri, CreepN, CreepUv, NoUv, NoUv, NoUv, CreepCol, Tan, false, false);
+	CreepMesh->SetMaterial(0, Assets->CreepMaterial);
+	CreepMesh->SetVisibility(false);
+	CreepMeshVer = -1;
+}
+
+// At most five times a second, and only when the grid changed: refresh the overlay's vertex alpha.
+void ABSGame::UpdateCreepMesh()
+{
+	if (!CreepMesh || Creep.Version == CreepMeshVer || Time - CreepMeshT < 0.2f) return;
+	CreepMeshVer = Creep.Version; CreepMeshT = Time;
+	const float Step = Creep.Cell * 0.5f;
+	const float* C = Creep.C.GetData();
+	bool bAny = false;
+	for (int32 j = 0; j < CreepVy; j++)
+		for (int32 i = 0; i < CreepVx; i++)
+		{
+			const float Fx = FMath::Clamp(i * Step / Creep.Cell - 0.5f, 0.f, Creep.Nx - 1.f), Fy = FMath::Clamp(j * Step / Creep.Cell - 0.5f, 0.f, Creep.Ny - 1.f);
+			const int32 I0 = FMath::FloorToInt(Fx), J0 = FMath::FloorToInt(Fy), I1 = FMath::Min(I0 + 1, Creep.Nx - 1), J1 = FMath::Min(J0 + 1, Creep.Ny - 1);
+			const float Tx = Fx - I0, Ty = Fy - J0;
+			const float V = FMath::Lerp(FMath::Lerp(C[J0 * Creep.Nx + I0], C[J0 * Creep.Nx + I1], Tx), FMath::Lerp(C[J1 * Creep.Nx + I0], C[J1 * Creep.Nx + I1], Tx), Ty);
+			CreepCol[j * CreepVx + i].A = V;
+			bAny |= V > 0.01f;
+		}
+	CreepMesh->SetVisibility(bAny);
+	if (bAny) CreepMesh->UpdateMeshSection_LinearColor(0, CreepV, CreepN, CreepUv, CreepCol, TArray<FProcMeshTangent>());
 }
 
 // Defiler (alternating dark swarm and plague) and viper (abduct) spells.
@@ -2255,9 +2524,9 @@ void ABSGame::Step(float Dt)
 	NukeCd = FMath::Max(0.f, NukeCd - Dt); VikingCd = FMath::Max(0.f, VikingCd - Dt);
 
 	WaveTimer -= Dt;
-	if (WaveTimer <= 0 || (SpawnQueue.Num() == 0 && Enemies.Num() == 0 && Wave > 0 && WaveTimer < WaveLen - 6))
+	if (WaveTimer <= 0 || (SpawnQueue.Num() == 0 && !WaveAlive() && Wave > 0 && WaveTimer < WaveLen - 6))
 	{
-		if (Wave > 0 && Enemies.Num() == 0) { Minerals += 10 + 5 * Wave; Score += 100 * Wave; }
+		if (Wave > 0 && !WaveAlive()) { Minerals += 10 + 5 * Wave; Score += 100 * Wave; }
 		StartWave();
 	}
 	SpawnTimer += Dt;
@@ -2271,6 +2540,7 @@ void ABSGame::Step(float Dt)
 	BuildTargets();
 	BuildAirTargets();
 	UpdateEnemies(Dt);
+	UpdateCreep(Dt);
 	UpdateSpells(Dt);
 	UpdateBunker(Dt);
 	UpdateTanks(Dt);
@@ -2321,6 +2591,9 @@ void ABSGame::UpdateEnemies(float Dt)
 		if (E.Life > 0) { E.Life -= Dt; if (E.Life <= 0) { KillEnemy(EP, true); Kills--; continue; } }
 		if (D->bTransport) { UpdateOverlord(EP, Dt); continue; }
 		if (D->bNydus) { UpdateNydus(EP, Dt); continue; }
+		if (D->bTumor) { UpdateTumor(EP, Dt); continue; }
+		if (D->bCreeper) { UpdateCreeper(EP, Dt); continue; }
+		if (D->bTumors && QueenCreep(E, Dt)) continue;
 		E.Retarget -= Dt;
 		const TArray<FBSTarget>& Pool = D->bAntiAir ? AirTargets : Targets;       // scourge and devourers hunt Terran air
 		if (!E.Target.IsValid(Bunker) || E.Retarget <= 0)
@@ -2454,7 +2727,9 @@ void ABSGame::UpdateEnemies(float Dt)
 				if (Dist2(Gx, Gy, E.X, E.Y) < 0.81f) { E.Route.RemoveAt(0); if (!E.Route.Num() && E.bHighRoute) E.bPerched = true; }
 			}
 			const float Gd = FMath::Max(0.001f, FMath::Sqrt(Dist2(Gx, Gy, E.X, E.Y)));
-			const float Sp = D->Speed * (bSlowed ? 0.5f : 1.f);
+			// Zerg on creep move faster (ground units only).
+			E.bOnCreep = !D->bFlying && OnCreep(E.X, E.Y);
+			const float Sp = D->Speed * (bSlowed ? 0.5f : 1.f) * (E.bOnCreep ? BSCreep::Speed : 1.f);
 			const float Nx = (Gx - E.X) / Gd, Ny = (Gy - E.Y) / Gd;
 			const float Mx = Nx * Sp * Dt + E.Sx * 0.8f, My = Ny * Sp * Dt + E.Sy * 0.8f;
 			// Cliffs: ground units steer around them; flyers ignore them, and winged zerglings hop straight over.
@@ -2563,8 +2838,12 @@ void ABSGame::FireInfantry(const FBSInfantryDef* D, const FVector& Muzzle, const
 	}
 	else if (D->Key == TEXT("firebat"))
 	{
+		const float Hx = Target->X, Hy = Target->Y;
 		if (DmgBase > 0) for (auto& V : EnemiesInRange(Target->X, Target->Y, D->Splash, Pred)) HurtEnemy(V, DmgBase + (V->Def->bLight ? D->DmgLight : 0), true);
-		EmitFlame(Muzzle, FVector(Target->X, Target->Y, 0.4f));
+		// The flames burn the creep away where they land and along the way.
+		BurnCreep(Hx, Hy, BSCreep::BurnRadius, true);
+		BurnCreep((Muzzle.X + Hx) / 2, (Muzzle.Y + Hy) / 2, BSCreep::BurnRadius * 0.6f, false);
+		EmitFlame(Muzzle, FVector(Hx, Hy, 0.4f));
 		MuzzleFlash = 1;
 		PlaySound(BSSounds::FirebatFire, 0.45f, 0.3f);
 	}
@@ -2946,6 +3225,7 @@ void ABSGame::UpdateVisuals(float Dt)
 		F.Life -= Dt;
 		if (F.Life <= 0) { ReleaseModel(F.A); Flashes.RemoveAtSwap(i); }
 	}
+	UpdateCreepMesh();
 	// Enemies: position, facing, hit flash.
 	for (const TSharedPtr<FBSEnemy>& E : Enemies)
 	{

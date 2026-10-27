@@ -156,6 +156,10 @@ struct FBSEnemy
 	float T = 0, SpawnT = 0, UnloadT = 0, CastUntil = 0, Seed = 0, Idle = 0;
 	FVector2D Drop = FVector2D::ZeroVector, Exit = FVector2D::ZeroVector;
 	TArray<FString> CargoList;
+	// Creep: tumor radius and bud state, queen planting timer, creep overlord hover point, on-creep speed bonus.
+	float CreepR = 0, AnimT = 0, TumorCd = 0;
+	bool bSpread = false, bOnCreep = false;
+	FVector2D Hover = FVector2D::ZeroVector;
 	FString Anim, ModelKey, DeathKey;
 	ABSModelActor* Actor = nullptr;
 	bool Alive() const { return Hp > 0; }
@@ -287,6 +291,12 @@ public:
 	TArray<TSharedPtr<FBSStructure>> Structures;
 	TArray<FBSFloater> Floaters;
 	TWeakPtr<FBSEnemy> Focus; float FocusUntil = 0;
+	// Creep coverage grid (cell (i, j) covers X0 + i * Cell .. +Cell, Y0 + j * Cell ..): C coverage 0..1, Burn seconds of
+	// scorch left (firebats), Src scratch marks. Version bumps whenever it changes; Cover is the area under creep (m^2).
+	struct FCreepGrid { float X0 = 0, Y0 = 0, Cell = 1, T = 0, Cover = 0; int32 Nx = 0, Ny = 0, Version = 0; TArray<float> C, Burn; TArray<uint8> Src; } Creep;
+	float CreepAt(float X, float Y) const;
+	bool OnCreep(float X, float Y) const { return CreepAt(X, Y) > BSCreep::On; }
+	int32 TumorCount() const;
 	struct FUp { bool bStim = false, bNeosteel = false, bMedivac = false, bHiSec = false, bRails = false; int32 Weapons = 0, Vehicle = 0, Plating = 0; } Up;
 	struct FAb { float StimUntil = 0, StimCd = 0, StrikeCd = 0, RepairCd = 0, YamatoCd = 0; } Ab;
 	bool UseYamato();
@@ -368,6 +378,23 @@ private:
 	void Despawn(const TSharedPtr<FBSEnemy>& E);
 	void UpdateOverlord(const TSharedPtr<FBSEnemy>& E, float Dt);
 	void UpdateNydus(const TSharedPtr<FBSEnemy>& E, float Dt);
+	// Creep.
+	void InitCreep();
+	void CreepCells(float X, float Y, float R, TFunctionRef<void(int32)> Fn) const;
+	void UpdateCreep(float Dt);
+	void BurnCreep(float X, float Y, float R, bool bSinge);
+	int32 CreepWave() const { return FMath::CeilToInt(BSCreep::FromWave * (bHard ? 0.85f : 1.f)); }
+	int32 TumorCap() const { return FMath::Min(BSCreep::TumorMax, BSCreep::TumorBase + BSCreep::TumorPerWave * FMath::Max(0, Wave - CreepWave() + 1)); }
+	TSharedPtr<FBSEnemy> PlantTumor(float X, float Y);
+	void SetupCreeper(FBSEnemy& E);
+	void UpdateTumor(const TSharedPtr<FBSEnemy>& E, float Dt);
+	bool QueenCreep(FBSEnemy& E, float Dt);
+	void UpdateCreeper(const TSharedPtr<FBSEnemy>& E, float Dt);
+	bool WaveAlive() const;                   // zerg still to beat this wave (creep tumors linger and do not count)
+	void BuildCreepMesh();                    // the creep overlay: a terrain-hugging translucent grid (M_Creep)
+	void UpdateCreepMesh();
+	TArray<FVector> CreepV, CreepN; TArray<FVector2D> CreepUv; TArray<FLinearColor> CreepCol; TArray<float> CreepShade;
+	int32 CreepVx = 0, CreepVy = 0, CreepMeshVer = -1; float CreepMeshT = -10;
 	void CastSpell(FBSEnemy& E, const FBSTarget& T);
 	void UpdateSpells(float Dt);
 	void BuildAirTargets();
@@ -423,6 +450,7 @@ private:
 	UPROPERTY() TObjectPtr<UPointLightComponent> MuzzleLight;
 	UPROPERTY() TObjectPtr<UStaticMeshComponent> Ground;
 	UPROPERTY() TObjectPtr<class UProceduralMeshComponent> Terrain;
+	UPROPERTY() TObjectPtr<class UProceduralMeshComponent> CreepMesh;
 
 	TArray<FBSTarget> Targets;
 	TArray<FBSProjectile> Projectiles;

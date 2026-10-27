@@ -105,6 +105,7 @@ void UBSAssets::LoadAll()
 	FxRingMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_FXRing.M_FXRing"));
 	GroundMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_Ground.M_Ground"));
 	TerrainMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_Terrain.M_Terrain"));
+	CreepMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_Creep.M_Creep"));
 	ParticleMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_FXParticle.M_FXParticle"));
 	SpriteAddMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_FXSpriteAdd.M_FXSpriteAdd"));
 	SpriteBlendMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Materials/M_FXSpriteBlend.M_FXSpriteBlend"));

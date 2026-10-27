@@ -41,6 +41,13 @@ window.BS = window.BS || {};
     overlord: U + 'zerg/overlordtransport/overlordtransport.m3',
     overlordDeath: U + 'zerg/overlordtranportdeath/overlordtranportdeath.m3',
     nydus: U + 'zerg/nydusworm/nydusworm.m3',
+    // Creep: queens plant creep tumors; overlords generate creep from the sky.
+    queen: U + 'zerg/queen/queen.m3',
+    queenDeath: U + 'zerg/queendeath/queendeath.m3',
+    creeptumor: 'assets/buildings/zerg/creeptumor/creeptumor.m3',
+    creeptumorDeath: 'assets/buildings/zerg/creeptumordeath/creeptumordeath.m3',
+    overlordCreep: U + 'zerg/overlord/overlord.m3',
+    overlordCreepDeath: U + 'zerg/overlorddeath/overlorddeath.m3',
     // Terran
     bunker: 'assets/buildings/terran/bunker/bunker.m3',
     bunkerDeath: 'assets/buildings/terran/bunkerdeath/bunkerdeath.m3',
@@ -151,6 +158,8 @@ window.BS = window.BS || {};
   BS.GROUND_TEXTURE = 'assets/textures/charex2_1.dds';
   // Cliff faces of the lane's chokepoint (Char cliff rock, dark at the top, glowing at the base).
   BS.CLIFF_TEXTURE = 'assets/textures/charex1cliff0_diffuse_00.png';
+  // Zerg creep spreading over the ground (tinted purple by both builds).
+  BS.CREEP_TEXTURE = 'assets/textures/creep.png';
 
   const S = 'assets/sounds/';
   BS.SOUNDS = {
@@ -196,6 +205,10 @@ window.BS = window.BS || {};
     nydusUnload: [S + 'zerg/nydusworm/nydusworm_unload00.wav', S + 'zerg/nydusworm/nydusworm_unload01.wav'],
     viperAbduct: [1, 2, 3].map(i => S + 'ac_viper_attackimpact_0' + i + '.wav'),
     plague: [0, 1, 2].map(i => S + 'zerg/infestor/infestor_plagueattackimpact' + i + '.wav'),
+    queenDeath: [0, 1, 2].map(i => S + 'zerg/queen/queen_death' + i + '.wav'),
+    tumorPlant: [1, 2, 3, 4].map(i => S + 'creeptumor_placeflarp_' + i + '.wav'),
+    tumorBirth: [1, 2, 3, 4, 5].map(i => S + 'creeptumor_newemerge_' + i + '.wav'),
+    generateCreep: [S + 'zerg/overlord/overlord_generatecreep0.wav'],
   };
 
   // Zerg attackers. hp/armor/damage/cooldown/range/speed are SC2 values; bounty and budget are ours.
@@ -231,6 +244,23 @@ window.BS = window.BS || {};
     overlord: { name: 'Overlord', model: 'overlord', death: 'overlordDeath', hp: 400, armor: 1, dmg: 0, cd: 1, range: 0, speed: 3, radius: 1.0, armored: true, flying: true, fly: 4.2, transport: true, bounty: 25, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2 },
     nydus: { name: 'Nydus Worm', model: 'nydus', death: null, hp: 450, armor: 1, dmg: 0, cd: 1, range: 0, speed: 0, radius: 1.3, armored: true, nydus: true, bounty: 60, budget: 0, unlock: 999, weight: 0, hitFrac: 0, height: 3 },
     broodling: { name: 'Broodling', model: 'zergling', death: 'zerglingDeath', scale: 0.55, hp: 30, armor: 0, dmg: 4, cd: 0.46, range: 0.1, speed: 4.13, radius: 0.25, light: true, life: 8, bounty: 1, budget: 0, unlock: 999, weight: 0, hitFrac: 0.45, attackSeq: /^attack/i, height: 0.5, impactFx: 'zerglingImpact' },
+    // Creep (see BS.CREEP): queens walk with the waves planting creep tumors; tumors spread creep and bud one more
+    // tumor each; overlords drift over the field generating creep beneath them.
+    queen: { name: 'Queen', model: 'queen', death: 'queenDeath', hp: 175, armor: 1, dmg: 8, cd: 0.71, range: 5, speed: 2.4, radius: 0.875, tumors: true, bounty: 30, budget: 0, unlock: 999, weight: 0, hitFrac: 0.3, attackSeq: /^attack$/i, projectile: 'spine', soundDeath: 'queenDeath', height: 1.8 },
+    creeptumor: { name: 'Creep Tumor', model: 'creeptumor', death: 'creeptumorDeath', hp: 50, armor: 0, dmg: 0, cd: 1, range: 0, speed: 0, radius: 0.5, tumor: true, bounty: 3, budget: 0, unlock: 999, weight: 0, hitFrac: 0, height: 0.6 },
+    overlordCreep: { name: 'Overlord', model: 'overlordCreep', death: 'overlordCreepDeath', hp: 200, armor: 0, dmg: 0, cd: 1, range: 0, speed: 1.4, radius: 1.0, armored: true, flying: true, fly: 4.8, creeper: true, bounty: 20, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2 },
+  };
+
+  // Creep: a coarse grid (cell metres) of coverage 0..1 that grows where a source reaches and slowly fades (lingers) where
+  // none does. Zerg ground units on creep move faster (SC2: +30%). Firebat flames burn it back and scorch the ground for
+  // a while, and singe tumors. Queens join from fromWave, creep overlords two waves later. The swarm may keep more tumors
+  // alive each wave (base + perWave per creep wave, up to max), so the creep spreads further as the waves go on.
+  BS.CREEP = {
+    cell: 1, update: 0.25, on: 0.35, grow: 0.6, decay: 0.012, speed: 1.3, fromWave: 8,
+    tumor: { radius: 4.5, growth: 0.45, spread: 12, hop: [3, 4.5], base: 4, perWave: 3, max: 30, minBunker: 6, gap: 2 },
+    queen: { every: 9, first: [3, 6] },
+    overlord: { radius: 3.2, life: 50, drift: 0.3, minDist: 6 },
+    burn: { radius: 1.6, regrow: 5, tumorDmg: 10 },
   };
 
   // Bunker occupants.

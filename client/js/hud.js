@@ -199,6 +199,7 @@ window.BS = window.BS || {};
       const sq = document.getElementById('squad').getBoundingClientRect(), top = sq.bottom + 16, bottom = H - 270;
       const cam = r.cam;
       for (const e of g.enemies) {
+        if (e.def.tumor) continue;                 // creep tumors stay put: not a threat to point at
         let ang;
         if (cam.fp && !r.inFront(e.x, e.y, 0)) {
           // Behind the eye: point by bearing (right, left, or down for straight behind).

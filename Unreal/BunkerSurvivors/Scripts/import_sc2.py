@@ -386,6 +386,45 @@ def build_terrain_material(path, name, ground_tex, cliff_tex):
     return m
 
 
+def build_creep_material(path, name, creep_tex):
+    # Zerg creep overlay (see BSGame::BuildCreepMesh): unlit, translucent. Vertex colour RGB = the ground's lighting,
+    # A = creep coverage; ragged edges come from tiling noise, and SC2's creep texture is tinted purple.
+    m = new_material(path, name)
+    m.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
+    m.set_editor_property("blend_mode", unreal.BlendMode.BLEND_TRANSLUCENT)
+    uv = expr(m, unreal.MaterialExpressionTextureCoordinate, -1400, 0)
+    t = expr(m, unreal.MaterialExpressionTextureSample, -1150, 0, texture=creep_tex or load(WHITE))
+    mel.connect_material_expressions(uv, "", t, "UVs")
+    tint = vector(m, "Tint", -1150, -300, (1.35, 0.8, 1.55, 1) if creep_tex else (0.3, 0.13, 0.34, 1))
+    bright = scalar(m, "Brightness", -1150, -400, 1.0)
+    vc = expr(m, unreal.MaterialExpressionVertexColor, -1150, 300)
+    c1 = binop(m, unreal.MaterialExpressionMultiply, t, "RGB", tint, "", -900, -100)
+    c2 = binop(m, unreal.MaterialExpressionMultiply, c1, "", vc, "", -700, 0)
+    c3 = binop(m, unreal.MaterialExpressionMultiply, c2, "", bright, "", -500, 0)
+    mel.connect_material_property(c3, "", unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    # Opacity: saturate((coverage + (noise - 0.5) * 0.3 - 0.3) * 4) * 0.95, as the browser's ground shader.
+    uvn = expr(m, unreal.MaterialExpressionMultiply, -1150, 500, const_b=0.6)
+    mel.connect_material_expressions(uv, "", uvn, "A")
+    noise = expr(m, unreal.MaterialExpressionTextureSample, -1000, 500, texture=load("/Engine/EngineMaterials/Good64x64TilingNoiseHighFreq"))
+    mel.connect_material_expressions(uvn, "", noise, "UVs")
+    nm = expr(m, unreal.MaterialExpressionSubtract, -800, 500, const_b=0.5)
+    mel.connect_material_expressions(noise, "R", nm, "A")
+    ns = expr(m, unreal.MaterialExpressionMultiply, -650, 500, const_b=0.3)
+    mel.connect_material_expressions(nm, "", ns, "A")
+    cov = binop(m, unreal.MaterialExpressionAdd, vc, "A", ns, "", -500, 400)
+    off = expr(m, unreal.MaterialExpressionSubtract, -350, 400, const_b=0.3)
+    mel.connect_material_expressions(cov, "", off, "A")
+    sc = expr(m, unreal.MaterialExpressionMultiply, -200, 400, const_b=4.0)
+    mel.connect_material_expressions(off, "", sc, "A")
+    sat = expr(m, unreal.MaterialExpressionSaturate, -50, 400)
+    mel.connect_material_expressions(sc, "", sat, "")
+    op = expr(m, unreal.MaterialExpressionMultiply, 100, 400, const_b=0.95)
+    mel.connect_material_expressions(sat, "", op, "A")
+    mel.connect_material_property(op, "", unreal.MaterialProperty.MP_OPACITY)
+    mel.recompile_material(m)
+    return m
+
+
 def make_mi(parent, path, name, textures, scalars=None):
     full = path + "/" + name
     if eal.does_asset_exist(full):
@@ -433,9 +472,14 @@ def main():
         cliff.set_editor_property("address_y", unreal.TextureAddress.TA_CLAMP)
         eal.save_loaded_asset(cliff)
     build_terrain_material(mats, "M_Terrain", ground, cliff)
+    creep = None
+    crpath = os.path.join(EXPORT, "Textures", "Creep_Diffuse.png")
+    if os.path.exists(crpath):
+        creep = load(import_file(crpath, "/Game/SC2/Textures", "T_Creep")[0])
+    build_creep_material(mats, "M_Creep", creep)
     for m in (m_unit, m_unit2, m_add, m_blend):
         eal.save_loaded_asset(m)
-    for n in ("M_FX", "M_FXRing", "M_Ground", "M_Terrain", "M_FXParticle", "M_FXSpriteAdd", "M_FXSpriteBlend"):
+    for n in ("M_FX", "M_FXRing", "M_Ground", "M_Terrain", "M_Creep", "M_FXParticle", "M_FXSpriteAdd", "M_FXSpriteBlend"):
         eal.save_asset(mats + "/" + n)
     import_fx(manifest)
     if os.environ.get("BS_FX_ONLY") == "1":
