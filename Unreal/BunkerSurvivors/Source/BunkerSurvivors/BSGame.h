@@ -163,10 +163,14 @@ struct FBSEnemy
 	FVector2D Hover = FVector2D::ZeroVector;
 	FString Anim, ModelKey, DeathKey;
 	ABSModelActor* Actor = nullptr;
+	// Finale bosses: ability cooldowns, Kerrigan's leap (LeapT < 0: on the ground) and her pending Apocalypse blast.
+	float LeapCd = 0, ApocCd = 0, BroodCd = 0, LeapT = -1, BlastAt = -1;
+	FVector2D LeapFrom = FVector2D::ZeroVector, LeapTo = FVector2D::ZeroVector, Blast = FVector2D::ZeroVector;
+	int32 BlastFx = 0;
 	bool Alive() const { return Hp > 0; }
 };
 
-enum class EBSProjKind : uint8 { Shell, Grenade, Rocket, Acid, Spine, Bullet, Glaive, Spines, Brood, Yamato, Sam, Missile, Guardian, Spores, BroodSpell };
+enum class EBSProjKind : uint8 { Shell, Grenade, Rocket, Acid, Spine, Bullet, Glaive, Spines, Brood, Yamato, Sam, Missile, Guardian, Spores, BroodSpell, Bile };
 
 struct FBSProjectile
 {
@@ -227,6 +231,8 @@ struct FBSFlash { ABSModelActor* A = nullptr; FVector P = FVector::ZeroVector; f
 struct FBSFloater { FVector Pos; FString Text; FLinearColor Color; float T = 0; };
 struct FBSCorpse { ABSModelActor* Actor = nullptr; float T = 0, Hold = 3.5f, X = 0, Y = 0, Z = 0, Yaw = 0; bool bSink = true, bVanish = false; };
 struct FBSSpawn { float T = 0; FString Type; float Ang = 0; };
+// A zerg drop pod (the wave 100 finale): T counts up from a negative delay; it lands at PodLand and lets its cargo out.
+struct FBSPod { float X = 0, Y = 0, Yaw = 0, T = 0, SpawnT = 0; TArray<FString> Cargo; ABSModelActor* Actor = nullptr; bool bDropped = false, bLanded = false; };
 
 UCLASS()
 class ABSGame : public AActor
@@ -272,6 +278,10 @@ public:
 	bool TechReady(const FString& Id, int32& OutCost, FString& OutTag) const;
 	bool BuyTech(const FString& Id);
 	void GrantAllTech();                  // playtesting (-BSTechMax): research every upgrade
+	void SkipToWave(int32 N) { Wave = FMath::Max(0, N - 1); WaveTimer = 0; }   // playtesting (-BSWave=100): wave N starts now
+	// Wave 100 finale: Kerrigan and a leviathan lead a maxed-out wave; killing both wins (the game carries on).
+	struct FFinale { bool bOn = false, bWon = false; float T = 0, WonAt = -1; } Finale;
+	TArray<TSharedPtr<FBSEnemy>> Bosses() const { TArray<TSharedPtr<FBSEnemy>> Out; for (const TSharedPtr<FBSEnemy>& E : Enemies) if (!E->Def->Boss.IsEmpty() && E->Alive()) Out.Add(E); return Out; }
 	void Toast(const FString& Msg);
 
 	// State read by the HUD and camera.
@@ -402,6 +412,15 @@ private:
 	void CastBroodling(FBSEnemy& E);
 	void BroodlingHit(const FBSTarget& T);
 	void UpdateSpells(float Dt);
+	// Wave 100 finale.
+	void StartFinale();
+	void DropPods(int32 N, float T0, float Every);
+	void UpdatePods(float Dt);
+	bool UpdateKerrigan(const TSharedPtr<FBSEnemy>& E, const FBSTarget& T, float Dt);   // true while she leaps or channels
+	void UpdateLeviathan(const TSharedPtr<FBSEnemy>& E, float Dt);
+	void BossDown(FBSEnemy& E);
+	TArray<FBSPod> Pods;
+	bool bPodsLanded = false;
 	void BuildAirTargets();
 	void KillAir(const FBSTarget& T);
 	struct FBSSwarm { float X = 0, Y = 0, R = 3, Until = 0; int32 Fx = 0; };

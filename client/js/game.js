@@ -47,6 +47,7 @@ window.BS = window.BS || {};
       this.techUnlocked = {}; this.techCd = { nuke: 0, vikings: 0 };
       this.swarms = []; this.abductions = []; this.airTgs = [];      // late-game zerg: dark swarm clouds, viper pulls
       this.mechs = []; this.bc = null; this.vikingWing = []; this.nukes = [];
+      this.pods = []; this.finale = null;                          // wave 100: zerg drop pods, the boss fight
       this.station = null;
       BS.Terrain.setMode(this.mode);
       this.layout();
@@ -498,6 +499,8 @@ window.BS = window.BS || {};
       for (const id of Object.keys(BS.UPGRADES)) for (let guard = 0; guard < 20 && this.upgradeAvailable(id); guard++) this.buyUpgrade(id);
       this.minerals += 20000;
     }
+    // Test helper (?wave=100): the next wave to start is wave n, right away.
+    skipToWave(n) { this.wave = Math.max(0, n - 1); this.waveTimer = 0; }
 
     // Goliaths, thors and the odin walk in from the south to their posts, then fight with separate anti-ground and
     // anti-air weapons.
@@ -865,10 +868,12 @@ window.BS = window.BS || {};
     startWave() {
       this.wave++;
       const w = this.wave;
-      let budget = (20 + 10 * w + 0.45 * w * w) * (this.hard ? 1.15 : 1);
+      const finale = w === BS.FINALE.wave && !this.finale;
+      let budget = (20 + 10 * w + 0.45 * w * w) * (this.hard ? 1.15 : 1) * (finale ? BS.FINALE.budget : 1);
       // Late game: every high-tech card unlocked brings stranger zerg, and more of them. Guardians come for the mechs;
-      // scourge and devourers only when there is Terran air to hunt. Brood queens (ramp) grow commoner with every card.
-      const tier = this.lateTier(), air = this.airPresence();
+      // scourge and devourers only when there is Terran air to hunt. Brood queens (ramp) grow commoner with every card;
+      // the finale throws in the whole late roster.
+      const tier = finale ? Math.max(this.lateTier(), BS.TECH.length) : this.lateTier(), air = this.airPresence();
       const wt = d => d.weight * (d.late ? 0.6 + 0.4 * tier : 1) * (1 + (d.ramp || 0) * tier) * (d.prefer === 'mech' && this.mechs.length ? 2 : 1) * (d.antiAir && !air ? 0 : 1);
       const types = Object.entries(BS.ZERG).filter(([, d]) => d.budget > 0 && w >= Math.ceil(d.unlock * (this.hard ? 0.85 : 1)) && (!d.late || tier >= d.late));
       const list = [];
@@ -918,7 +923,153 @@ window.BS = window.BS || {};
       this.spawnTimer = 0; this.waveTimer = this.waveLen;
       this.minerals += 20 + 8 * w;
       this.waveBanner = { text: 'WAVE ' + w + (w % 5 === 0 ? '  //  HEAVY ASSAULT' : ''), t: this.time };
+      if (finale) this.startFinale();
     }
+
+    // ---- Wave 100 finale --------------------------------------------------------------------------------
+    // Kerrigan leads a leviathan and a maxed-out wave in person, while drop pods slam down all round the base.
+    startFinale() {
+      const F = BS.FINALE;
+      this.finale = { t: this.time, won: false };
+      this.spawnQueue.push({ t: 2, type: 'leviathan', ang: 0 }, { t: 5, type: 'kerrigan', ang: 0 });
+      this.spawnQueue.sort((a, b) => a.t - b.t);
+      this.dropPods(F.pods, F.podStart, F.podEvery);
+      this.waveBanner = { text: 'WAVE ' + this.wave + '  //  THE QUEEN OF BLADES', t: this.time };
+      this.toast('Kerrigan leads the swarm in person!');
+      BS.audio.play('finaleRoar', { vol: 1 });
+      this.shake = 1;
+    }
+    // Drop pods: n of them, one every few seconds, each from a different side (behind our lines too), on open low ground.
+    dropPods(n, t0, every) {
+      const F = BS.FINALE, lane = this.mode === 'lane', a0 = Math.random() * Math.PI * 2;
+      for (let i = 0; i < n; i++) {
+        const slot = (i * 3) % n;                     // stepping round the compass, so consecutive pods come from far apart
+        let x = 0, y = -rnd(5, 9), ok = false;
+        for (let guard = 0; guard < 40 && !ok; guard++) {
+          const a = a0 + slot * Math.PI * 2 / n + rnd(-0.3, 0.3) + guard * 0.05, r = rnd(F.podMinR, F.podMaxR);
+          const px = Math.cos(a) * r, py = Math.sin(a) * r;
+          if (lane && (Math.abs(px) > 20 || BS.Terrain.lowSdf(px, py) > -0.4 || !BS.Terrain.walkable(px, py))) continue;
+          x = px; y = py; ok = true;
+        }
+        const cargo = i % 2 ? [] : ['ultralisk'];
+        while (cargo.length < F.podCargo) cargo.push(pick(F.podZerg));
+        this.pods.push({ x, y, yaw: rnd(0, Math.PI * 2), t: -(t0 + i * every + rnd(0, 0.5)), cargo, handle: null, landed: false, spawnT: 0 });
+      }
+    }
+    updatePods(dt) {
+      const F = BS.FINALE;
+      for (let i = this.pods.length - 1; i >= 0; i--) {
+        const p = this.pods[i];
+        p.t += dt;
+        if (p.t < 0) continue;
+        const gz = BS.Terrain.height(p.x, p.y);
+        if (!p.handle) {
+          // The pod model streaks down and bursts open by itself (its Birth sequence); its trail rides along.
+          p.handle = this.r.spawn('droppod', p.x, p.y, gz, p.yaw).setTeam(3);
+          p.handle.play(/^birth/i, false);
+          this.fx.play('podFall', p.x, p.y, gz, p.yaw);
+          BS.audio.play('podDrop', { vol: 0.6, gap: 0.2 });
+        }
+        if (!p.landed && p.t >= F.podLand) {
+          p.landed = true;
+          this.fx.play('podImpact', p.x, p.y, gz, p.yaw);
+          BS.audio.play('podImpact', { vol: 0.7, gap: 0.15 });
+          this.shake = Math.min(1, this.shake + 0.3);
+          for (const tg of this.tgs) if (dist(p.x, p.y, tg.x, tg.y) - tg.radius <= F.podRadius) this.damageDefender(tg, F.podDmg);
+          if (!this.podsLanded) { this.podsLanded = true; this.toast('Drop pods landing all round the base!'); }
+        }
+        if (p.landed && p.t >= F.podLand + 0.5 && p.cargo.length && (p.spawnT -= dt) <= 0) {
+          p.spawnT = 0.3;
+          this.spawnEnemy(p.cargo.shift(), 0, [p.x + rnd(-1.2, 1.2), p.y + rnd(-1.2, 1.2)]);
+        }
+        if (!p.cargo.length && p.t > F.podLand + 6) { p.handle.release(); this.pods.splice(i, 1); }
+      }
+    }
+    // Kerrigan: Leaping Strike onto a defender out of reach, Apocalypse on the thickest knot of defenders. Returns true
+    // while she is in the air or channelling (her usual walking and fighting wait).
+    updateKerrigan(e, t, dt) {
+      const F = BS.FINALE, L = F.leap, A = F.apocalypse;
+      e.leapCd -= dt; e.apocCd -= dt;
+      if (e.blast && this.time >= e.blast.at) {
+        const b = e.blast;
+        e.blast = null;
+        this.fx.stop(b.fx);
+        this.fx.play('apocalypse', b.x, b.y, BS.Terrain.height(b.x, b.y), 0, 1.2);
+        for (const tg of this.tgs) if (dist(b.x, b.y, tg.x, tg.y) - tg.radius <= A.radius) this.damageDefender(tg, A.dmg);
+        BS.audio.play('explosion', { vol: 0.9 });
+        this.shake = Math.min(1, this.shake + 0.5);
+      }
+      if (e.leap) {
+        const lp = e.leap, k = clamp((lp.t += dt) / L.dur, 0, 1);
+        e.x = lp.fx + (lp.tx - lp.fx) * k; e.y = lp.fy + (lp.ty - lp.fy) * k;
+        e.z = BS.Terrain.height(e.x, e.y) + Math.sin(k * Math.PI) * 3;
+        if (k >= 1) {
+          e.leap = null; e.z = BS.Terrain.height(e.x, e.y); e.anim = '';
+          this.fx.play('leapImpact', e.x, e.y, e.z, e.yaw, 1.4);
+          for (const tg of this.tgs) if (dist(e.x, e.y, tg.x, tg.y) - tg.radius <= L.radius) this.damageDefender(tg, L.dmg);
+          BS.audio.play('ultraliskAttack', { vol: 0.6 });
+          this.shake = Math.min(1, this.shake + 0.4);
+        }
+        return true;
+      }
+      if (e.castUntil > this.time) return true;
+      const reach = dist(e.x, e.y, t.x, t.y) - t.radius - e.radius;
+      if (e.apocCd <= 0 && reach <= A.range) {
+        // The defender with the most others round it.
+        let best = null, bestN = -1;
+        for (const tg of this.tgs) {
+          if (dist(e.x, e.y, tg.x, tg.y) - tg.radius > A.range + e.radius) continue;
+          const n = this.tgs.filter(o => dist(o.x, o.y, tg.x, tg.y) < A.radius).length;
+          if (n > bestN) { bestN = n; best = tg; }
+        }
+        if (best) {
+          e.apocCd = A.cd; e.castUntil = this.time + A.delay; e.anim = 'spell'; e.handle.play(/^spell$/i, false);
+          e.yaw = Math.atan2(best.y - e.y, best.x - e.x);
+          e.blast = { x: best.x, y: best.y, at: this.time + A.delay, fx: this.fx.play('apocalypseChannel', best.x, best.y, BS.Terrain.height(best.x, best.y), 0, 1.2) };
+          BS.audio.play('kerriganPsi', { vol: 0.8 });
+          this.floater(e.x, e.y, e.z + 3, 'APOCALYPSE', '#c08cff');
+          return true;
+        }
+      }
+      if (e.leapCd <= 0 && reach > L.min && reach < L.max) {
+        const a = Math.atan2(e.y - t.y, e.x - t.x), off = t.radius + e.radius + 0.2;
+        const tx = t.x + Math.cos(a) * off, ty = t.y + Math.sin(a) * off;
+        if (BS.Terrain.walkable(tx, ty)) {
+          e.leapCd = L.cd; e.route = null; e.perched = false;
+          e.leap = { fx: e.x, fy: e.y, tx, ty, t: 0 };
+          e.yaw = Math.atan2(ty - e.y, tx - e.x); e.anim = 'leap'; e.handle.play(/^jump$/i, true);
+          this.fx.play('psionicShift', e.x, e.y, e.z + 1, e.yaw);
+          BS.audio.play('kerriganLeap', { vol: 0.8 });
+          this.floater(e.x, e.y, e.z + 3, 'LEAPING STRIKE', '#c08cff');
+          return true;
+        } else e.leapCd = 1;
+      }
+      return false;
+    }
+    // The leviathan bombards like any ranged zerg (see enemyShot) and every so often spawns a brood of mutalisks.
+    updateLeviathan(e, dt) {
+      const B = BS.FINALE.brood;
+      if ((e.broodCd -= dt) > 0) return;
+      e.broodCd = B.cd;
+      for (let k = 0; k < B.count; k++) this.spawnEnemy('mutalisk', 0, [e.x + rnd(-2.5, 2.5), e.y + rnd(-2.5, 2.5)]);
+      e.castUntil = this.time + 1.2; e.anim = 'spell'; e.handle.play(/^spell$/i, false);
+      BS.audio.play('finaleRoar', { vol: 0.7, gap: 2 });
+      this.floater(e.x, e.y, e.z + 2, 'MUTALISKS', '#c08cff');
+    }
+    // A boss is down; both down (with none still to come) wins the finale. The game carries on.
+    bossDown(e) {
+      if (e.blast) { this.fx.stop(e.blast.fx); e.blast = null; }
+      this.toast(e.def.name + ' is down!');
+      this.floater(e.x, e.y, e.z + 3, e.def.name.toUpperCase() + ' DOWN', '#ffd34d');
+      this.shake = 1;
+      const f = this.finale;
+      if (!f || f.won || this.enemies.some(o => o.def.boss && o.hp > 0) || this.spawnQueue.some(s => BS.ZERG[s.type].boss)) return;
+      f.won = true; f.wonAt = this.time;
+      this.score += BS.FINALE.victory;
+      this.waveBanner = { text: 'VICTORY  //  THE QUEEN OF BLADES HAS FALLEN', t: this.time };
+      this.toast('Victory! The swarm fights on without her');
+    }
+    bosses() { return this.enemies.filter(e => e.def.boss && e.hp > 0); }
     maxAlive() { return (this.hard ? 200 : 160) * (BS.perfScale || 1); }
     spawnEnemy(type, ang, at) {
       const d = BS.ZERG[type];
@@ -947,7 +1098,8 @@ window.BS = window.BS || {};
         const high = this.mode === 'lane' && ['acid', 'spine', 'bullet'].includes(d.projectile) && Math.random() < 0.4;
         e.route = BS.Terrain.route(x, y, high); e.highRoute = high;
       }
-      e.hp = e.maxHp = d.hp * (1 + (this.hard ? 0.025 : 0.02) * Math.max(0, this.wave - 10));   // late waves get tougher
+      e.hp = e.maxHp = d.boss ? d.hp : d.hp * (1 + (this.hard ? 0.025 : 0.02) * Math.max(0, this.wave - 10));   // late waves get tougher
+      if (d.boss) { e.leapCd = 3; e.apocCd = 6; e.broodCd = 8; }
       e.handle = this.r.spawn(model, x, y, z, e.yaw).setTeam(3);
       if (d.scale) e.handle.setScale(d.scale);
       this.playAnim(e, 'walk');
@@ -1372,6 +1524,7 @@ window.BS = window.BS || {};
       if (e.death) this.corpse(e.death, e.x, e.y, e.z, e.yaw, d.deathHold || 3.5, d.scale || 1);
       else this.fx.play('nydusBirth', e.x, e.y, BS.Terrain.height(e.x, e.y), 0, 1.6);
       if (this.focus === e) this.focus = null;
+      if (d.boss) this.bossDown(e);
     }
     banelingBlast(e, fromDeath) {
       const d = e.def;
@@ -1424,7 +1577,7 @@ window.BS = window.BS || {};
       this.spawnTimer += dt;
       while (this.spawnQueue.length && this.spawnQueue[0].t <= this.spawnTimer) {
         const s = this.spawnQueue.shift();
-        if (this.enemies.length < this.maxAlive()) this.spawnEnemy(s.type, s.ang);
+        if (this.enemies.length < this.maxAlive() || BS.ZERG[s.type].boss) this.spawnEnemy(s.type, s.ang);
         else this.spawnQueue.push({ t: this.spawnTimer + 2, type: s.type, ang: s.ang });
       }
       this.tgs = this.targets(); this.airTgs = this.airTargets();
@@ -1441,6 +1594,7 @@ window.BS = window.BS || {};
       this.updateBc(dt);
       this.updateVikings(dt);
       this.updateNukes(dt);
+      this.updatePods(dt);
       this.updateProjectiles(dt);
       this.updateReinforcements(dt);
       if (this.focus && (this.focus.hp <= 0 || this.time > this.focusUntil)) this.focus = null;
@@ -1496,6 +1650,8 @@ window.BS = window.BS || {};
           continue;
         }
         t.x = t.obj.x !== undefined ? t.obj.x : t.x; t.y = t.obj.y !== undefined ? t.obj.y : t.y;
+        if (d.boss === 'kerrigan' && this.updateKerrigan(e, t, dt)) continue;
+        if (d.boss === 'leviathan') this.updateLeviathan(e, dt);
         const dx = t.x - e.x, dy = t.y - e.y, dd = Math.hypot(dx, dy);
         // A brood queen with no prey about (only the bunker or buildings) presses in under the guns to find some.
         const prey = d.spell !== 'broodling' || BROOD_PRIORITY[t.kind];
@@ -1591,6 +1747,7 @@ window.BS = window.BS || {};
         case 'guardian': p.arc = 2; p.impact = 'guardianImpact'; this.projectileModel(p, 'projGuardian', 'guardianMissile', 1.6); if (p.model) p.model.setScale(2.4); break;
         case 'spores': p.impact = 'acidSpores'; this.projectileModel(p, null, 'devourerMissile'); break;
         case 'brood': p.arc = 3; p.model = this.r.spawn('broodling', p.fx, p.fy, p.fz, 0).setScale(0.6).setTeam(3); p.model.play(/^stand/i, true); break;
+        case 'bile': p.arc = 2.5; p.impact = 'roachImpact'; p.impactScale = 2.2; this.projectileModel(p, 'projLeviathan', 'guardianMissile', 1.6); break;
       }
       this.projectiles.push(p);
     }
@@ -1831,6 +1988,12 @@ window.BS = window.BS || {};
           continue;
         }
         const tg = p.target, d = p.def;
+        if (d.bombard) {
+          // Leviathan bile: everything of ours under the splash, whether or not the target is still there.
+          for (const o of this.tgs) if (dist(p.tx, p.ty, o.x, o.y) - o.radius <= d.bombard) this.damageDefender(o, d.dmg);
+          this.shake = Math.min(1, this.shake + 0.15);
+          continue;
+        }
         if (!this.valid(tg)) continue;
         if (p.kind === 'broodspell') { this.broodlingHit(tg); continue; }
         let dmg = d.dmg + (tg.light && d.dmgLight ? d.dmgLight : 0) + (tg.armored && d.dmgArmored ? d.dmgArmored : 0);

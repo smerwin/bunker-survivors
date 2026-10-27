@@ -164,6 +164,7 @@ When the bunker is full, new recruits stand behind it, up to 48.
 | Overlord drop | Flies in from a flank and drops zerglings behind your lines (early, if badly hurt). |
 | Nydus worm | Breaches behind the bunker and disgorges zerg until it is killed or sinks away. |
 | Creep (from wave 8, whatever your tech) | Queens walk with the waves planting creep tumors; each tumor spreads creep and buds one more toward the bunker, and from wave 10 overlords drift in overhead generating creep (shoot them down with anti-air). Zerg on creep move 30% faster, and creep lingers after its tumors die. Firebat flames burn it back and singe tumors. |
+| Wave 100: Kerrigan | The finale. The Queen of Blades leads a leviathan and a maxed-out wave in person: she leaps onto your lines and blasts the thickest knot of defenders with Apocalypse, the leviathan bombards from the air and spawns mutalisks, and zerg drop pods slam down all round the base. Kill both (boss bars under the squad card) for the victory; the game carries on. Try it with `?wave=100&tech=max` (Unreal: `-BSWave=100 -BSTechMax`). |
 
 **Stimpacks** send the soldiers standing outside charging at the nearest zerg until they are in range.
 

@@ -124,8 +124,8 @@ gitignored and must never be shared or uploaded.
   writes screenshots to `Saved/Shots/<name>`. Useful extra flags (via `-Extra "..."`): `-BSTestSquad` (squad,
   turrets, sensor tower, air strike), `-BSBunkerView` (turns slowly in the bunker view), `-BSTestAbilities`,
   `-BSSpawn=ultralisk@0@8` (place zerg), `-BSTechMax` (research everything, unlocking the high-tech cards;
-  add `-BSTestTech` to buy them all). `-BSShotDir=<folder> -BSShotEvery=0.1 -BSShotStart=200` saves a frame every
-  0.1 s from 200 s in (the README GIFs were made this way).
+  add `-BSTestTech` to buy them all), `-BSWave=100` (jump to that wave: the Kerrigan finale).
+  `-BSShotDir=<folder> -BSShotEvery=0.1 -BSShotStart=200` saves a frame every 0.1 s from 200 s in (the README GIFs were made this way).
 - After adding a model or effect to `client/js/units.js`, rerun the export, then the import with
   `BS_ONLY=<model keys>` set to import just those models.
 - Balance testing: `powershell -File Unreal\BunkerSurvivors\Scripts\runbatch.ps1` plays headless games with five bot

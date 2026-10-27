@@ -4,7 +4,7 @@
 
 #include "CoreMinimal.h"
 
-enum class EBSProjectile : uint8 { None, Acid, Spine, Bullet, Glaive, Spines, Brood, Guardian, Spores };
+enum class EBSProjectile : uint8 { None, Acid, Spine, Bullet, Glaive, Spines, Brood, Guardian, Spores, Bile };
 
 struct FBSZergDef
 {
@@ -30,6 +30,10 @@ struct FBSZergDef
 	float Ramp = 0;                   // brood queen: weight x (1 + Ramp x tech cards unlocked), without being tech-gated
 	// Creep (see BSCreep): queens plant tumors, tumors spread creep, creep overlords generate it from the sky.
 	bool bTumors = false, bTumor = false, bCreeper = false;
+	// Wave 100 finale bosses: "kerrigan" (Leaping Strike, Apocalypse) or "leviathan" (bombards, spawns mutalisks). Bosses
+	// keep their own hit points (no late-wave toughening) and always spawn, whatever the alive cap.
+	FString Boss;
+	float Bombard = 0;                // leviathan bile: splash radius of each shot
 };
 
 // Creep: a coarse grid (Cell metres) of coverage 0..1 that grows where a source reaches and slowly fades (lingers) where
@@ -125,6 +129,15 @@ namespace BSDefs
 	constexpr float HiSecRange = 1.f;
 	constexpr float StimDuration = 11, StimCooldown = 13, RepairCooldown = 20, RepairAmount = 150;
 	constexpr int32 RepairCost = 75;
+	// Wave 100 finale (ABSGame::StartFinale): Kerrigan leads a leviathan and a maxed-out wave (budget x FinaleBudget, every
+	// late-game strain) while zerg drop pods land all round the base. A pod hits the ground PodLand s after it appears (its
+	// Birth sequence), crushing what it lands on, then lets out PodCargo zerg. FinaleVictory: score for killing both bosses.
+	constexpr int32 FinaleWave = 100, FinalePods = 8, PodCargo = 4;   // every other pod brings an ultralisk
+	constexpr float FinaleBudget = 1.5f, PodStart = 6, PodEvery = 2, PodLand = 2.7f, PodDmg = 60, PodRadius = 2, PodMinR = 7, PodMaxR = 13;
+	constexpr float LeapCd = 8, LeapMin = 3, LeapMax = 9, LeapDur = 0.7f, LeapDmg = 90, LeapRadius = 1.8f;           // Leaping Strike onto a defender out of reach
+	constexpr float ApocCd = 13, ApocRange = 9, ApocDelay = 1.2f, ApocDmg = 70, ApocRadius = 2;                      // a psionic blast on the thickest knot of defenders
+	constexpr float BroodCd = 15; constexpr int32 BroodCount = 3;                                                    // the leviathan spawns mutalisks
+	constexpr float FinaleVictory = 50000;
 }
 
 // Sound keys -> exported sound files (S_<key>_<n> in /Game/SC2/Sounds).

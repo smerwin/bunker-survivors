@@ -86,6 +86,12 @@ window.BS = window.BS || {};
     battlecruiserDeath: U + 'terran/battlecruiserdeath/battlecruiserdeath_00.m3',
     bansheeDeath: U + 'terran/bansheedeath/bansheedeath.m3',
     vikingDeath: U + 'terran/vikingfighterdeath/vikingfighterdeath_00.m3',
+    // Wave 100 finale: the Queen of Blades (her own model carries her Death sequence), a leviathan, zerg drop pods.
+    kerrigan: U + 'zerg/kerriganinfested/kerriganinfested.m3',
+    kerriganDeath: U + 'zerg/kerriganinfested/kerriganinfested.m3',
+    leviathan: U + 'zerg/leviathan/leviathan.m3',
+    leviathanDeath: U + 'zerg/leviathandeath/leviathandeath.m3',
+    droppod: 'assets/effects/zerg/zergdroppod/zergdroppod.m3',      // its Birth sequence is the fall from the sky and the pod bursting open
     // Effects (particle-only effect models cannot be drawn by the viewer, so only mesh-based ones are listed)
     fxMuzzle: 'assets/effects/terran/marineweaponlaunch/marineweaponlaunch.m3',
   };
@@ -114,6 +120,7 @@ window.BS = window.BS || {};
   projRoach: E + 'zerg/roachmissile/roachmissile.m3', projMarauder: E + 'terran/maraudermissile/maraudermissile.m3',
   projSam: E + 'terran/missileturretmissile/missileturretmissile.m3',
   projGuardian: E + 'zerg/primalguardianmissile/primalguardianmissile.m3',  // the Brood War acid glob: a big yellow goo ball
+  projLeviathan: E + 'zerg/leviathanmissile/leviathanmissile.m3',
   };
 
   // SC2 particle effects, replayed by both builds: [m3, optional sequence filter, loops].
@@ -149,6 +156,10 @@ window.BS = window.BS || {};
   // Brood queen: Spawn Broodling flies as a parasite dart and bursts into broodlings on the victim.
   broodSpellMissile: [E + 'zerg/infestorparasitemissile/infestorparasitemissile.m3', null, true],
   broodSpellImpact: [E + 'zerg/kerriganspawnbroodlingsimpact/kerriganspawnbroodlingsimpact.m3'],
+  // Wave 100 finale: Kerrigan's Leaping Strike and Apocalypse, the drop pods' streak down and burst.
+  psionicShift: [E + 'zerg/psionicshift/psionicshift.m3', '^birth'], leapImpact: [E + 'zerg/leapingstrikeimpact/leapingstrikeimpact.m3'],
+  apocalypseChannel: [E + 'zerg/kerriganapocalypsechannel/kerriganapocalypsechannel.m3', '^stand', true], apocalypse: [E + 'zerg/kerriganapocalypseexplosion/kerriganapocalypseexplosion.m3'],
+  podFall: [E + 'zerg/zergdroppod/zergdroppod.m3', '^birth'], podImpact: [E + 'zerg/kerrigandroppodexplosion/kerrigandroppodexplosion.m3'],
   };
   // Every death model also carries its blood/acid burst: the plain "Death" one (the numbered sequences are SC2's
   // damage-type variants, which blow body parts up; m3fx falls back to them only when there is no plain one).
@@ -222,6 +233,13 @@ window.BS = window.BS || {};
     tumorPlant: [1, 2, 3, 4].map(i => S + 'creeptumor_placeflarp_' + i + '.wav'),
     tumorBirth: [1, 2, 3, 4, 5].map(i => S + 'creeptumor_newemerge_' + i + '.wav'),
     generateCreep: [S + 'zerg/overlord/overlord_generatecreep0.wav'],
+    // Wave 100 finale.
+    finaleRoar: [S + 'zerg/leviathan/leviathan_roar0.wav'],
+    kerriganPsi: [0, 1, 2, 3].map(i => S + 'kerrigan_psionicshift0' + i + '.wav'),
+    kerriganLeap: [0, 1].map(i => S + 'spell_leapingstrike_launch_0' + i + '.wav'),
+    kerriganDeath: [S + 'kerriganinfested_death_wingfoley.wav', S + 'kerriganinfested_death_bodyfall.wav'],
+    podDrop: [0, 1, 2].map(i => S + 'zerg/zergdroppod/zergdroppod_drop' + i + '.wav'),
+    podImpact: [0, 1, 2, 3].map(i => S + 'zerg_droppod_explode' + i + '.wav'),
   };
 
   // Zerg attackers. hp/armor/damage/cooldown/range/speed are SC2 values; bounty and budget are ours.
@@ -265,6 +283,11 @@ window.BS = window.BS || {};
     queen: { name: 'Queen', model: 'queen', death: 'queenDeath', hp: 175, armor: 1, dmg: 8, cd: 0.71, range: 5, speed: 2.4, radius: 0.875, tumors: true, bounty: 30, budget: 0, unlock: 999, weight: 0, hitFrac: 0.3, attackSeq: /^attack$/i, projectile: 'spine', soundDeath: 'queenDeath', height: 1.8 },
     creeptumor: { name: 'Creep Tumor', model: 'creeptumor', death: 'creeptumorDeath', hp: 50, armor: 0, dmg: 0, cd: 1, range: 0, speed: 0, radius: 0.5, tumor: true, bounty: 3, budget: 0, unlock: 999, weight: 0, hitFrac: 0, height: 0.6 },
     overlordCreep: { name: 'Overlord', model: 'overlordCreep', death: 'overlordCreepDeath', hp: 200, armor: 0, dmg: 0, cd: 1, range: 0, speed: 1.4, radius: 1.0, armored: true, flying: true, fly: 4.8, creeper: true, bounty: 20, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2 },
+    // Wave 100 finale (see Game.startFinale): bosses keep their own hit points (no late-wave toughening) and always spawn,
+    // whatever the alive cap. Kerrigan casts Leaping Strike and Apocalypse; the leviathan bombards (bombard = splash
+    // radius) and spawns mutalisks. See BS.FINALE.
+    kerrigan: { name: 'Kerrigan', model: 'kerrigan', death: 'kerriganDeath', scale: 1.3, hp: 6000, armor: 3, dmg: 45, cd: 0.7, range: 1.2, speed: 3.4, radius: 0.9, armored: true, boss: 'kerrigan', bounty: 2500, budget: 0, unlock: 999, weight: 0, hitFrac: 0.4, attackSeq: /^attack/i, soundDeath: 'kerriganDeath', height: 2.4, deathHold: 6, impactFx: 'ultraliskImpact' },
+    leviathan: { name: 'Leviathan', model: 'leviathan', death: 'leviathanDeath', scale: 1.6, hp: 6000, armor: 1, dmg: 40, cd: 2.4, range: 6, speed: 1.6, radius: 3.0, armored: true, flying: true, fly: 7.5, boss: 'leviathan', bombard: 2.4, bounty: 2500, budget: 0, unlock: 999, weight: 0, hitFrac: 0.45, projectile: 'bile', soundAttack: 'guardianFire', soundDeath: 'finaleRoar', height: 4, deathHold: 6 },
   };
 
   // Creep: a coarse grid (cell metres) of coverage 0..1 that grows where a source reaches and slowly fades (lingers) where
@@ -278,6 +301,17 @@ window.BS = window.BS || {};
     overlord: { radius: 3.2, life: 50, drift: 0.3, minDist: 6 },
     burn: { radius: 1.6, regrow: 5, tumorDmg: 10 },
   };
+
+  // Wave 100 finale. budget: the wave's budget multiplier (and every late-game strain joins, tech or not). Drop pods
+  // land all round the base, behind the lines too (podMinR..podMaxR from the bunker): podLand is when the pod hits the
+  // ground (its Birth sequence), crushing what it lands on (podDmg within podRadius), then it lets out podCargo zerg.
+  // victory: score for killing both bosses.
+  BS.FINALE = { wave: 100, budget: 1.5, pods: 8, podStart: 6, podEvery: 2, podLand: 2.7, podCargo: 4, podDmg: 60, podRadius: 2, podMinR: 7, podMaxR: 13,
+    podZerg: ['hydralisk', 'hydralisk', 'roach', 'roach', 'lurker'],        // every other pod brings an ultralisk too
+    leap: { cd: 8, min: 3, max: 9, dur: 0.7, dmg: 90, radius: 1.8 },        // Leaping Strike onto a defender out of reach
+    apocalypse: { cd: 13, range: 9, delay: 1.2, dmg: 70, radius: 2 },       // a psionic blast on the thickest knot of defenders
+    brood: { cd: 15, count: 3 },                                            // the leviathan spawns mutalisks
+    victory: 50000 };
 
   // Bunker occupants.
   BS.INFANTRY = {

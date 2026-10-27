@@ -189,8 +189,26 @@ window.BS = window.BS || {};
         c.fillStyle = f.color; c.fillText(f.text, sx, sy);
       }
       c.globalAlpha = 1;
+      this.drawBosses(c, W);
       this.drawThreats(c, W, H);
       this.drawRadar();
+    }
+
+    // Wave 100 finale: a long health bar per boss under the squad card.
+    drawBosses(c, W) {
+      const bosses = this.g.bosses();
+      if (!bosses.length) return;
+      const sq = document.getElementById('squad').getBoundingClientRect(), w = Math.min(420, W - 40), x = (W - w) / 2;
+      c.font = '700 11px Eurostile, system-ui, sans-serif';
+      bosses.forEach((e, i) => {
+        const y = sq.bottom + 12 + i * 30, f = Math.max(0, e.hp / e.maxHp);
+        c.fillStyle = 'rgba(10,14,20,0.82)'; c.fillRect(x - 6, y - 4, w + 12, 26);
+        c.textAlign = 'left'; c.fillStyle = '#e8f1fb'; c.fillText(e.def.name.toUpperCase(), x, y + 7);
+        c.textAlign = 'right'; c.fillStyle = '#c08cff'; c.fillText(Math.ceil(e.hp) + ' / ' + e.maxHp, x + w, y + 7);
+        c.fillStyle = 'rgba(0,0,0,0.6)'; c.fillRect(x, y + 12, w, 6);
+        c.fillStyle = f < 0.25 ? '#ff6a5a' : '#bd6bff'; c.fillRect(x, y + 12, w * f, 6);
+      });
+      c.textAlign = 'center';
     }
 
     // Off-screen zerg, grouped into arrows at the screen edge with a count.
