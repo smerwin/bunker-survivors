@@ -87,6 +87,7 @@ private:
 	FString ToastText; double ToastAt = -10;
 	double BannerAt = -10; FString BannerText;
 	TArray<double> SegmentLostAt;
+	float BcLastHp = 0; double BcHitAt = -10;     // battlecruiser hull bar: flashes when the ship is hit
 	bool bArmouryOpen = true;
 	TSharedPtr<SWidget> SquadCard;
 

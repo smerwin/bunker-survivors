@@ -787,15 +787,16 @@ window.BS = window.BS || {};
       b.handle.setPos(b.x, b.y, b.sz + 0.25 * Math.sin(b.t * 0.7)).setYaw(b.yaw);
       // Laser batteries, as in StarCraft II: ATS against ground, ATA against air, single amber bolts in quick succession
       // (one every 0.16 s, slowed by devourer acid) that walk along the hull's six hardpoints. Each battery keeps its own
-      // target, and scourge and devourers closing on the ship are taken first (point defence).
+      // target, and scourge and devourers closing on the ship are taken first (point defence, see bcThreat).
       b.cdL -= dt * (b.acidUntil > this.time ? 0.7 : 1);
+      this.bcAlerts(b, D);
       while (b.cdL <= 0) {
         b.cdL += D.laserCd;
         let fired = false;
         for (let n = 0; n < b.turrets.length && !fired; n++) {
           const i = b.next = (b.next + 1) % b.turrets.length, tu = b.turrets[i];
           const at = b.handle.boneWorld(tu.bone) || [b.x + (i % 2 ? 1.6 : -1.6), b.y + (1 - Math.floor(i / 2)) * 1.8, b.sz - 0.3];
-          const near = this.enemiesInRange(at[0], at[1], D.range), threat = near.find(e => e.def.antiAir), t = tu.target;
+          const near = this.enemiesInRange(at[0], at[1], D.range), threat = this.bcThreat(b, D), t = tu.target;
           if (threat) tu.target = threat;
           else if (!t || t.hp <= 0 || dist(at[0], at[1], t.x, t.y) - t.radius > D.range) tu.target = near.length ? near[Math.floor(Math.random() * Math.min(4, near.length))] : null;
           const e = tu.target;
@@ -811,9 +812,11 @@ window.BS = window.BS || {};
         if (!fired) { b.cdL = 0.2; break; }
       }
       // Missile pods (the Wings of Liberty armoury upgrade): an anti-air volley every few seconds, splashing other flyers.
+      // Scourge and devourers closing on the ship get the first missiles.
       b.cdM -= dt;
       if (b.cdM <= 0) {
         const air = e => e.def.flying, list = this.enemiesInRange(b.x, b.y, D.range + 2, air);
+        list.sort((p, q) => (q.def.antiAir ? 1 : 0) - (p.def.antiAir ? 1 : 0));
         b.cdM = list.length ? D.missileCd : 0.5;
         list.slice(0, D.missiles).forEach((e, k) => {
           const p = { kind: 'missile', friendly: true, fx: b.x + rnd(-2, 2), fy: b.y + rnd(-1, 1), fz: b.sz - 0.4, tx: e.x, ty: e.y, tz: e.z + 0.4, t: -k * 0.1, dur: 0.6, arc: 1.2,
@@ -850,6 +853,37 @@ window.BS = window.BS || {};
           BS.audio.play('bcYamatoCharge', { vol: 0.7 });
           this.floater(b.x, b.y, b.sz + 1, 'YAMATO CHARGING', '#bd6bff');
         }
+      }
+    }
+    // Point defence: the closest scourge within reach of the hull (a little past the batteries' normal range), else the
+    // closest devourer. Scourge only have to touch the ship, so they always come first.
+    bcThreat(b, D) {
+      let best = null, bs = 1e9;
+      for (const e of this.enemies) {
+        if (e.hp <= 0 || !e.def.antiAir) continue;
+        const d = dist(b.x, b.y, e.x, e.y) - e.radius;
+        if (d > D.range + D.pdRange) continue;
+        const s = d - (e.def.suicide ? 100 : 0);
+        if (s < bs) { bs = s; best = e; }
+      }
+      return best;
+    }
+    // Warnings so the battlecruiser never dies unannounced: scourge or devourers going for it (at most every few seconds)
+    // and the hull dropping to half and to a quarter.
+    bcAlerts(b, D) {
+      if (this.time >= (b.alertAt || 0)) {
+        let scourge = 0, devourers = 0;
+        for (const e of this.enemies) if (e.hp > 0 && e.def.antiAir && e.target && e.target.obj === b) { if (e.def.suicide) scourge++; else devourers++; }
+        if (scourge || devourers) {
+          b.alertAt = this.time + D.alertGap;
+          this.toast(scourge ? 'Scourge inbound on the Battlecruiser!' : 'Devourers attacking the Battlecruiser!');
+        }
+      }
+      const frac = b.hp / b.maxHp, level = frac <= 0.25 ? 2 : frac <= 0.5 ? 1 : 0;
+      if (level > (b.hullWarn || 0)) {
+        b.hullWarn = level;
+        this.toast(level === 2 ? 'Battlecruiser hull critical!' : 'Battlecruiser hull at 50%');
+        this.floater(b.x, b.y, b.sz + 1.5, level === 2 ? 'HULL CRITICAL' : 'HULL 50%', '#ff6a5a');
       }
     }
 
@@ -1022,7 +1056,8 @@ window.BS = window.BS || {};
       // the finale throws in the whole late roster.
       const tier = finale ? Math.max(this.lateTier(), BS.TECH.length) : this.lateTier(), air = this.airPresence();
       const wt = d => d.weight * (d.late ? 0.6 + 0.4 * tier : 1) * (1 + (d.ramp || 0) * tier) * (d.prefer === 'mech' && this.mechs.length ? 2 : 1) * (d.antiAir && !air ? 0 : 1);
-      const types = Object.entries(BS.ZERG).filter(([, d]) => d.budget > 0 && w >= Math.ceil(d.unlock * (this.hard ? 0.85 : 1)) && (!d.late || tier >= d.late));
+      // Winged zerglings only in lane mode, where they hop the mesa in the middle of the Y.
+      const types = Object.entries(BS.ZERG).filter(([, d]) => d.budget > 0 && w >= Math.ceil(d.unlock * (this.hard ? 0.85 : 1)) && (!d.late || tier >= d.late) && (!d.hops || this.mode === 'lane'));
       const list = [];
       for (let guard = 0; budget > 0 && guard < 400; guard++) {
         const total = types.reduce((s, [, d]) => s + (d.budget <= budget ? wt(d) : 0), 0);
@@ -1044,8 +1079,10 @@ window.BS = window.BS || {};
       packs.forEach((pk, g) => { const t = 0.5 + spread * (g + rnd(0, 0.8)) / packs.length, ang = packAng(0.2); for (const k of pk) this.spawnQueue.push({ t, type: k, ang }); });
       for (let left = swarm; left > 0;) {
         const n = Math.min(left, 6 + Math.floor(Math.random() * 11)), t = 0.5 + rnd(0, spread), ang = packAng(0.55);
-        // Late game: some of the swarm are winged zerglings that hop straight over the mesa.
-        for (let k = 0; k < n; k++) this.spawnQueue.push({ t: t + k * 0.04, type: tier && Math.random() < Math.min(0.5, 0.15 * tier) ? 'wingling' : 'zergling', ang });
+        // Late game (lane mode): some of the swarm are winged zerglings that hop straight over the mesa, a few more with
+        // every tech card past the one that brings them.
+        const wl = this.mode === 'lane' && tier >= BS.ZERG.wingling.late ? Math.min(0.4, 0.1 * (tier - BS.ZERG.wingling.late + 1)) : 0;
+        for (let k = 0; k < n; k++) this.spawnQueue.push({ t: t + k * 0.04, type: Math.random() < wl ? 'wingling' : 'zergling', ang });
         left -= n;
       }
       // Late game: overlords drop zerglings behind our lines, and nydus worms breach there.
@@ -1227,7 +1264,7 @@ window.BS = window.BS || {};
       else if (d.nydus) { const r = rnd(5.5, 8); x = lane ? side * rnd(2.5, 4.5) : Math.cos(ar) * r; y = lane ? rnd(-8.5, -7) : Math.sin(ar) * r; }   // behind our lines
       else if (d.creeper) { x = lane ? side * rnd(10, 18) : Math.cos(ar) * 29; y = lane ? rnd(30, 34) : Math.sin(ar) * 29; }   // creep overlords drift in from afar
       else if (this.mode === 'lane') {
-        if (ang === 1 || ang === 2) {
+        if ((ang === 1 || ang === 2) && !d.hops) {        // winged zerglings always come from the north, over the mesa
           // Somewhere down the arm (see terrain.js), not on the cliffs beside it.
           const s = ang === 1 ? 1 : -1, t = rnd(0.55, 0.85), off = rnd(-2.2, 2.2);
           const A = BS.Terrain.arm, dx = A.bx - A.ax, dy = A.by - A.ay, L = Math.hypot(dx, dy);
@@ -1236,7 +1273,15 @@ window.BS = window.BS || {};
         else { x = rnd(-4.6, 4.6); y = rnd(27, 31); }
       } else { const rr = rnd(25, 28); x = Math.cos(ang + rnd(-0.35, 0.35)) * rr; y = Math.sin(ang + rnd(-0.35, 0.35)) * rr; }
       let model = d.model, death = d.death;
-      if (d.variants && Math.random() < 0.45) { const v = pick(d.variants); model = v; if (BS.EXTRA_MODELS[v + 'Death']) death = v + 'Death'; }
+      // Strains and skins mixed in. With variantFrom the variety dials up slowly: the first variant joins at that wave,
+      // one more every variantStep waves, and the share of variants grows a little each wave up to the usual 45%.
+      let pool = d.variants, share = 0.45;
+      if (pool && d.variantFrom) {
+        const vw = this.wave - d.variantFrom;
+        pool = vw >= 0 ? pool.slice(0, 1 + Math.floor(vw / d.variantStep)) : null;
+        share = Math.min(0.45, 0.04 * (vw + 1));
+      }
+      if (pool && Math.random() < share) { const v = pick(pool); model = v; if (BS.EXTRA_MODELS[v + 'Death']) death = v + 'Death'; }
       const z = d.flying ? d.fly : BS.Terrain.height(x, y);
       const e = { type, def: d, x, y, z, yaw: Math.atan2(-y, -x), hp: 0, maxHp: 0, radius: d.radius, life: d.life || 0, cd: rnd(0, d.cd), retarget: 0,
         target: null, hitAt: -1, pendingHit: false, slowUntil: 0, burrowed: false, burrowT: 0, attacking: false, anim: '', flash: 0, sx: 0, sy: 0, model, death };
@@ -1258,7 +1303,7 @@ window.BS = window.BS || {};
       }
       if (d.nydus) {
         e.state = 'birth'; e.t = 0; e.spawnT = 0; e.z = BS.Terrain.height(x, y) - 3;
-        e.cargo = []; for (let i = 0; i < 6 + 2 * this.lateTier(); i++) e.cargo.push(pick(['zergling', 'zergling', 'wingling', 'roach', 'hydralisk']));
+        e.cargo = []; for (let i = 0; i < 6 + 2 * this.lateTier(); i++) e.cargo.push(pick(['zergling', 'zergling', 'zergling', 'roach', 'hydralisk']));   // no winglings: they only come over the mesa
         this.fx.play('nydusBirth', x, y, BS.Terrain.height(x, y), 0, 1.4);
         this.toast('Nydus worm breaching behind our lines!');
       }
@@ -1894,7 +1939,16 @@ window.BS = window.BS || {};
       switch (d.projectile) {
         case 'acid': p.arc = 1.5; p.impact = 'roachImpact'; this.projectileModel(p, null, 'roachMissile', 0.7); break;
         case 'spine': this.projectileModel(p, 'projHydralisk', null); break;
-        case 'bullet': p.impact = 'marineImpact'; this.fx.play('marineLaunch', p.fx, p.fy, p.fz, Math.atan2(t.y - e.y, t.x - e.x)); break;
+        case 'bullet': {
+          // Infested marines: a rifle burst from the muzzle with the same SC2 muzzle mesh and launch sparks as our marines.
+          const aim = Math.atan2(t.y - e.y, t.x - e.x);
+          p.fx = e.x + Math.cos(aim) * 0.45; p.fy = e.y + Math.sin(aim) * 0.45; p.fz = e.z + d.height * 0.7; p.impact = 'marineImpact';
+          for (let r = 0; r < 3; r++) {
+            this.fx.play('marineLaunch', p.fx, p.fy, p.fz, aim, 1.4, r * 0.08);
+            this.flashes.push({ x: p.fx, y: p.fy, z: p.fz, yaw: aim, delay: r * 0.08, life: 0.09 });
+          }
+          break;
+        }
         case 'glaive': p.bounces = d.bounces; p.hit = []; p.impact = 'mutaliskImpact'; this.projectileModel(p, 'projMutalisk', 'mutaliskMissile'); break;
         case 'guardian': p.arc = 2; p.impact = 'guardianImpact'; this.projectileModel(p, 'projGuardian', 'guardianMissile', 1.6); if (p.model) p.model.setScale(2.4); break;
         case 'spores': p.impact = 'acidSpores'; this.projectileModel(p, null, 'devourerMissile'); break;

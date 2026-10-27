@@ -23,6 +23,7 @@ namespace
 		{
 			FBSZergDef& D = Add(TEXT("zergling"), TEXT("Zergling"), TEXT("zergling"), TEXT("zerglingDeath"), TEXT("btn-unit-zerg-zergling"));
 			D.Variants = { TEXT("zerglingRaptor"), TEXT("zerglingSwarmling"), TEXT("zerglingPrimal") };      // winged ones are the hoppers below
+			D.VariantFrom = 4; D.VariantStep = 4;
 			D.ImpactFx = TEXT("zerglingImpact");
 			D.Hp = 30; D.Dmg = 5; D.Cd = 0.497f; D.Range = 0.1f; D.Speed = 4.13f; D.Radius = 0.375f; D.bLight = true;
 			D.Bounty = 4; D.Budget = 2; D.Unlock = 1; D.Weight = 12; D.HitFrac = 0.45f; D.AttackAnims = { TEXT("attack"), TEXT("attack 01") };
@@ -82,12 +83,12 @@ namespace
 			D.Bounty = 120; D.Budget = 34; D.Unlock = 18; D.Weight = 1.2f; D.HitFrac = 0.3f; D.Projectile = EBSProjectile::Brood; D.Height = 1.6f;
 		}
 		// Late game: these join the waves once high tech starts unlocking (Late = tech cards needed); the more cards, the
-		// more of them. See ABSGame::StartWave.
+		// more of them. See ABSGame::StartWave. Winged zerglings only in lane mode, hopping the mesa.
 		{
 			FBSZergDef& D = Add(TEXT("wingling"), TEXT("Winged Zergling"), TEXT("wingling"), TEXT("winglingDeath"), TEXT("btn-unit-zerg-zergling"));
 			D.ImpactFx = TEXT("zerglingImpact");
 			D.Hp = 35; D.Dmg = 5; D.Cd = 0.4f; D.Range = 0.1f; D.Speed = 5.6f; D.Radius = 0.375f; D.bLight = true; D.bHops = true;
-			D.Bounty = 5; D.Budget = 2; D.Late = 1; D.Weight = 5; D.HitFrac = 0.45f; D.AttackAnims = { TEXT("attack"), TEXT("attack 01") };
+			D.Bounty = 5; D.Budget = 2; D.Late = 2; D.Weight = 5; D.HitFrac = 0.45f; D.AttackAnims = { TEXT("attack"), TEXT("attack 01") };
 			D.SoundAttack = TEXT("zerglingAttack"); D.SoundDeath = TEXT("zerglingDeath"); D.Height = 0.8f;
 		}
 		{
@@ -99,13 +100,14 @@ namespace
 		{
 			FBSZergDef& D = Add(TEXT("devourer"), TEXT("Devourer"), TEXT("devourer"), TEXT("devourerDeath"), TEXT("btn-unit-zerg-devourer"));
 			D.Hp = 250; D.Armor = 2; D.Dmg = 15; D.Cd = 2; D.Range = 6; D.Speed = 2.8f; D.Radius = 1.0f; D.bArmored = true; D.bFlying = true; D.Fly = 4.4f; D.bAntiAir = true; D.Acid = 6;
-			D.Bounty = 60; D.Budget = 18; D.Late = 2; D.Weight = 2; D.HitFrac = 0.4f; D.AttackAnims = { TEXT("attack") };
+			D.Bounty = 60; D.Budget = 18; D.Late = 2; D.Weight = 1.2f; D.HitFrac = 0.4f; D.AttackAnims = { TEXT("attack") };
 			D.Projectile = EBSProjectile::Spores; D.SoundDeath = TEXT("devourerDeath"); D.Height = 1.4f;
 		}
 		{
 			FBSZergDef& D = Add(TEXT("scourge"), TEXT("Scourge"), TEXT("scourge"), TEXT("scourgeDeath"), TEXT("btn-unit-zerg-scourge"));
+			D.Scale = 1.3f;      // a little larger than life so they read on screen
 			D.Hp = 25; D.Dmg = 110; D.Cd = 1; D.Range = 0.2f; D.Speed = 6.5f; D.Radius = 0.4f; D.bLight = true; D.bFlying = true; D.Fly = 4.6f; D.bAntiAir = true; D.bSuicide = true;
-			D.Bounty = 8; D.Budget = 3; D.Late = 2; D.Weight = 4; D.HitFrac = 0; D.Height = 0.6f;
+			D.Bounty = 8; D.Budget = 3; D.Late = 2; D.Weight = 2.5f; D.HitFrac = 0; D.Height = 0.6f;
 		}
 		{
 			FBSZergDef& D = Add(TEXT("defiler"), TEXT("Defiler"), TEXT("defiler"), TEXT("defilerDeath"), TEXT("btn-unit-zerg-defiler"));

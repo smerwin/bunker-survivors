@@ -512,7 +512,8 @@ TSharedRef<SWidget> SBSHud::BuildSquadCard()
 			const ABSGame* Gm = Game();
 			const int32 N = Gm ? Gm->Squad.Num() : 0;
 			const int32 Rows = N ? (N + SquadRow::PerRow(Wd, N) - 1) / SquadRow::PerRow(Wd, N) : 0;
-			return FVector2D(Wd, 70 + (Rows ? Rows * (SquadRow::Size(N) + SquadRow::Gap(N) + 1) + 4 : 0));
+			const float BcRow = Gm && Gm->Bc.IsValid() ? 18.f : 0.f;       // the battlecruiser's hull bar, while it is deployed
+			return FVector2D(Wd, 70 + (Rows ? Rows * (SquadRow::Size(N) + SquadRow::Gap(N) + 1) + 4 : 0) + BcRow);
 		})
 		.Paint([this](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
 		{
@@ -578,6 +579,20 @@ TSharedRef<SWidget> SBSHud::BuildSquadCard()
 				D::RLine(Out, L + 3, G, P - FVector2f(1, 1), Sz + FVector2f(2, 2), 4, M.bBoarding ? C::Green : bStim ? C::A(C::Amber, 0.7f) : C::A(C::Cyan, 0.45f), 1.f);
 				const float Hp = FMath::Clamp(M.Hp / FMath::Max(1.f, M.MaxHp), 0.f, 1.f);
 				D::Rect(Out, L + 4, G, P + FVector2f(0, Ps1 - 2), FVector2f(Ps1 * Hp, 2), Hp > 0.5f ? C::Green : Hp > 0.25f ? C::Amber : C::Red);
+			}
+			// Battlecruiser hull, only while it is deployed: a slim bar along the bottom of the card that flashes when hit.
+			if (Gm->Bc.IsValid())
+			{
+				const FBSBattlecruiser& Bcr = *Gm->Bc;
+				const float Bf = FMath::Clamp(Bcr.Hp / FMath::Max(1.f, Bcr.MaxHp), 0.f, 1.f);
+				const bool bHit = NowS - BcHitAt < 0.25;
+				const FLinearColor BcCol = Bf > 0.5f ? C::Cyan : Bf > 0.25f ? C::Amber : C::Red;
+				const float Y = S.Y - 18, Bx = X0 + 96, Bw2 = FMath::Max(20.f, Bw - 96 - 62);
+				D::Text(Out, L + 2, G, Bf <= 0.25f ? TEXT("BC HULL CRITICAL") : TEXT("BATTLECRUISER"), D::Label(7.5f), FVector2f(X0, Y), Bf <= 0.25f ? C::Red : C::Cyan);
+				D::RFill(Out, L + 2, G, FVector2f(Bx, Y + 3), FVector2f(Bw2, 5), 2, C::Faint);
+				D::RFill(Out, L + 3, G, FVector2f(Bx, Y + 3), FVector2f(Bw2 * Bf, 5), 2, BcCol);
+				if (bHit) D::RLine(Out, L + 4, G, FVector2f(Bx - 1, Y + 2), FVector2f(Bw2 + 2, 7), 3, C::Red, 1.f);
+				D::Text(Out, L + 2, G, FString::Printf(TEXT("%d / %d"), FMath::CeilToInt(FMath::Max(0.f, Bcr.Hp)), FMath::RoundToInt(Bcr.MaxHp)), D::Bold(8.5f), FVector2f(X0 + Bw, Y - 1), C::Ink, 1.f);
 			}
 			return L + 8;
 		});
@@ -1059,6 +1074,8 @@ void SBSHud::Tick(const FGeometry& Geo, const double Now, const float Dt)
 	const int32 Lit = FMath::CeilToInt(FMath::Clamp(Gm->Bunker.Hp / FMath::Max(1.f, Gm->Bunker.MaxHp), 0.f, 1.f) * 10 - 0.001f);
 	for (int32 i = FMath::Max(0, Lit); i < LastLitSegments && i < 10; i++) SegmentLostAt[i] = Now;
 	LastLitSegments = Lit;
+	if (Gm->Bc.IsValid()) { if (Gm->Bc->Hp < BcLastHp) BcHitAt = Now; BcLastHp = Gm->Bc->Hp; }
+	else BcLastHp = 0;
 }
 
 int32 SBSHud::PaintBanner(const FGeometry& G, FSlateWindowElementList& Out, int32 L) const

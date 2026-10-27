@@ -122,6 +122,22 @@ window.BS = window.BS || {};
         $('outside').classList.toggle('dense', g.squad.length > 24);   // past 24 the portraits shrink
         $('outside').innerHTML = g.squad.map((m, i) => '<div class="slot' + low(m) + (m.boarding ? ' boarding' : '') + (stim ? ' stim' : '') + '" data-o="' + i + '"><img src="' + icon(m.def.icon) + '" alt=""><i style="width:' + Math.round(m.hp / m.maxHp * 100) + '%"></i></div>').join('');
       }
+      // Battlecruiser hull, only while it is deployed.
+      const bc = g.bc;
+      if (this.cache.bcOn !== !!bc) { this.cache.bcOn = !!bc; $('bcRow').classList.toggle('hidden', !bc); this.bcLastHp = bc ? bc.hp : 0; }
+      if (bc) {
+        const f = Math.max(0, bc.hp / bc.maxHp);
+        if (bc.hp < this.bcLastHp) this.bcHitAt = performance.now();
+        this.bcLastHp = bc.hp;
+        const key = Math.round(f * 100) + '|' + (performance.now() - (this.bcHitAt || -1e9) < 250);
+        if (this.cache.bc !== key) {
+          this.cache.bc = key;
+          $('bcRow').className = (f <= 0.25 ? 'crit' : f <= 0.5 ? 'warn' : '') + (key.endsWith('true') ? ' hit' : '');
+          $('bcBar').firstChild.style.width = (f * 100).toFixed(0) + '%';
+        }
+        this.set('bcLabel', f <= 0.25 ? 'BC HULL CRITICAL' : 'BATTLECRUISER');
+        this.set('bcHp', Math.ceil(Math.max(0, bc.hp)) + ' / ' + bc.maxHp);
+      }
       // Abilities.
       for (const x of this.abEls) {
         const id = x.a.id;

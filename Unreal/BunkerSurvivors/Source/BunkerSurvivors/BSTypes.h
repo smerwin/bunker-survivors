@@ -18,6 +18,9 @@ struct FBSZergDef
 	float Weight = 1, HitFrac = 0.4f, Height = 1, DeathHold = 3.5f;
 	TArray<FString> AttackAnims;      // candidate sequence names, best first ("" = no attack anim)
 	TArray<FString> Variants;         // alternative models (strains and skins) mixed in for variety
+	// With VariantFrom the variety dials up slowly: the first variant joins at that wave, one more every VariantStep waves,
+	// and the share of variants grows a little each wave up to the usual 45%.
+	int32 VariantFrom = 0, VariantStep = 1;
 	FString ImpactFx;                 // SC2 effect played where a melee hit lands
 	EBSProjectile Projectile = EBSProjectile::None;
 	FString SoundAttack, SoundDeath;
@@ -121,6 +124,8 @@ namespace BSDefs
 	// every 0.16 s along six hardpoints), anti-air missile pods, and a Yamato cannon that charges before it fires.
 	constexpr float BcLaserG = 8, BcLaserA = 5, BcLaserCd = 0.16f, BcRange = 10, BcYamato = 240, BcYamatoCd = 20, BcYamatoCharge = 2, BcMissileCd = 6, BcMissileDmg = 30, BcMissileSplash = 1.2f;
 	constexpr int32 BcCost = 1500, BcMissiles = 6;
+	// Point defence reaches a little further against scourge and devourers; seconds between "under attack" warnings.
+	constexpr float BcPdRange = 4, BcAlertGap = 8;
 	constexpr float BcHp = 1200, BcArmor = 3, BansheeHp = 140, VikingHp = 135;   // scourge and devourers can shoot air support down
 	// A ghost calls a tactical nuke on the densest pack well away from the bunker.
 	constexpr float NukeDmg = 300, NukeRadius = 7, NukeDelay = 3, NukeMinDist = 9, NukeCooldown = 45;

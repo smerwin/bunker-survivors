@@ -250,7 +250,7 @@ window.BS = window.BS || {};
   // variants: strain/skin models mixed in for variety; impactFx: SC2 effect where a melee blow lands.
   BS.ZERG = {
     zergling: { name: 'Zergling', model: 'zergling', death: 'zerglingDeath', hp: 30, armor: 0, dmg: 5, cd: 0.497, range: 0.1, speed: 4.13, radius: 0.375, light: true, bounty: 4, budget: 2, unlock: 1, weight: 12, hitFrac: 0.45, attackSeq: /^attack/i, soundAttack: 'zerglingAttack', soundDeath: 'zerglingDeath', height: 0.8,
-      variants: ['zerglingRaptor', 'zerglingSwarmling', 'zerglingPrimal'], impactFx: 'zerglingImpact' },
+      variants: ['zerglingRaptor', 'zerglingSwarmling', 'zerglingPrimal'], variantFrom: 4, variantStep: 4, impactFx: 'zerglingImpact' },
     baneling: { name: 'Baneling', model: 'baneling', death: 'banelingDeath', hp: 30, armor: 0, dmg: 16, dmgLight: 19, dmgStructure: 80, cd: 1, range: 0.25, speed: 3.5, radius: 0.375, light: true, suicide: true, splash: 2.2, bounty: 10, budget: 4, unlock: 3, weight: 5, soundDeath: 'banelingDeath', height: 0.8,
       variants: ['banelingSplitter', 'banelingHunter', 'banelingPrimal'] },
     roach: { name: 'Roach', model: 'roach', death: 'roachDeath', hp: 145, armor: 1, dmg: 16, cd: 1.43, range: 4, speed: 3.15, radius: 0.625, armored: true, bounty: 22, budget: 7, unlock: 5, weight: 5, hitFrac: 0.35, attackSeq: /^attack$/i, projectile: 'acid', soundAttack: 'roachFire', soundDeath: 'roachDeath', height: 0.9,
@@ -267,11 +267,11 @@ window.BS = window.BS || {};
     broodlord: { name: 'Brood Lord', model: 'broodlord', death: 'broodlordDeath', hp: 225, armor: 1, dmg: 20, cd: 1.79, range: 6, speed: 1.97, radius: 1.0, armored: true, flying: true, fly: 3.4, broodlings: true, bounty: 120, budget: 34, unlock: 18, weight: 1.2, hitFrac: 0.3, projectile: 'brood', height: 1.6,
       variants: ['broodlordEx1', 'broodlordPrimal'] },
     // Late game: these join the waves once high tech starts unlocking (late = how many tech cards must be unlocked);
-    // the more cards, the more of them. See Game.startWave.
-    wingling: { name: 'Winged Zergling', model: 'wingling', death: 'winglingDeath', hp: 35, armor: 0, dmg: 5, cd: 0.4, range: 0.1, speed: 5.6, radius: 0.375, light: true, hops: true, bounty: 5, budget: 2, unlock: 1, late: 1, weight: 5, hitFrac: 0.45, attackSeq: /^attack/i, soundAttack: 'zerglingAttack', soundDeath: 'zerglingDeath', height: 0.8, impactFx: 'zerglingImpact' },
+    // the more cards, the more of them. See Game.startWave. Winged zerglings only in lane mode, hopping the mesa.
+    wingling: { name: 'Winged Zergling', model: 'wingling', death: 'winglingDeath', hp: 35, armor: 0, dmg: 5, cd: 0.4, range: 0.1, speed: 5.6, radius: 0.375, light: true, hops: true, bounty: 5, budget: 2, unlock: 1, late: 2, weight: 5, hitFrac: 0.45, attackSeq: /^attack/i, soundAttack: 'zerglingAttack', soundDeath: 'zerglingDeath', height: 0.8, impactFx: 'zerglingImpact' },
     guardian: { name: 'Guardian', model: 'guardian', death: 'guardianDeath', hp: 150, armor: 2, dmg: 20, cd: 2, range: 9, speed: 2.2, radius: 1.0, armored: true, flying: true, fly: 3.8, prefer: 'mech', bounty: 60, budget: 20, unlock: 16, late: 1, weight: 0.25, hitFrac: 0.4, attackSeq: /^attack$/i, projectile: 'guardian', soundAttack: 'guardianFire', height: 1.4 },
-    devourer: { name: 'Devourer', model: 'devourer', death: 'devourerDeath', hp: 250, armor: 2, dmg: 15, cd: 2, range: 6, speed: 2.8, radius: 1.0, armored: true, flying: true, fly: 4.4, antiAir: true, acid: 6, bounty: 60, budget: 18, unlock: 1, late: 2, weight: 2, hitFrac: 0.4, attackSeq: /^attack$/i, projectile: 'spores', soundDeath: 'devourerDeath', height: 1.4 },
-    scourge: { name: 'Scourge', model: 'scourge', death: 'scourgeDeath', hp: 25, armor: 0, dmg: 110, cd: 1, range: 0.2, speed: 6.5, radius: 0.4, light: true, flying: true, fly: 4.6, antiAir: true, suicide: true, bounty: 8, budget: 3, unlock: 1, late: 2, weight: 4, hitFrac: 0, height: 0.6 },
+    devourer: { name: 'Devourer', model: 'devourer', death: 'devourerDeath', hp: 250, armor: 2, dmg: 15, cd: 2, range: 6, speed: 2.8, radius: 1.0, armored: true, flying: true, fly: 4.4, antiAir: true, acid: 6, bounty: 60, budget: 18, unlock: 1, late: 2, weight: 1.2, hitFrac: 0.4, attackSeq: /^attack$/i, projectile: 'spores', soundDeath: 'devourerDeath', height: 1.4 },
+    scourge: { name: 'Scourge', model: 'scourge', death: 'scourgeDeath', scale: 1.3, hp: 25, armor: 0, dmg: 110, cd: 1, range: 0.2, speed: 6.5, radius: 0.4, light: true, flying: true, fly: 4.6, antiAir: true, suicide: true, bounty: 8, budget: 3, unlock: 1, late: 2, weight: 2.5, hitFrac: 0, height: 0.6 },
     defiler: { name: 'Defiler', model: 'defiler', death: 'defilerDeath', hp: 80, armor: 1, dmg: 0, cd: 8, range: 9, speed: 2.6, radius: 0.6, spell: 'defiler', bounty: 50, budget: 14, unlock: 1, late: 2, weight: 2, hitFrac: 0, height: 1.2 },
     viper: { name: 'Viper', model: 'viper', death: 'viperDeath', hp: 150, armor: 1, dmg: 0, cd: 11, range: 9, speed: 4, radius: 0.75, flying: true, fly: 4, spell: 'abduct', bounty: 50, budget: 16, unlock: 1, late: 3, weight: 1.5, hitFrac: 0, height: 1.4 },
     // Mid game on: the Brood War queen hangs back and casts Spawn Broodling (see Game.castBroodling). Not tech-gated:
@@ -346,7 +346,8 @@ window.BS = window.BS || {};
     odin: { hp: 1500, armor: 2, radius: 2.2, cost: 2500, max: 1, speed: 2, gDmg: 60, gShots: 2, gCd: 1.1, gRange: 16, gSplash: 1.2, aDmg: 15, aShots: 6, aCd: 2, aRange: 16, aSplash: 0.8 },
     // Battlecruiser on station: hovers over the lane out of reach; laser batteries at air and ground, Yamato on its own.
     // Six laser turrets on its hardpoints (Ref_Weapon bones), each picking its own target and firing two-shot bursts.
-    bc: { hp: 1200, armor: 3, cost: 1500, laserG: 8, laserA: 5, laserCd: 0.16, range: 10, yamato: 240, yamatoCd: 20, yamatoCharge: 2, missiles: 6, missileCd: 6, missileDmg: 30, missileSplash: 1.2,
+    // pdRange: extra reach of the point defence against scourge and devourers; alertGap: seconds between threat warnings.
+    bc: { hp: 1200, armor: 3, cost: 1500, laserG: 8, laserA: 5, laserCd: 0.16, range: 10, pdRange: 4, alertGap: 8, yamato: 240, yamatoCd: 20, yamatoCharge: 2, missiles: 6, missileCd: 6, missileDmg: 30, missileSplash: 1.2,
       turrets: ['Ref_Weapon 10', 'Ref_Weapon 13', 'Ref_Weapon 12', 'Ref_Weapon 15', 'Ref_Weapon 24', 'Ref_Weapon 25'] },
     // A ghost calls a tactical nuke on the densest pack well away from the bunker.
     nuke: { cost: 400, cooldown: 45, dmg: 300, radius: 7, delay: 3, minDist: 9 },
