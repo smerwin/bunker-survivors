@@ -309,7 +309,7 @@ window.BS = window.BS || {};
   // land all round the base, behind the lines too (podMinR..podMaxR from the bunker): podLand is when the pod hits the
   // ground (its Birth sequence), crushing what it lands on (podDmg within podRadius), then it lets out podCargo zerg.
   // victory: score for killing both bosses.
-  // The difficulty curve, waves 1-100. Early waves are short and ramp fast; past their knees the budget grows gently
+  // The difficulty curve, waves 1-100. Early waves ramp up steadily; past their knees the budget grows gently
   // (perWave[0] x + perWave[1] x^2 more, x waves past the knee) and the zergling swarm linearly (+swarmPerWave a wave, up
   // to swarmMax), so a maxed-out player meets a steady climb (new strains, creep, drops, milestone assaults) rather than
   // a wall of zerglings. len: wave length in seconds, len[0] at wave 1 to len[1] by lenBy. hp: zerg hit points x
@@ -320,7 +320,7 @@ window.BS = window.BS || {};
   // tierFrom/tierEvery: the swarm evolves on its own as well as answering your tech: from tierFrom, every tierEvery waves
   // count as one more tech card for the late-game strains (see Game.lateTier). milestones: a named assault every ten
   // waves from 30, on top of the budget: extra zerg, drop pods or nydus breaches.
-  BS.WAVES = { alive: [160, 200], aliveHard: [200, 250], aliveFrom: 20, aliveBy: 60, len: [22, 30], lenBy: 12, knee: 16, perWave: [16, 0.12], swarmKnee: 12, swarmPerWave: 5, swarmMax: 360, hp: 0.02, hpFrom: 10,
+  BS.WAVES = { alive: [160, 200], aliveHard: [200, 250], aliveFrom: 20, aliveBy: 60, len: [30, 30], lenBy: 12, knee: 16, perWave: [16, 0.12], swarmKnee: 12, swarmPerWave: 5, swarmMax: 360, hp: 0.02, hpFrom: 10,
     tierFrom: 20, tierEvery: 10,
     milestones: {
       30: { name: 'ULTRALISK STAMPEDE', toast: 'Ultralisks stampeding down the lane!', zerg: { ultralisk: 6 } },
