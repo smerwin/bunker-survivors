@@ -45,8 +45,14 @@
       <div id="armouryHead"><small>ARMOURY</small><span class="rule"></span><button id="armouryToggle" aria-label="Toggle armoury">&#8964;</button></div>
       <div id="armoury"></div>
     </div>
+    <div id="shop" class="modal hidden"><div class="card glass">
+      <h2 id="shopTitle"></h2><p id="shopBonus" class="shopBonus"></p>
+      <div id="shopCards"></div>
+      <div class="btns"><button id="shopReroll"></button><button id="shopGo" class="primary">NEXT WAVE</button></div>
+      <p class="hint">Troops, tanks, SCVs and turrets stay in the armoury.</p>
+    </div></div>
     <div id="pausedModal" class="modal hidden"><div class="card glass"><h2>PAUSED</h2><div class="btns"><button id="resume" class="primary">RESUME</button><button class="menuBtn">MAIN MENU</button></div></div></div>
-    <div id="overModal" class="modal hidden"><div class="card glass over"><h2>BUNKER LOST</h2><div id="overStats" class="stats"></div><div id="overBest" class="pill"></div><div class="btns"><button id="redeploy" class="primary">REDEPLOY</button><button class="menuBtn">MAIN MENU</button></div></div></div>
+    <div id="overModal" class="modal hidden"><div class="card glass over"><h2>BUNKER LOST</h2><div id="overStats" class="stats"></div><div id="overBest" class="pill"></div><div id="overMeta" class="overMeta"></div><div class="btns"><button id="redeploy" class="primary">REDEPLOY</button><button class="menuBtn">MAIN MENU</button></div></div></div>
   </div>
 
   <div id="start">
@@ -55,8 +61,16 @@
       <button class="mode glass" data-mode="lane"><img src="icon/btn-unit-terran-marine.png" alt=""><span><b>LANE DEFENCE</b><small>Hold the lane as the Swarm pours down from the north.</small></span><em id="tagLane"></em></button>
       <button class="mode glass arena" data-mode="arena"><img src="icon/btn-unit-zerg-ultralisk.png" alt=""><span><b>360 ARENA</b><small>Waves from every side. Bigger, faster, deadlier.</small></span><em id="tagArena"></em></button>
     </div>
-    <div class="foot"><p id="best"></p><p id="status">CONNECTING TO STARCRAFT II...</p><p id="progress"></p><button id="relink" class="hidden">LINK STARCRAFT II FOLDER AGAIN</button></div>
+    <div class="foot"><button id="hyperionBtn" class="glass"><img src="icon/btn-unit-terran-battlecruiser.png" alt=""><span>HYPERION<small id="gasLine"></small></span></button><p id="best"></p><p id="status">CONNECTING TO STARCRAFT II...</p><p id="progress"></p><button id="relink" class="hidden">LINK STARCRAFT II FOLDER AGAIN</button></div>
   </div>
+
+  <div id="hyperion" class="modal hidden"><div class="card glass">
+    <h2>HYPERION</h2><p class="gas"><i class="gasIcon"></i><b id="gas">0</b> VESPENE</p>
+    <p class="hint">Every run banks vespene: one a wave cleared, five more every tenth wave, half as much again in the arena.</p>
+    <div id="perks"></div>
+    <h3>CARDS</h3><div id="codex"></div>
+    <div class="btns"><button id="hyperionClose" class="primary">BACK</button></div>
+  </div></div>
 
   <div id="link" class="modal hidden"><div class="card glass">
     <h2>LINK STARCRAFT II</h2>
@@ -71,6 +85,7 @@
 </div>
 <script src="lib/viewer.min.js"></script>
 <script src="js/units.js"></script>
+<script src="js/meta.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/terrain.js"></script>
 <script src="js/fx.js"></script>

@@ -1,4 +1,4 @@
-// HUD: command bar, squad card, radar, abilities, armoury, toasts, wave banner, and the overlay canvas
+// HUD: command bar, squad card, radar, abilities, armoury, the shop between waves, toasts, wave banner, and the overlay canvas
 // (floating text, health bars, focus ring, off-screen threat markers). Mirrors the Unreal build's HUD design.
 window.BS = window.BS || {};
 (function (BS) {
@@ -21,6 +21,9 @@ window.BS = window.BS || {};
       $('outside').onclick = ev => { const el = ev.target.closest('[data-o]'); if (el) game.board(+el.dataset.o); };
       $('bunkerPortrait').onclick = () => this.toggleView();
       $('armouryToggle').onclick = () => { const c = $('armoury').classList.toggle('closed'); $('armouryToggle').classList.toggle('closed', c); };
+      $('shopCards').onclick = ev => { const el = ev.target.closest('[data-c]'); if (el) game.buyCard(+el.dataset.c); };
+      $('shopReroll').onclick = () => game.reroll();
+      $('shopGo').onclick = () => game.closeShop();
     }
 
     // Sky view <-> bunker view. The bunker itself is hidden while we look out of it.
@@ -55,23 +58,20 @@ window.BS = window.BS || {};
       if (id === 'stim') g.useStim(); else if (id === 'strike') g.callAirStrike(); else if (id === 'repair') g.emergencyRepair(); else g.useYamato();
     }
 
-    // Armoury: troops, support and upgrades, one card each. Native horizontal scrolling means a swipe never buys.
+    // Armoury: troops, support and turrets, one card each (research comes from the shop). Native horizontal scrolling means a
+    // swipe never buys.
     buildArmoury() {
       const g = this.g, T = BS.TERRAN;
       const items = [];
-      // Surprise cards first: hidden until their tech tree is maxed out (see Game.checkTech).
+      // High tech first: hidden until a shop card puts it here.
       for (const c of BS.TECH) items.push({ name: c.name, tech: c.id, icon: () => c.icon, cost: () => g.techState(c.id).cost,
         state: () => g.techState(c.id).state, wait: () => g.techState(c.id).wait, hidden: () => !g.techUnlocked[c.id], buy: () => g.buyTech(c.id) });
-      for (const [k, d] of Object.entries(BS.INFANTRY)) items.push({ name: d.name, icon: () => d.icon, cost: () => d.cost,
+      for (const [k, d] of Object.entries(BS.INFANTRY)) items.push({ name: d.name, icon: () => d.icon, cost: () => g.troopCost(k),
         state: () => g.troopsFull() ? 'full' : '', buy: () => g.addInfantry(k) });
       items.push({ name: 'SCV', icon: () => 'btn-unit-terran-scv', cost: () => T.scv.cost, state: () => g.scvs.length >= T.scv.max ? 'max' : '', buy: () => g.addScv() });
       items.push({ name: 'Missile Turret', icon: () => 'btn-building-terran-missileturret', cost: () => T.sam.cost, state: () => g.samCount() >= T.sam.max ? 'max' : '', buy: () => g.buildStructure('sam') });
       items.push({ name: 'Sensor Tower', icon: () => 'btn-building-terran-sensortower-silver', cost: () => T.sensor.cost, state: () => g.structures.some(s => s.kind === 'sensor') ? 'max' : '', buy: () => g.buildStructure('sensor') });
       items.push({ name: 'Siege Tank', icon: () => 'btn-unit-terran-siegetank', cost: () => g.tankCost(), state: () => g.tanks.length >= g.tankMax ? 'max' : '', buy: () => g.dropTank() });
-      for (const [k, u] of Object.entries(BS.UPGRADES)) items.push({ name: u.name, up: k,
-        icon: () => u.icons[Math.min(g.upgradeLevel(k), u.icons.length - 1)], cost: () => g.upgradeCost(k),
-        state: () => g.upgradeLevel(k) >= u.costs.length ? 'max' : (!g.upgradeAvailable(k) ? 'locked' : ''),
-        level: () => u.costs.length > 1 && g.upgradeLevel(k) ? 'LV ' + g.upgradeLevel(k) : '', buy: () => g.buyUpgrade(k) });
       const box = $('armoury'); box.innerHTML = '';
       this.items = items.map(it => {
         const el = document.createElement('button');
@@ -142,7 +142,7 @@ window.BS = window.BS || {};
       for (const x of this.abEls) {
         const id = x.a.id;
         const cd = id === 'stim' ? g.ab.stimCd : id === 'strike' ? g.ab.strikeCd : id === 'repair' ? g.ab.repairCd : g.ab.yamatoCd;
-        const max = id === 'stim' ? BS.TERRAN.stim.cooldown : id === 'strike' ? BS.TERRAN.banshee.cooldown : id === 'repair' ? BS.TERRAN.repair.cooldown : BS.TERRAN.yamato.cooldown;
+        const max = id === 'stim' ? BS.TERRAN.stim.cooldown : id === 'strike' ? g.strikeCooldown() : id === 'repair' ? BS.TERRAN.repair.cooldown : BS.TERRAN.yamato.cooldown;
         const cost = id === 'stim' ? 0 : id === 'strike' ? BS.TERRAN.banshee.cost : id === 'repair' ? BS.TERRAN.repair.cost : BS.TERRAN.yamato.cost;
         const locked = id === 'stim' && !g.up.stim, poor = cost > 0 && g.minerals < cost;
         const cls = 'ability' + (locked ? ' locked' : '') + (poor ? ' poor' : '') + (id === 'stim' && stim ? ' active' : '');
@@ -167,6 +167,7 @@ window.BS = window.BS || {};
         x.price.textContent = st === 'full' ? 'FULL' : st === 'max' ? 'MAX' : st === 'locked' ? 'LOCKED' : st === 'wait' ? wait + 's' : String(cost);
         x.lvl.textContent = x.it.level ? x.it.level() : '';
       }
+      this.refreshShop();
       // Toasts and the wave banner.
       const last = g.toasts[g.toasts.length - 1];
       if (last && last !== this.toastShown) { this.toastShown = last; this.toastT = performance.now(); $('toast').textContent = last.msg.toUpperCase(); $('toast').classList.add('show'); }
@@ -176,6 +177,32 @@ window.BS = window.BS || {};
       const bt = (performance.now() - (this.bannerAt || -1e9)) / 1000;
       bn.style.opacity = bt < 0.3 ? bt / 0.3 : bt < 1.8 ? 1 : Math.max(0, 1 - (bt - 1.8) / 0.6);
       $('mute').classList.toggle('off', BS.audio.muted);
+    }
+
+    // The shop between waves (Game.endWave): the offered cards, reroll, next wave. Rebuilt only when something changes.
+    refreshShop() {
+      const g = this.g, s = g.shop;
+      if (this.cache.shopOn !== !!s) { this.cache.shopOn = !!s; $('shop').classList.toggle('hidden', !s); }
+      if (!s) return;
+      this.set('shopTitle', 'WAVE ' + s.wave + ' CLEARED');
+      this.set('shopBonus', [s.bonus ? '+' + s.bonus + ' CLEAR BONUS' : 'WAVE HELD', s.interest ? '+' + s.interest + ' INTEREST' : ''].filter(Boolean).join('   '));
+      const m = Math.floor(g.minerals);
+      const key = s.offers.map(o => o.id + (o.bought ? '!' : '')).join(',') + '|' + s.offers.map(o => g.minerals >= g.cardCost(g.card(o.id))).join('');
+      if (this.cache.shopCards !== key) {
+        this.cache.shopCards = key;
+        $('shopCards').innerHTML = s.offers.map((o, i) => {
+          const c = g.card(o.id), R = BS.RARITY[c.rarity], lv = g.cardLevel(c), max = g.cardMax(c), cost = g.cardCost(c);
+          // Bought: the level it was bought at.
+          const lvText = max > 1 ? 'LV ' + (o.bought ? lv : lv + 1) + ' / ' + max : '';
+          const cls = 'offer' + (o.bought ? ' bought' : m < cost ? ' poor' : '');
+          return '<button class="' + cls + '" data-c="' + i + '" style="--rc:' + R.color + '"><img src="' + icon(g.cardIcon(c)) + '" alt="">' +
+            '<span class="rar">' + R.name + '</span><b>' + g.cardName(c).toUpperCase() + '</b><span class="lv">' + lvText + '</span>' +
+            '<p>' + g.cardDesc(c) + '</p><span class="price">' + (o.bought ? 'BOUGHT' : cost) + '</span></button>';
+        }).join('') || '<p class="hint">Nothing left to offer.</p>';
+      }
+      const rc = g.rerollCost();
+      this.set('shopReroll', rc ? 'REROLL  ' + rc : 'FREE REROLL');
+      $('shopReroll').classList.toggle('poor', m < rc);
     }
 
     // Overlay canvas: floating text, enemy health bars, focus ring, threat markers; plus the radar.
