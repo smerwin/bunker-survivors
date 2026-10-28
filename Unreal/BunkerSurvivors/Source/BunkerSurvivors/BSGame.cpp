@@ -545,11 +545,11 @@ bool ABSGame::AddInfantry(const FString& Type, bool bFree, bool bInstant)
 	const FBSInfantryDef* D = BSDefs::FindInfantry(Type);
 	if (!D) return false;
 	if (TroopsFull()) { Toast(TEXT("No room for more troops")); return false; }
-	if (!bFree) { if (Minerals < D->Cost) { Toast(TEXT("Not enough minerals")); return false; } Minerals -= D->Cost; }
+	if (!bFree) { const int32 Cost = TroopCost(D); if (Minerals < Cost) { Toast(TEXT("Not enough minerals")); return false; } Minerals -= Cost; }
 	if (bInstant || !Assets->Model(TEXT("medivac")))
 	{
-		if (Bunker.Units.Num() >= Bunker.Slots) { JoinSquad(D, D->Hp, BSDefs::BunkerHalfSize + 0.3f, 0.4f, nullptr); return true; }
-		Bunker.Units.Add({ D, D->Hp, D->Hp, Rnd(0, 0.3f) });
+		if (Bunker.Units.Num() >= Bunker.Slots) { JoinSquad(D, TrooperHp(D), BSDefs::BunkerHalfSize + 0.3f, 0.4f, nullptr); return true; }
+		Bunker.Units.Add({ D, TrooperHp(D), TrooperHp(D), Rnd(0, 0.3f) });
 		if (Bunker.Actor) Bunker.Actor->Play(TEXT("stand work"), true);
 		return true;
 	}
@@ -585,6 +585,11 @@ void ABSGame::BeginOpening()
 		if (!W.Actor) { Bunker.Units.Add({ M, M->Hp, M->Hp, Rnd(0, 0.3f) }); continue; }
 		Walkers.Add(W);
 	}
+	// Hyperion perks (bots play with none): War Chest, Reinforced Bunker, and a Veteran Fireteam firebat comes along.
+	if (bAutoPlay) return;
+	Minerals += 50 * BSMeta::Perk(TEXT("minerals"));
+	Bunker.MaxHp = Bunker.Hp = BSDefs::BunkerHp + 50 * BSMeta::Perk(TEXT("hull"));
+	if (BSMeta::Perk(TEXT("firebat"))) AddInfantry(TEXT("firebat"), true);
 }
 
 void ABSGame::UpdateReinforcements(float Dt)
@@ -612,7 +617,7 @@ void ABSGame::UpdateReinforcements(float Dt)
 				W.Actor = AcquireModel(D->Key);
 				if (W.Actor) { W.Actor->SetTeamColor(TerranColor); W.Actor->SetSim(W.X, W.Y, 0, W.Yaw); }
 				if (W.Actor) Walkers.Add(W);
-				else { Bunker.Units.Add({ D, D->Hp, D->Hp, Rnd(0, 0.3f) }); }
+				else { Bunker.Units.Add({ D, TrooperHp(D), TrooperHp(D), Rnd(0, 0.3f) }); }
 			}
 			else if (!Dr.Cargo.Num() && Dr.T > 0.5f)
 			{
@@ -637,7 +642,7 @@ void ABSGame::UpdateReinforcements(float Dt)
 		for (const FBSWalker& O : Walkers) if (&O != &W && O.Delay <= 0) Heading++;
 		if (!Bunker.bDead && Bunker.Units.Num() + Heading >= Bunker.Slots && Squad.Num() < BSDefs::SquadMax)
 		{
-			JoinSquad(W.Def, W.Def->Hp, W.X, W.Y, W.Actor);
+			JoinSquad(W.Def, TrooperHp(W.Def), W.X, W.Y, W.Actor);
 			Walkers.RemoveAt(i);
 			continue;
 		}
@@ -647,7 +652,7 @@ void ABSGame::UpdateReinforcements(float Dt)
 		{
 			if (!Bunker.bDead && Bunker.Units.Num() < Bunker.Slots)
 			{
-				Bunker.Units.Add({ W.Def, W.Def->Hp, W.Def->Hp, Rnd(0, 0.3f) });
+				Bunker.Units.Add({ W.Def, TrooperHp(W.Def), TrooperHp(W.Def), Rnd(0, 0.3f) });
 				if (Bunker.Actor) Bunker.Actor->Play(TEXT("stand work"), true);
 				Floater(0, 0, 3, TEXT("+") + W.Def->Name, FLinearColor(0.5f, 0.85f, 1));
 				PlaySound(BSSounds::MedivacUnload, 0.25f, 0.3f);
@@ -672,7 +677,7 @@ TSharedPtr<FBSTrooper> ABSGame::JoinSquad(const FBSInfantryDef* Def, float Hp, f
 	const FVector2D* Spot = SquadSpots.FindByPredicate([this](const FVector2D& S) { return !Squad.ContainsByPredicate([&S](const TSharedPtr<FBSTrooper>& M) { return M->Spot == S; }); });
 	if (!Spot) { ReleaseModel(Actor); return nullptr; }
 	TSharedPtr<FBSTrooper> M = MakeShared<FBSTrooper>();
-	M->Def = Def; M->Hp = Hp; M->MaxHp = Def->Hp; M->Cd = Rnd(0, 0.3f); M->X = X; M->Y = Y; M->Spot = *Spot;
+	M->Def = Def; M->Hp = Hp; M->MaxHp = TrooperHp(Def); M->Cd = Rnd(0, 0.3f); M->X = X; M->Y = Y; M->Spot = *Spot;
 	M->Team = NextTeam; NextTeam ^= 1;        // alternate fire teams
 	M->Actor = Actor ? Actor : AcquireModel(Def->Key);
 	if (M->Actor) { M->Actor->SetTeamColor(TerranColor); M->Actor->SetSim(X, Y, 0, M->Yaw); }
@@ -981,8 +986,8 @@ void ABSGame::DestroyStructure(const TSharedPtr<FBSStructure>& S)
 }
 
 // ---- Forward base on the high ground ------------------------------------------------------------------------
-// Lane only. Once the army is maxed out - every tree researched, the battlecruiser on station, the Odin in position and a
-// full squad - it expands onto the plateau east of the stem: the Odin, the goliaths and a detachment of troopers go up the
+// Lane only. Once the army is maxed out - the battlecruiser on station, the Odin in position and a full squad - it
+// expands onto the plateau east of the stem: the Odin, the goliaths and a detachment of troopers go up the
 // stem, into the arm and up its ramp (BSTerrain::LedgeRoute), clear the plateau, then an SCV builds a command center there.
 // The base mines minerals, and troopers up there outrange the lane (+1) and never miss for firing uphill. If the
 // battlecruiser or the Odin is lost, or the squad is cut down below ExpandMinSquad, they fall back (port of Game.expandReady
@@ -990,7 +995,7 @@ void ABSGame::DestroyStructure(const TSharedPtr<FBSStructure>& S)
 bool ABSGame::ExpandReady() const
 {
 	const TSharedPtr<FBSMech>* Odin = Mechs.FindByPredicate([](const TSharedPtr<FBSMech>& M) { return M->Def->Key == TEXT("odin"); });
-	return FwdRoute.Num() > 0 && TreeMaxed(TEXT("all")) && Bc.IsValid() && Bc->bOnStation && Odin && (*Odin)->bReady && TroopsFull();
+	return FwdRoute.Num() > 0 && Bc.IsValid() && Bc->bOnStation && Odin && (*Odin)->bReady && TroopsFull();
 }
 
 bool ABSGame::ExpandHolds() const
@@ -1185,9 +1190,9 @@ bool ABSGame::CallAirStrike()
 	if (Ab.StrikeCd > 0) { Toast(TEXT("Air support is refuelling")); return false; }
 	if (Minerals < BSDefs::BansheeCost) { Toast(TEXT("Not enough minerals")); return false; }
 	Minerals -= BSDefs::BansheeCost;
-	Ab.StrikeCd = BSDefs::BansheeCooldown;
+	Ab.StrikeCd = StrikeCooldown();
 	const bool bLane = Mode == EBSMode::Lane;
-	for (int32 i = 0; i < BSDefs::BansheeCount; i++)
+	for (int32 i = 0; i < BSDefs::BansheeCount + CardLevel(TEXT("rotors")); i++)
 	{
 		FBSBanshee B;
 		B.Post = StrikePosts[i % StrikePosts.Num()];
@@ -1365,12 +1370,10 @@ bool ABSGame::UpgradeAvailable(const FString& Id) const
 	return UpgradeLevel(Id) < D->Costs.Num();
 }
 
-bool ABSGame::BuyUpgrade(const FString& Id)
+// One level of research (bought as a shop card).
+bool ABSGame::Research(const FString& Id)
 {
 	if (!UpgradeAvailable(Id)) return false;
-	const int32 Cost = CostOfUpgrade(Id);
-	if (Minerals < Cost) { Toast(TEXT("Not enough minerals")); return false; }
-	Minerals -= Cost;
 	if (Id == TEXT("stim")) { Up.bStim = true; Toast(TEXT("Stimpack researched - hit STIM")); }
 	else if (Id == TEXT("weapons")) { Up.Weapons++; Toast(FString::Printf(TEXT("Infantry Weapons level %d"), Up.Weapons)); }
 	else if (Id == TEXT("vehicle")) { Up.Vehicle++; Toast(FString::Printf(TEXT("Vehicle Weapons level %d"), Up.Vehicle)); }
@@ -1379,31 +1382,170 @@ bool ABSGame::BuyUpgrade(const FString& Id)
 	else if (Id == TEXT("hisec")) { Up.bHiSec = true; Toast(TEXT("Hi-Sec Auto Tracking online")); }
 	else if (Id == TEXT("medivac")) { Up.bMedivac = true; Toast(TEXT("Medivac on station")); }
 	else if (Id == TEXT("rails")) { Up.bRails = true; Toast(TEXT("Magnetic rails fitted: +2 bunker range")); }
-	CheckTech();
 	return true;
 }
 
-// ---- High-tech reinforcements --------------------------------------------------------------------------------
-bool ABSGame::TreeMaxed(const FString& Tree) const
+bool ABSGame::BuyUpgrade(const FString& Id)
 {
-	auto Maxed = [this](const TCHAR* Id) { const FBSUpgradeDef* D = BSDefs::FindUpgrade(Id); return D && UpgradeLevel(Id) >= D->Costs.Num(); };
-	if (Tree == TEXT("systems")) return Maxed(TEXT("stim")) && Maxed(TEXT("neosteel")) && Maxed(TEXT("hisec")) && Maxed(TEXT("rails")) && Maxed(TEXT("medivac"));
-	if (Tree == TEXT("all")) return TreeMaxed(TEXT("weapons")) && TreeMaxed(TEXT("vehicle")) && TreeMaxed(TEXT("plating")) && TreeMaxed(TEXT("systems"));
-	if (Tree == TEXT("bc")) return Bc.IsValid();
-	return Maxed(*Tree);
+	if (!Shop.bOpen) return false;
+	for (int32 i = 0; i < Shop.Offers.Num(); i++)
+		if (!Shop.Bought[i] && Shop.Offers[i] == Id && BSDefs::FindCard(Id)->Up == Id) return BuyCard(i);
+	return false;
 }
 
-// Surprise cards: each appears once its tech tree is maxed out.
-void ABSGame::CheckTech()
+// ---- The shop, between waves ----------------------------------------------------------------------------------
+// A wave ends once all of it has spawned and its zerg are dead (or ShopLinger seconds after the last spawn, the
+// stragglers left frozen on the field): clear bonus, interest, then the shop pauses the fight until NEXT WAVE.
+void ABSGame::EndWave()
 {
-	for (const FBSTechCard& C : BSDefs::Tech())
-	{
-		if (TechUnlocked.Contains(C.Id) || !TreeMaxed(C.Unlock)) continue;
-		TechUnlocked.Add(C.Id);
-		WaveBanner = TEXT("NEW TECH  //  ") + C.Banner; WaveBannerT = Time; WaveSerial++;
-		Toast(C.Name + TEXT(" unlocked"));
-	}
+	const bool bCleared = !WaveAlive();
+	const int32 Bonus = bCleared ? BSDefs::ClearBonusA + BSDefs::ClearBonusB * Wave : 0;
+	if (bCleared) { Minerals += Bonus; Score += 100 * Wave; }
+	const int32 Spoils = CardLevel(TEXT("spoils"));
+	const int32 Interest = FMath::Min(50 * Spoils, FMath::FloorToInt(Minerals * 0.1f * Spoils));
+	Minerals += Interest;
+	WavesCleared = Wave;
+	Shop = FShop();
+	Shop.bOpen = true; Shop.Wave = Wave; Shop.Bonus = Bonus; Shop.Interest = Interest; Shop.Free = BSMeta::Perk(TEXT("reroll"));
+	Shop.Offers = RollOffers();
+	Shop.Bought.Init(false, Shop.Offers.Num());
+	WaveBanner = FString::Printf(TEXT("WAVE %d CLEARED"), Wave); WaveBannerT = Time; WaveSerial++;
 }
+
+void ABSGame::CloseShop()
+{
+	if (!Shop.bOpen) return;
+	Shop.bOpen = false;
+	StartWave();
+}
+
+int32 ABSGame::CardLevel(const FBSCardDef& C) const
+{
+	if (!C.Up.IsEmpty()) return UpgradeLevel(C.Up);
+	if (!C.Tech.IsEmpty()) return TechUnlocked.Contains(C.Tech) ? 1 : 0;
+	const int32* L = Cards.Find(C.Id);
+	return L ? *L : 0;
+}
+
+int32 ABSGame::CardMax(const FBSCardDef& C) const
+{
+	if (C.Up.IsEmpty()) return C.Max;
+	const FBSUpgradeDef* U = BSDefs::FindUpgrade(C.Up);
+	return U ? U->Costs.Num() : 0;
+}
+
+int32 ABSGame::CardCost(const FBSCardDef& C) const
+{
+	if (!C.Up.IsEmpty()) return CostOfUpgrade(C.Up);
+	return C.Costs[FMath::Min(CardLevel(C), C.Costs.Num() - 1)];
+}
+
+FString ABSGame::CardIcon(const FBSCardDef& C) const
+{
+	if (C.Up.IsEmpty()) return C.Icon;
+	const FBSUpgradeDef* U = BSDefs::FindUpgrade(C.Up);
+	return U->Icons[FMath::Min(UpgradeLevel(C.Up), U->Icons.Num() - 1)];
+}
+
+FString ABSGame::CardDesc(const FBSCardDef& C) const
+{
+	if (C.Up.IsEmpty()) return C.Desc;
+	return BSDefs::FindUpgrade(C.Up)->Desc;
+}
+
+// What this run needs first (FBSCardDef Req).
+bool ABSGame::CardReq(const FBSCardDef& C) const
+{
+	const FString& R = C.Req;
+	if (R.IsEmpty()) return true;
+	if (R == TEXT("tank")) return Tanks.Num() > 0;
+	if (R == TEXT("stim")) return Up.bStim;
+	if (R == TEXT("hisec")) return Up.bHiSec;
+	if (R == TEXT("medivac")) return Up.bMedivac;
+	if (R == TEXT("bc")) return TechUnlocked.Contains(TEXT("bc"));
+	int32 i = R.Len();
+	while (i > 0 && FChar::IsDigit(R[i - 1])) i--;
+	const FString Key = R.Left(i);
+	const int32 N = FCString::Atoi(*R.Mid(i));
+	return Key == TEXT("wave") ? Wave >= N : UpgradeLevel(Key) >= N;
+}
+
+bool ABSGame::CardOpen(const FBSCardDef& C) const
+{
+	return BSMeta::Unlocked(C) && CardLevel(C) < CardMax(C) && CardReq(C) && Wave >= BSDefs::FindRarity(C.Rarity).From;
+}
+
+// Weighted by rarity (Field Intelligence shifts weight from common cards to the rarer ones, research weighs double); no
+// repeats in one offer, and the first card is always research while there is any left.
+TArray<FString> ABSGame::RollOffers()
+{
+	const int32 Luck = BSMeta::Perk(TEXT("luck")), N = BSDefs::ShopOffers + BSMeta::Perk(TEXT("offer"));
+	auto Wt = [Luck](const FBSCardDef* C)
+	{
+		return BSDefs::FindRarity(C->Rarity).Weight * (C->Rarity == TEXT("common") ? 1 - 0.15f * Luck : 1 + 0.3f * Luck) * (C->Up.IsEmpty() ? 1.f : BSDefs::ShopResearchWeight);
+	};
+	TArray<const FBSCardDef*> Pool;
+	for (const FBSCardDef& C : BSDefs::Cards()) if (CardOpen(C)) Pool.Add(&C);
+	TArray<FString> Out;
+	while (Out.Num() < N && Pool.Num())
+	{
+		TArray<const FBSCardDef*> From = Pool;
+		if (Out.Num() == 0 && Pool.ContainsByPredicate([](const FBSCardDef* C) { return !C->Up.IsEmpty(); }))
+			From = Pool.FilterByPredicate([](const FBSCardDef* C) { return !C->Up.IsEmpty(); });
+		float Total = 0;
+		for (const FBSCardDef* C : From) Total += Wt(C);
+		float Roll = FMath::FRand() * Total;
+		int32 i = 0;
+		for (; i < From.Num() - 1; i++) { Roll -= Wt(From[i]); if (Roll <= 0) break; }
+		Out.Add(From[i]->Id);
+		Pool.Remove(From[i]);
+	}
+	return Out;
+}
+
+bool ABSGame::Reroll()
+{
+	if (!Shop.bOpen) return false;
+	const int32 Cost = RerollCost();
+	if (Minerals < Cost) { Toast(TEXT("Not enough minerals")); return false; }
+	Minerals -= Cost;
+	if (Shop.Free > 0) Shop.Free--; else Shop.Rerolls++;
+	Shop.Offers = RollOffers();
+	Shop.Bought.Init(false, Shop.Offers.Num());
+	return true;
+}
+
+bool ABSGame::BuyCard(int32 Index)
+{
+	if (!Shop.bOpen || !Shop.Offers.IsValidIndex(Index) || Shop.Bought[Index]) return false;
+	const FBSCardDef* C = BSDefs::FindCard(Shop.Offers[Index]);
+	if (!C || CardLevel(*C) >= CardMax(*C)) return false;
+	const int32 Cost = CardCost(*C);
+	if (Minerals < Cost) { Toast(TEXT("Not enough minerals")); return false; }
+	Minerals -= Cost;
+	Shop.Bought[Index] = true;
+	ApplyCard(*C);
+	if (!bAutoPlay) for (const FBSCardDef* U : BSMeta::RecordBuy(C->Id)) Toast(TEXT("New card unlocked: ") + BSMeta::CardName(*U));
+	return true;
+}
+
+void ABSGame::ApplyCard(const FBSCardDef& C)
+{
+	if (!C.Up.IsEmpty()) { Research(C.Up); return; }
+	if (!C.Tech.IsEmpty())
+	{
+		TechUnlocked.Add(C.Tech);
+		const FBSTechCard* T = BSDefs::FindTech(C.Tech);
+		WaveBanner = TEXT("NEW TECH  //  ") + T->Banner; WaveBannerT = Time; WaveSerial++;
+		Toast(T->Name + TEXT(" in the armoury"));
+		return;
+	}
+	const int32 L = ++Cards.FindOrAdd(C.Id);
+	if (C.Id == TEXT("refinery")) Income += 1;
+	Toast(C.Max > 1 ? FString::Printf(TEXT("%s level %d"), *C.Name, L) : C.Name);
+}
+
+// ---- High-tech reinforcements --------------------------------------------------------------------------------
 
 bool ABSGame::TechReady(const FString& Id, int32& OutCost, FString& OutTag) const
 {
@@ -1429,8 +1571,8 @@ void ABSGame::GrantAllTech()
 {
 	Minerals += 1e6f;
 	if (!Tanks.Num()) DropTank();
-	for (const FBSUpgradeDef& U : BSDefs::Upgrades())
-		for (int32 Guard = 0; Guard < 20 && UpgradeAvailable(U.Key); Guard++) BuyUpgrade(U.Key);
+	for (const FBSCardDef& C : BSDefs::Cards())
+		for (int32 Guard = 0; Guard < 20 && CardLevel(C) < CardMax(C); Guard++) ApplyCard(C);
 	Minerals += 20000;
 }
 
@@ -1635,7 +1777,6 @@ bool ABSGame::CallBattlecruiser()
 	}
 	if (Bc->Actor) { Bc->Actor->SetScale(0.75f); Bc->Actor->SetTeamColor(TerranColor); Bc->Actor->SetSim(Bc->X, Bc->Y, Bc->Z, Bc->Yaw); Bc->Actor->Play(WalkNames, true); }
 	Toast(TEXT("Battlecruiser inbound"));
-	CheckTech();
 	return true;
 }
 
@@ -1933,6 +2074,9 @@ void ABSGame::StartWave()
 	Tele = FTele();
 	Tele.KillsAtStart = Kills; Tele.WaveStart = Time;
 	Wave++;
+	LingerT = 0;
+	const int32 Mule = 30 * CardLevel(TEXT("mule"));
+	if (Mule) { Minerals += Mule; Floater(0, -3, 2, FString::Printf(TEXT("+%d MULE"), Mule), FLinearColor(0.5f, 0.85f, 1)); }
 	const int32 Wv = Wave;
 	const bool bFinale = Wv == BSDefs::FinaleWave && !Finale.bOn;
 	auto Quad = [](float X) { return 20 + 8 * X + 0.3f * X * X; };
@@ -2528,7 +2672,7 @@ int32 ABSGame::TumorCount() const
 
 bool ABSGame::WaveAlive() const
 {
-	for (const TSharedPtr<FBSEnemy>& E : Enemies) if (!E->Def->bTumor) return true;
+	for (const TSharedPtr<FBSEnemy>& E : Enemies) if (!E->Def->bTumor && !E->Def->bCreeper) return true;
 	return false;
 }
 
@@ -2984,7 +3128,7 @@ void ABSGame::KillEnemy(const TSharedPtr<FBSEnemy>& E, bool bSuicide)
 {
 	const FBSZergDef* D = E->Def;
 	E->Hp = 0;
-	Kills++; Minerals += D->Bounty; Score += D->Bounty * 2;
+	Kills++; Minerals += D->Bounty * (1 + 0.15f * CardLevel(TEXT("bounty"))); Score += D->Bounty * 2;
 	if (!D->SoundDeath.IsEmpty()) PlaySound(D->SoundDeath, 0.5f);
 	if (D->bSuicide && !bSuicide && !D->bAntiAir) BanelingBlast(*E, true);      // a shot-down baneling still bursts (scourge do not)
 	Enemies.Remove(E);
@@ -3060,16 +3204,19 @@ void ABSGame::Tick(float Dt)
 	Super::Tick(Dt);
 	if (!Assets) return;
 	if (CrowdTest > 0 && bStarted) CrowdTick(Dt);
-	if (bStarted && !bPaused && !bOver)
+	// Bots shop at once and carry on.
+	if (Shop.bOpen && bAutoPlay && !bOver) { AutoShop(); CloseShop(); }
+	if (bStarted && !bPaused && !bOver && !Shop.bOpen)
 	{
 		Acc += FMath::Min(Dt, 0.1f) * TimeScale;
 		int32 N = 0;
 		const float StepDt = 1.f / 60.f;
 		const int32 MaxSteps = FMath::Max(24, FMath::CeilToInt(TimeScale * 3));
-		while (Acc >= StepDt && N++ < MaxSteps && !bOver) { Step(StepDt); Acc -= StepDt; }
+		while (Acc >= StepDt && N++ < MaxSteps && !bOver && !Shop.bOpen) { Step(StepDt); Acc -= StepDt; }
+		if (Shop.bOpen) Acc = 0;
 	}
-	// Effects, corpses and particles follow game speed (so slow motion and pause apply to them too).
-	UpdateVisuals(bPaused ? 0 : Dt * TimeScale);
+	// Effects, corpses and particles follow game speed (so slow motion, pause and the shop apply to them too).
+	UpdateVisuals(bPaused || Shop.bOpen ? 0 : Dt * TimeScale);
 }
 
 void ABSGame::Step(float Dt)
@@ -3082,10 +3229,11 @@ void ABSGame::Step(float Dt)
 	NukeCd = FMath::Max(0.f, NukeCd - Dt); VikingCd = FMath::Max(0.f, VikingCd - Dt);
 
 	WaveTimer -= Dt;
-	if (WaveTimer <= 0 || (SpawnQueue.Num() == 0 && !WaveAlive() && Wave > 0 && WaveTimer < WaveLen - 6))
+	if (Wave == 0) { if (WaveTimer <= 0) StartWave(); }
+	else if (SpawnQueue.Num() == 0)
 	{
-		if (Wave > 0 && !WaveAlive()) { Minerals += 10 + 5 * Wave; Score += 100 * Wave; }
-		StartWave();
+		LingerT += Dt;
+		if (!WaveAlive() || LingerT > BSDefs::ShopLinger) { EndWave(); return; }
 	}
 	SpawnTimer += Dt;
 	// Due spawns come out in order while there is room on the field; at the alive cap they wait their turn (bosses
@@ -3386,10 +3534,12 @@ void ABSGame::UpdateBunker(float Dt)
 	if (Bunker.bDead) return;
 	const bool bStim = Ab.StimUntil > Time;
 	const float Bonus = BSDefs::BunkerRangeBonus + BSDefs::BunkerHalfSize + (Up.bHiSec ? BSDefs::HiSecRange : 0.f) + (Up.bRails ? BSDefs::RailsRange : 0.f) + (Mode == EBSMode::Arena ? 1.f : 0.f);
+	if (const int32 Regen = 3 * CardLevel(TEXT("firesup"))) Bunker.Hp = FMath::Min(Bunker.MaxHp, Bunker.Hp + Regen * Dt);
+	const float Heal = 1 + 0.6f * CardLevel(TEXT("medpacks"));
 	if (Up.bMedivac)
 	{
-		for (FBSInfantryUnit& U : Bunker.Units) U.Hp = FMath::Min(U.MaxHp, U.Hp + 9 * Dt);
-		for (const TSharedPtr<FBSTrooper>& M : Squad) if (!M->bDead) M->Hp = FMath::Min(M->MaxHp, M->Hp + 9 * Dt);
+		for (FBSInfantryUnit& U : Bunker.Units) U.Hp = FMath::Min(U.MaxHp, U.Hp + 9 * Heal * Dt);
+		for (const TSharedPtr<FBSTrooper>& M : Squad) if (!M->bDead) M->Hp = FMath::Min(M->MaxHp, M->Hp + 9 * Heal * Dt);
 		// The medivac hovers over the bunker and also mends the most hurt SCV nearby (12.6 HP/s, as in SC2).
 		if (!StationMedivac && Assets->Model(TEXT("medivac")))
 		{
@@ -3399,7 +3549,7 @@ void ABSGame::UpdateBunker(float Dt)
 		FBSScv* Patient = nullptr;
 		for (const TSharedPtr<FBSScv>& S : Scvs)
 			if (!S->bDead && S->Hp < S->MaxHp - 0.5f && FMath::Sqrt(Dist2(0, 0.5f, S->X, S->Y)) < 6.f && (!Patient || S->Hp / S->MaxHp < Patient->Hp / Patient->MaxHp)) Patient = S.Get();
-		if (Patient) Patient->Hp = FMath::Min(Patient->MaxHp, Patient->Hp + 12.6f * Dt);
+		if (Patient) Patient->Hp = FMath::Min(Patient->MaxHp, Patient->Hp + 12.6f * Heal * Dt);
 		if (StationMedivac)
 		{
 			// Parked at the bunker's shoulder; it only turns (slowly) toward whoever it is healing.
@@ -3469,7 +3619,8 @@ void ABSGame::FireInfantry(const FBSInfantryDef* D, const FVector& Muzzle, const
 	else if (D->Key == TEXT("firebat"))
 	{
 		const float Hx = Target->X, Hy = Target->Y;
-		if (DmgBase > 0) for (auto& V : EnemiesInRange(Target->X, Target->Y, D->Splash, Pred)) HurtEnemy(V, DmgBase + (V->Def->bLight ? D->DmgLight : 0), true);
+		const int32 Inc = CardLevel(TEXT("incinerator"));
+		if (DmgBase > 0) for (auto& V : EnemiesInRange(Target->X, Target->Y, D->Splash * (1 + 0.4f * Inc), Pred)) HurtEnemy(V, DmgBase + 2 * Inc + (V->Def->bLight ? D->DmgLight : 0), true);
 		// The flames burn the creep away where they land and along the way.
 		BurnCreep(Hx, Hy, BSCreep::BurnRadius, true);
 		BurnCreep((Muzzle.X + Hx) / 2, (Muzzle.Y + Hy) / 2, BSCreep::BurnRadius * 0.6f, false);
@@ -3547,13 +3698,14 @@ void ABSGame::UpdateTanks(float Dt)
 			}
 			K.Cd -= Dt;
 			if (K.Cd > 0) continue;
+			const float Reach = BSDefs::TankRange + (Up.bHiSec ? BSDefs::HiSecRange : 0.f) + 2 * CardLevel(TEXT("siegerange"));
 			auto Pred = [&K](const FBSEnemy& E) { return !E.Def->bFlying && FMath::Sqrt(Dist2(K.X, K.Y, E.X, E.Y)) > BSDefs::TankMinRange; };
 			TSharedPtr<FBSEnemy> Target;
 			if (TSharedPtr<FBSEnemy> F = Focus.Pin())
-				if (F->Alive() && Pred(*F) && FMath::Sqrt(Dist2(K.X, K.Y, F->X, F->Y)) <= BSDefs::TankRange + (Up.bHiSec ? BSDefs::HiSecRange : 0.f)) Target = F;
+				if (F->Alive() && Pred(*F) && FMath::Sqrt(Dist2(K.X, K.Y, F->X, F->Y)) <= Reach) Target = F;
 			if (!Target)
 			{
-				TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(K.X, K.Y, BSDefs::TankRange + (Up.bHiSec ? BSDefs::HiSecRange : 0.f), Pred);
+				TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(K.X, K.Y, Reach, Pred);
 				if (!L.Num()) { K.Cd = 0.1f; continue; }
 				int32 BestN = -1;
 				for (int32 i = 0; i < FMath::Min(8, L.Num()); i++)
@@ -3630,7 +3782,7 @@ void ABSGame::UpdateScvs(float Dt)
 		{
 			S.Yaw = FMath::Atan2(JobY - S.Y, JobX - S.X);
 			if (S.Anim != TEXT("work") && S.Actor) { S.Anim = TEXT("work"); S.Actor->Play(TEXT("work"), true); PlaySound(BSSounds::ScvRepair, 0.25f, 1.5f); }
-			const float Amount = FMath::Min3(BSDefs::ScvRepairRate * Dt, JobMax - *JobHp, Minerals / Cost);
+			const float Amount = FMath::Min3(BSDefs::ScvRepairRate * (1 + 0.5f * CardLevel(TEXT("scvrepair"))) * Dt, JobMax - *JobHp, Minerals / Cost);
 			if (Amount > 0) { *JobHp += Amount; Minerals -= Amount * Cost; }
 			if (FMath::FRand() < Dt * 6) AddFx(EBSFxKind::Flash, FVector(S.X + FMath::Cos(S.Yaw) * 0.5f, S.Y + FMath::Sin(S.Yaw) * 0.5f, 0.6f), FVector::ZeroVector, 0.08f, 0.15f, FLinearColor(0.6f, 0.85f, 1), 16);
 		}
@@ -3749,8 +3901,9 @@ void ABSGame::UpdateProjectiles(float Dt)
 				TSharedPtr<FBSEnemy> TE = Done.TargetEnemy.Pin();
 				if (TE && Done.Dmg > 0)
 				{
-					TE->SlowUntil = Time + Done.IDef->Slow; TE->Anim.Reset();
-					HurtEnemy(TE, Done.Dmg + (TE->Def->bArmored ? Done.IDef->DmgArmored : 0));
+					const int32 Con = CardLevel(TEXT("concussive"));
+					TE->SlowUntil = Time + Done.IDef->Slow + Con; TE->Anim.Reset();
+					HurtEnemy(TE, Done.Dmg + (TE->Def->bArmored ? Done.IDef->DmgArmored + 4 * Con : 0));
 				}
 				if (!bImpactFx) AddFx(EBSFxKind::Blast, FVector(Done.To.X, Done.To.Y, 0.05f), FVector::ZeroVector, 0.3f, 0.6f, FLinearColor(0.45f, 0.75f, 1), 6);
 			}
@@ -3994,6 +4147,8 @@ void ABSGame::AutoPlay()
 	if (Ab.StimCd > StimCd || Ab.StrikeCd > StrikeCd || Ab.RepairCd > RepairCd || Ab.YamatoCd > YamatoCd) Tele.AbilityUses++;
 }
 
+// Research only comes from the shop now: during a wave BuyUpgrade fails, so a commander that wants research banks its
+// minerals for the next shop (see AutoShop).
 void ABSGame::AutoPlayImpl()
 {
 	if (Bot == TEXT("passive")) return;                       // baseline: the starting kit only
@@ -4063,6 +4218,31 @@ void ABSGame::AutoPlayImpl()
 	if (UpgradeAvailable(TEXT("plating")) && Minerals >= CostOfUpgrade(TEXT("plating"))) { BuyUpgrade(TEXT("plating")); return; }
 }
 
+// Bots in the shop: research in the order the balanced commander wants it, then the strongest passives, rerolling
+// when nothing on offer is wanted (port of the headless test bot's shop policy).
+void ABSGame::AutoShop()
+{
+	static const TCHAR* Order[] = { TEXT("weapons"), TEXT("neosteel"), TEXT("stim"), TEXT("medivac"), TEXT("plating"), TEXT("hisec"), TEXT("vehicle"), TEXT("rails"),
+		TEXT("refinery"), TEXT("shield"), TEXT("firesup"), TEXT("spoils"), TEXT("incinerator"), TEXT("bounty"), TEXT("mule"), TEXT("scvrepair"), TEXT("medpacks"),
+		TEXT("concussive"), TEXT("rotors"), TEXT("recruit"), TEXT("siegerange"), TEXT("goliath"), TEXT("thor"), TEXT("nuke"), TEXT("bc"), TEXT("odin"), TEXT("vikings") };
+	auto Rank = [](const FString& Id) { for (int32 i = 0; i < UE_ARRAY_COUNT(Order); i++) if (Id == Order[i]) return i; return 99; };
+	if (Bot == TEXT("passive")) return;
+	for (int32 Pass = 0; Pass < 4; Pass++)
+	{
+		TArray<int32> Idx;
+		for (int32 i = 0; i < Shop.Offers.Num(); i++) if (!Shop.Bought[i]) Idx.Add(i);
+		Idx.Sort([&](int32 A, int32 B) { return Rank(Shop.Offers[A]) < Rank(Shop.Offers[B]); });
+		bool bAny = false;
+		for (const int32 i : Idx)
+		{
+			const FBSCardDef* C = BSDefs::FindCard(Shop.Offers[i]);
+			if ((Rank(C->Id) < 11 || Minerals > 500) && Minerals >= CardCost(*C) && BuyCard(i)) bAny = true;
+		}
+		if (!bAny && Minerals > RerollCost() + 150) { Reroll(); continue; }
+		break;
+	}
+}
+
 void ABSGame::GameOver()
 {
 	if (bOver) return;
@@ -4077,6 +4257,7 @@ void ABSGame::GameOver()
 	WriteTelemetry(TEXT("wave"));
 	WriteTelemetry(TEXT("final"));
 	if (bAutoPlay) return;
+	MetaResult = BSMeta::EndRun(Mode == EBSMode::Arena, WavesCleared);
 	bNewBest = FinalScore > Best;
 	Best = FMath::Max(Best, FinalScore);
 	GConfig->SetInt(TEXT("BunkerSurvivors"), *(FString(TEXT("Best.")) + (Mode == EBSMode::Lane ? TEXT("Lane") : TEXT("Arena"))), Best, GGameUserSettingsIni);

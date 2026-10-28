@@ -211,15 +211,15 @@ namespace
 			FBSUpgradeDef& D = Out.AddDefaulted_GetRef();
 			D.Key = Key; D.Name = Name; D.Desc = Desc; D.Icons = MoveTemp(Icons); D.Costs = MoveTemp(Costs);
 		};
-		Add(TEXT("stim"), TEXT("Stimpack"), TEXT("Research, then hit STIM: +50% fire rate for 11s, costs HP."), { TEXT("btn-ability-terran-stimpack") }, { 100 });
+		Add(TEXT("stim"), TEXT("Stimpack"), TEXT("Research, then hit STIM: +50% fire rate for 11s, costs HP."), { TEXT("btn-ability-terran-stimpack") }, { 75 });
 		Add(TEXT("weapons"), TEXT("Infantry Weapons"), TEXT("+1 damage for every bunker unit."),
-			{ TEXT("btn-upgrade-terran-infantryweaponslevel1"), TEXT("btn-upgrade-terran-infantryweaponslevel2"), TEXT("btn-upgrade-terran-infantryweaponslevel3") }, { 100, 175, 250, 350, 475, 600, 750, 900, 1100, 1300 });
-		Add(TEXT("neosteel"), TEXT("Neosteel Frame"), TEXT("Bunker holds 6 units."), { TEXT("btn-upgrade-terran-neosteelframe") }, { 150 });
-		Add(TEXT("plating"), TEXT("Building Armor"), TEXT("+150 bunker HP per level, +1 armour for the first three."), { TEXT("btn-upgrade-terran-buildingarmor") }, { 250, 350, 450, 600, 800, 1000, 1200, 1400 });
-		Add(TEXT("hisec"), TEXT("Hi-Sec Auto Tracking"), TEXT("+1 range for the bunker and siege tanks."), { TEXT("btn-upgrade-terran-hisecautotracking") }, { 200 });
-		Add(TEXT("vehicle"), TEXT("Vehicle Weapons"), TEXT("+5 (+3 armoured) siege tank damage."), { TEXT("btn-upgrade-terran-vehicleweaponslevel1") }, { 150, 225, 300, 400, 525, 650, 800, 950, 1150, 1350 });
-		Add(TEXT("medivac"), TEXT("Medivac on Station"), TEXT("Heals bunker infantry 9 HP/s so they can stim again."), { TEXT("btn-ability-terran-heal") }, { 200 });
-		Add(TEXT("rails"), TEXT("Magnetic Rails"), TEXT("+2 range for the troops in the bunker."), { TEXT("btn-upgrade-terran-magrailmunitions") }, { 300 });
+			{ TEXT("btn-upgrade-terran-infantryweaponslevel1"), TEXT("btn-upgrade-terran-infantryweaponslevel2"), TEXT("btn-upgrade-terran-infantryweaponslevel3") }, { 75, 130, 190, 265, 355, 450, 565, 675, 825, 975 });
+		Add(TEXT("neosteel"), TEXT("Neosteel Frame"), TEXT("Bunker holds 6 units."), { TEXT("btn-upgrade-terran-neosteelframe") }, { 115 });
+		Add(TEXT("plating"), TEXT("Building Armor"), TEXT("+150 bunker HP per level, +1 armour for the first three."), { TEXT("btn-upgrade-terran-buildingarmor") }, { 190, 265, 340, 450, 600, 750, 900, 1050 });
+		Add(TEXT("hisec"), TEXT("Hi-Sec Auto Tracking"), TEXT("+1 range for the bunker and siege tanks."), { TEXT("btn-upgrade-terran-hisecautotracking") }, { 150 });
+		Add(TEXT("vehicle"), TEXT("Vehicle Weapons"), TEXT("+5 (+3 armoured) siege tank damage."), { TEXT("btn-upgrade-terran-vehicleweaponslevel1") }, { 115, 170, 225, 300, 395, 490, 600, 715, 865, 1015 });
+		Add(TEXT("medivac"), TEXT("Medivac on Station"), TEXT("Heals bunker infantry 9 HP/s so they can stim again."), { TEXT("btn-ability-terran-heal") }, { 150 });
+		Add(TEXT("rails"), TEXT("Magnetic Rails"), TEXT("+2 range for the troops in the bunker."), { TEXT("btn-upgrade-terran-magrailmunitions") }, { 225 });
 		return Out;
 	}
 }
@@ -251,12 +251,73 @@ namespace
 	TArray<FBSTechCard> MakeTech()
 	{
 		return {
-			{ TEXT("goliath"), TEXT("Goliath"), TEXT("btn-unit-terran-goliath"), TEXT("vehicle"), TEXT("GOLIATHS") },
-			{ TEXT("nuke"), TEXT("Tactical Nuke"), TEXT("btn-ability-terran-nuclearstrike"), TEXT("weapons"), TEXT("TACTICAL NUKE") },
-			{ TEXT("vikings"), TEXT("Viking Wing"), TEXT("btn-unit-terran-vikingfighter"), TEXT("systems"), TEXT("VIKING WING") },
-			{ TEXT("thor"), TEXT("Thor"), TEXT("btn-unit-terran-thor"), TEXT("plating"), TEXT("THOR") },
-			{ TEXT("bc"), TEXT("Battlecruiser"), TEXT("btn-unit-terran-battlecruiser"), TEXT("all"), TEXT("BATTLECRUISER ON STATION") },
-			{ TEXT("odin"), TEXT("Odin"), TEXT("btn-unit-terran-odin"), TEXT("bc"), TEXT("THE ODIN") },
+			{ TEXT("goliath"), TEXT("Goliath"), TEXT("btn-unit-terran-goliath"), TEXT("GOLIATHS") },
+			{ TEXT("nuke"), TEXT("Tactical Nuke"), TEXT("btn-ability-terran-nuclearstrike"), TEXT("TACTICAL NUKE") },
+			{ TEXT("vikings"), TEXT("Viking Wing"), TEXT("btn-unit-terran-vikingfighter"), TEXT("VIKING WING") },
+			{ TEXT("thor"), TEXT("Thor"), TEXT("btn-unit-terran-thor"), TEXT("THOR") },
+			{ TEXT("bc"), TEXT("Battlecruiser"), TEXT("btn-unit-terran-battlecruiser"), TEXT("BATTLECRUISER ON STATION") },
+			{ TEXT("odin"), TEXT("Odin"), TEXT("btn-unit-terran-odin"), TEXT("THE ODIN") },
+		};
+	}
+
+	// The shop cards; matches BS.CARDS in client/js/units.js.
+	TArray<FBSCardDef> MakeCards()
+	{
+		TArray<FBSCardDef> Out;
+		auto Up = [&Out](const TCHAR* Id, const TCHAR* Rarity, const TCHAR* Req = TEXT("")) -> FBSCardDef&
+		{
+			FBSCardDef& C = Out.AddDefaulted_GetRef(); C.Id = Id; C.Up = Id; C.Rarity = Rarity; C.Req = Req; return C;
+		};
+		auto Card = [&Out](const TCHAR* Id, const TCHAR* Name, const TCHAR* Icon, const TCHAR* Rarity, TArray<int32> Costs, const TCHAR* Desc, const TCHAR* Req = TEXT("")) -> FBSCardDef&
+		{
+			FBSCardDef& C = Out.AddDefaulted_GetRef();
+			C.Id = Id; C.Name = Name; C.Icon = Icon; C.Rarity = Rarity; C.Max = Costs.Num(); C.Costs = MoveTemp(Costs); C.Desc = Desc; C.Req = Req;
+			return C;
+		};
+		Up(TEXT("weapons"), TEXT("common")); Up(TEXT("neosteel"), TEXT("common")); Up(TEXT("plating"), TEXT("common")); Up(TEXT("vehicle"), TEXT("common"), TEXT("tank"));
+		Up(TEXT("stim"), TEXT("common")); Up(TEXT("hisec"), TEXT("rare")); Up(TEXT("medivac"), TEXT("common"), TEXT("stim")); Up(TEXT("rails"), TEXT("epic"), TEXT("hisec"));
+		Card(TEXT("refinery"), TEXT("Refinery"), TEXT("btn-building-terran-refinery"), TEXT("common"), { 100, 150, 200, 250, 300 }, TEXT("+1 mineral a second"));
+		Card(TEXT("shield"), TEXT("Combat Shield"), TEXT("btn-techupgrade-terran-combatshield-color"), TEXT("common"), { 100, 150, 200 }, TEXT("Troopers +10 HP"));
+		Card(TEXT("scvrepair"), TEXT("Advanced Repair"), TEXT("btn-upgrade-swann-scvdoublerepair"), TEXT("common"), { 100, 175 }, TEXT("SCVs repair 50% faster"));
+		Card(TEXT("mule"), TEXT("MULE Drop"), TEXT("btn-unit-terran-mule"), TEXT("rare"), { 150, 200, 250 }, TEXT("+30 minerals as each wave starts"));
+		Card(TEXT("bounty"), TEXT("Bounty Contracts"), TEXT("btn-building-terran-merccompound"), TEXT("rare"), { 175, 250, 325 }, TEXT("Kills pay 15% more"));
+		Card(TEXT("incinerator"), TEXT("Incinerator Gauntlets"), TEXT("btn-upgrade-raynor-incineratorgauntlets"), TEXT("rare"), { 150, 225 }, TEXT("Firebat flames: wider, +2 damage"));
+		Card(TEXT("concussive"), TEXT("Concussive Shells"), TEXT("btn-ability-terran-punishergrenade-color"), TEXT("rare"), { 150, 225 }, TEXT("Marauders: +1 s slow, +4 vs armored"));
+		Card(TEXT("medpacks"), TEXT("Stabilizer Medpacks"), TEXT("btn-upgrade-raynor-stabilizermedpacks"), TEXT("rare"), { 150, 225 }, TEXT("Medivac heals 60% faster"), TEXT("medivac"));
+		Card(TEXT("firesup"), TEXT("Fire-Suppression System"), TEXT("btn-upgrade-swann-firesuppressionsystem"), TEXT("rare"), { 200, 300 }, TEXT("Bunker regenerates 3 HP a second"));
+		Card(TEXT("rotors"), TEXT("Hyperflight Rotors"), TEXT("btn-upgrade-terran-hyperflightrotors"), TEXT("rare"), { 150, 225 }, TEXT("Air strike: +1 banshee, 25% faster refuel"));
+		Card(TEXT("recruit"), TEXT("Recruitment Drive"), TEXT("btn-building-terran-barracks"), TEXT("rare"), { 200, 300 }, TEXT("Troopers cost 15% less"));
+		Card(TEXT("spoils"), TEXT("Spoils of War"), TEXT("btn-ability-terran-salvage"), TEXT("rare"), { 200, 275, 350 }, TEXT("10% interest on banked minerals each shop (up to 50)")).UnlockBest = 10;
+		Card(TEXT("vikings"), TEXT("Starport"), TEXT("btn-building-terran-starport"), TEXT("rare"), { 250 }, TEXT("Viking wing in the armoury")).UnlockBest = 12;
+		{ FBSCardDef& C = Card(TEXT("siegerange"), TEXT("Siege Optics"), TEXT("btn-upgrade-swann-vehiclerangeincrease"), TEXT("epic"), { 300 }, TEXT("Siege tanks +2 range"), TEXT("tank")); C.UnlockBuys = TEXT("vehicle"); C.UnlockBuysN = 3; }
+		{ FBSCardDef& C = Card(TEXT("goliath"), TEXT("Factory"), TEXT("btn-building-terran-factory"), TEXT("epic"), { 300 }, TEXT("Goliaths in the armoury"), TEXT("vehicle2")); C.UnlockBuys = TEXT("vehicle"); C.UnlockBuysN = 5; }
+		{ FBSCardDef& C = Card(TEXT("nuke"), TEXT("Ghost Academy"), TEXT("btn-building-terran-ghostacademy"), TEXT("epic"), { 350 }, TEXT("Tactical nukes in the armoury"), TEXT("weapons3")); C.UnlockBuys = TEXT("weapons"); C.UnlockBuysN = 10; }
+		{ FBSCardDef& C = Card(TEXT("thor"), TEXT("Armory"), TEXT("btn-building-terran-armory"), TEXT("epic"), { 450 }, TEXT("Thors in the armoury"), TEXT("plating3")); C.UnlockBuys = TEXT("plating"); C.UnlockBuysN = 6; }
+		Card(TEXT("bc"), TEXT("Fusion Core"), TEXT("btn-building-terran-fusioncore"), TEXT("legendary"), { 800 }, TEXT("The battlecruiser in the armoury"), TEXT("wave20")).UnlockBest = 25;
+		{ FBSCardDef& C = Card(TEXT("odin"), TEXT("The Odin"), TEXT("btn-unit-terran-odin"), TEXT("legendary"), { 1200 }, TEXT("The Odin in the armoury"), TEXT("bc")); C.UnlockBuys = TEXT("bc"); C.UnlockBuysN = 1; }
+		for (FBSCardDef& C : Out) if (C.Id == TEXT("vikings") || C.Id == TEXT("goliath") || C.Id == TEXT("nuke") || C.Id == TEXT("thor") || C.Id == TEXT("bc") || C.Id == TEXT("odin")) C.Tech = C.Id;
+		return Out;
+	}
+
+	TArray<FBSRarity> MakeRarities()
+	{
+		return {
+			{ TEXT("common"), TEXT("COMMON"), 60, 1, FLinearColor::FromSRGBColor(FColor(0xC9, 0xD4, 0xE0)) },
+			{ TEXT("rare"), TEXT("RARE"), 28, 3, FLinearColor::FromSRGBColor(FColor(0x5F, 0xB4, 0xFF)) },
+			{ TEXT("epic"), TEXT("EPIC"), 10, 8, FLinearColor::FromSRGBColor(FColor(0xC0, 0x8C, 0xFF)) },
+			{ TEXT("legendary"), TEXT("LEGENDARY"), 3, 15, FLinearColor::FromSRGBColor(FColor(0xFF, 0xB3, 0x40)) },
+		};
+	}
+
+	TArray<FBSPerkDef> MakePerks()
+	{
+		return {
+			{ TEXT("minerals"), TEXT("War Chest"), TEXT("btn-building-terran-commandcenter"), TEXT("+50 starting minerals"), { 10, 20, 35, 50, 70 } },
+			{ TEXT("firebat"), TEXT("Veteran Fireteam"), TEXT("btn-unit-terran-firebat"), TEXT("Start with a firebat in the bunker"), { 30 } },
+			{ TEXT("hull"), TEXT("Reinforced Bunker"), TEXT("btn-building-terran-planetaryfortress"), TEXT("+50 bunker HP"), { 15, 30, 45, 60, 80 } },
+			{ TEXT("luck"), TEXT("Field Intelligence"), TEXT("btn-building-terran-sensortower-silver"), TEXT("Rarer cards turn up more often"), { 25, 50, 75 } },
+			{ TEXT("reroll"), TEXT("Logistics"), TEXT("btn-ability-terran-calldownextrasupplies"), TEXT("One free reroll every shop"), { 40, 80 } },
+			{ TEXT("offer"), TEXT("Requisitions"), TEXT("btn-building-terran-merccompound"), TEXT("A fifth card in every shop"), { 100 } },
 		};
 	}
 }
@@ -267,6 +328,16 @@ namespace BSDefs
 	const FBSMechDef* FindMech(const FString& Key) { return Mechs().FindByPredicate([&](const FBSMechDef& D) { return D.Key == Key; }); }
 	const TArray<FBSTechCard>& Tech() { static TArray<FBSTechCard> V = MakeTech(); return V; }
 	const FBSTechCard* FindTech(const FString& Id) { return Tech().FindByPredicate([&](const FBSTechCard& C) { return C.Id == Id; }); }
+	const TArray<FBSCardDef>& Cards() { static TArray<FBSCardDef> V = MakeCards(); return V; }
+	const FBSCardDef* FindCard(const FString& Id) { return Cards().FindByPredicate([&](const FBSCardDef& C) { return C.Id == Id; }); }
+	const FBSRarity& FindRarity(const FString& Key)
+	{
+		static TArray<FBSRarity> V = MakeRarities();
+		const FBSRarity* R = V.FindByPredicate([&](const FBSRarity& X) { return X.Key == Key; });
+		return R ? *R : V[0];
+	}
+	const TArray<FBSPerkDef>& Perks() { static TArray<FBSPerkDef> V = MakePerks(); return V; }
+	const FBSPerkDef* FindPerk(const FString& Id) { return Perks().FindByPredicate([&](const FBSPerkDef& P) { return P.Id == Id; }); }
 	const TArray<FBSZergDef>& Zerg() { static TArray<FBSZergDef> V = MakeZerg(); return V; }
 	const FBSZergDef* FindZerg(const FString& Key) { return Zerg().FindByPredicate([&](const FBSZergDef& D) { return D.Key == Key; }); }
 	const TArray<FBSInfantryDef>& Infantry() { static TArray<FBSInfantryDef> V = MakeInfantry(); return V; }

@@ -25,6 +25,8 @@ const BS = loadGameData();
 const icons = new Set();
 for (const d of Object.values(BS.INFANTRY)) icons.add(d.icon);
 for (const u of Object.values(BS.UPGRADES)) { if (u.icon) icons.add(u.icon); (u.icons || []).forEach(i => icons.add(i)); }
+for (const c of BS.CARDS) if (c.icon) icons.add(c.icon);                 // shop cards
+for (const p of BS.META.perks) icons.add(p.icon);                         // Hyperion perks
 ['btn-unit-terran-scv', 'btn-unit-terran-siegetank', 'btn-unit-terran-banshee', 'btn-ability-terran-repair', 'btn-ability-terran-stimpack',
  'btn-unit-zerg-zergling', 'btn-unit-zerg-baneling', 'btn-unit-zerg-roach', 'btn-unit-zerg-hydralisk', 'btn-unit-zerg-mutalisk',
  'btn-unit-zerg-lurker', 'btn-unit-zerg-ultralisk', 'btn-unit-zerg-broodlord',

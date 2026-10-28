@@ -384,27 +384,87 @@ window.BS = window.BS || {};
 
   // costs: one entry per level (the last level is the max).
   BS.UPGRADES = {
-    stim: { name: 'Stimpack', icons: ['btn-ability-terran-stimpack'], costs: [100], short: 'Unlocks STIM ability' },
-    weapons: { name: 'Infantry Weapons', icons: ['btn-upgrade-terran-infantryweaponslevel1', 'btn-upgrade-terran-infantryweaponslevel2', 'btn-upgrade-terran-infantryweaponslevel3'], costs: [100, 175, 250, 350, 475, 600, 750, 900, 1100, 1300], short: '+1 infantry damage' },
-    neosteel: { name: 'Neosteel Frame', icons: ['btn-upgrade-terran-neosteelframe'], costs: [150], short: 'Bunker holds six' },
-    plating: { name: 'Building Armor', icons: ['btn-upgrade-terran-buildingarmor'], costs: [250, 350, 450, 600, 800, 1000, 1200, 1400], short: '+150 HP per level' },
-    hisec: { name: 'Hi-Sec Auto Tracking', icons: ['btn-upgrade-terran-hisecautotracking'], costs: [200], short: '+1 range, bunker and tanks' },
-    vehicle: { name: 'Vehicle Weapons', icons: ['btn-upgrade-terran-vehicleweaponslevel1'], costs: [150, 225, 300, 400, 525, 650, 800, 950, 1150, 1350], short: '+5 tank damage' },
-    medivac: { name: 'Medivac on Station', icons: ['btn-ability-terran-heal'], costs: [200], short: 'Heals troops and SCVs' },
-    rails: { name: 'Magnetic Rails', icons: ['btn-upgrade-terran-magrailmunitions'], costs: [300], short: '+2 bunker range' },
+    stim: { name: 'Stimpack', icons: ['btn-ability-terran-stimpack'], costs: [75], short: 'Unlocks STIM ability' },
+    weapons: { name: 'Infantry Weapons', icons: ['btn-upgrade-terran-infantryweaponslevel1', 'btn-upgrade-terran-infantryweaponslevel2', 'btn-upgrade-terran-infantryweaponslevel3'], costs: [75, 130, 190, 265, 355, 450, 565, 675, 825, 975], short: '+1 infantry damage' },
+    neosteel: { name: 'Neosteel Frame', icons: ['btn-upgrade-terran-neosteelframe'], costs: [115], short: 'Bunker holds six' },
+    plating: { name: 'Building Armor', icons: ['btn-upgrade-terran-buildingarmor'], costs: [190, 265, 340, 450, 600, 750, 900, 1050], short: '+150 HP per level' },
+    hisec: { name: 'Hi-Sec Auto Tracking', icons: ['btn-upgrade-terran-hisecautotracking'], costs: [150], short: '+1 range, bunker and tanks' },
+    vehicle: { name: 'Vehicle Weapons', icons: ['btn-upgrade-terran-vehicleweaponslevel1'], costs: [115, 170, 225, 300, 395, 490, 600, 715, 865, 1015], short: '+5 tank damage' },
+    medivac: { name: 'Medivac on Station', icons: ['btn-ability-terran-heal'], costs: [150], short: 'Heals troops and SCVs' },
+    rails: { name: 'Magnetic Rails', icons: ['btn-upgrade-terran-magrailmunitions'], costs: [225], short: '+2 bunker range' },
   };
 
-  // Surprise cards: each appears in the armoury once its tech tree is maxed out. Trees: 'weapons', 'vehicle',
-  // 'plating' (all levels), 'systems' (Stimpack, Neosteel, Hi-Sec, Magnetic Rails, Medivac on Station), 'all' (every
-  // tree), 'bc' (the battlecruiser is on station).
+  // High-tech reinforcements: a shop card puts each in the armoury (see BS.CARDS), where it is bought like a trooper.
   BS.TECH = [
-    { id: 'goliath', name: 'Goliath', icon: 'btn-unit-terran-goliath', unlock: 'vehicle', banner: 'GOLIATHS' },
-    { id: 'nuke', name: 'Tactical Nuke', icon: 'btn-ability-terran-nuclearstrike', unlock: 'weapons', banner: 'TACTICAL NUKE' },
-    { id: 'vikings', name: 'Viking Wing', icon: 'btn-unit-terran-vikingfighter', unlock: 'systems', banner: 'VIKING WING' },
-    { id: 'thor', name: 'Thor', icon: 'btn-unit-terran-thor', unlock: 'plating', banner: 'THOR' },
-    { id: 'bc', name: 'Battlecruiser', icon: 'btn-unit-terran-battlecruiser', unlock: 'all', banner: 'BATTLECRUISER ON STATION' },
-    { id: 'odin', name: 'Odin', icon: 'btn-unit-terran-odin', unlock: 'bc', banner: 'THE ODIN' },
+    { id: 'goliath', name: 'Goliath', icon: 'btn-unit-terran-goliath', banner: 'GOLIATHS' },
+    { id: 'nuke', name: 'Tactical Nuke', icon: 'btn-ability-terran-nuclearstrike', banner: 'TACTICAL NUKE' },
+    { id: 'vikings', name: 'Viking Wing', icon: 'btn-unit-terran-vikingfighter', banner: 'VIKING WING' },
+    { id: 'thor', name: 'Thor', icon: 'btn-unit-terran-thor', banner: 'THOR' },
+    { id: 'bc', name: 'Battlecruiser', icon: 'btn-unit-terran-battlecruiser', banner: 'BATTLECRUISER ON STATION' },
+    { id: 'odin', name: 'Odin', icon: 'btn-unit-terran-odin', banner: 'THE ODIN' },
   ];
+
+  // The shop. Every cleared wave (Game.endWave) pauses the fight and offers `offers` random cards, bought with banked
+  // minerals; troops, tanks, SCVs, turrets and repairs stay in the armoury throughout. A reroll costs reroll[0], reroll[1] more
+  // each time in the same visit. linger: seconds after a wave's last spawn before the shop opens anyway (stragglers wait,
+  // frozen, while you shop). clearBonus: minerals for a wave wiped out, [0] + [1] x wave. research: weight multiplier for
+  // research cards (up), the backbone of every build.
+  BS.SHOP = { offers: 4, reroll: [25, 25], linger: 40, clearBonus: [25, 10], research: 2 };
+  // Rarer cards turn up later (from: first wave they can be offered) and less often (weight). Every offer includes at
+  // least one research card (up) while there is research left.
+  BS.RARITY = {
+    common: { name: 'COMMON', weight: 60, from: 1, color: '#c9d4e0' },
+    rare: { name: 'RARE', weight: 28, from: 3, color: '#5fb4ff' },
+    epic: { name: 'EPIC', weight: 10, from: 8, color: '#c08cff' },
+    legendary: { name: 'LEGENDARY', weight: 3, from: 15, color: '#ffb340' },
+  };
+  // Shop cards. up: research one level of that BS.UPGRADES entry (its costs, icons and text); tech: put that BS.TECH
+  // entry in the armoury; otherwise a passive with `max` levels at cost[level].
+  // req: what this run needs before the card is offered. unlock: what it takes, over all your runs, before the card joins
+  // the pool at all (buys: [card, n] = bought n times in all; best: reach that wave in either mode). See BS.Meta.
+  BS.CARDS = [
+    { id: 'weapons', up: 'weapons', rarity: 'common' },
+    { id: 'neosteel', up: 'neosteel', rarity: 'common' },
+    { id: 'plating', up: 'plating', rarity: 'common' },
+    { id: 'vehicle', up: 'vehicle', rarity: 'common', req: 'tank' },
+    { id: 'stim', up: 'stim', rarity: 'common' },
+    { id: 'hisec', up: 'hisec', rarity: 'rare' },
+    { id: 'medivac', up: 'medivac', rarity: 'common', req: 'stim' },
+    { id: 'rails', up: 'rails', rarity: 'epic', req: 'hisec' },
+    { id: 'refinery', name: 'Refinery', icon: 'btn-building-terran-refinery', rarity: 'common', max: 5, cost: [100, 150, 200, 250, 300], desc: '+1 mineral a second' },
+    { id: 'shield', name: 'Combat Shield', icon: 'btn-techupgrade-terran-combatshield-color', rarity: 'common', max: 3, cost: [100, 150, 200], desc: 'Troopers +10 HP' },
+    { id: 'scvrepair', name: 'Advanced Repair', icon: 'btn-upgrade-swann-scvdoublerepair', rarity: 'common', max: 2, cost: [100, 175], desc: 'SCVs repair 50% faster' },
+    { id: 'mule', name: 'MULE Drop', icon: 'btn-unit-terran-mule', rarity: 'rare', max: 3, cost: [150, 200, 250], desc: '+30 minerals as each wave starts' },
+    { id: 'bounty', name: 'Bounty Contracts', icon: 'btn-building-terran-merccompound', rarity: 'rare', max: 3, cost: [175, 250, 325], desc: 'Kills pay 15% more' },
+    { id: 'incinerator', name: 'Incinerator Gauntlets', icon: 'btn-upgrade-raynor-incineratorgauntlets', rarity: 'rare', max: 2, cost: [150, 225], desc: 'Firebat flames: wider, +2 damage' },
+    { id: 'concussive', name: 'Concussive Shells', icon: 'btn-ability-terran-punishergrenade-color', rarity: 'rare', max: 2, cost: [150, 225], desc: 'Marauders: +1 s slow, +4 vs armored' },
+    { id: 'medpacks', name: 'Stabilizer Medpacks', icon: 'btn-upgrade-raynor-stabilizermedpacks', rarity: 'rare', max: 2, cost: [150, 225], req: 'medivac', desc: 'Medivac heals 60% faster' },
+    { id: 'firesup', name: 'Fire-Suppression System', icon: 'btn-upgrade-swann-firesuppressionsystem', rarity: 'rare', max: 2, cost: [200, 300], desc: 'Bunker regenerates 3 HP a second' },
+    { id: 'rotors', name: 'Hyperflight Rotors', icon: 'btn-upgrade-terran-hyperflightrotors', rarity: 'rare', max: 2, cost: [150, 225], desc: 'Air strike: +1 banshee, 25% faster refuel' },
+    { id: 'recruit', name: 'Recruitment Drive', icon: 'btn-building-terran-barracks', rarity: 'rare', max: 2, cost: [200, 300], desc: 'Troopers cost 15% less' },
+    { id: 'spoils', name: 'Spoils of War', icon: 'btn-ability-terran-salvage', rarity: 'rare', max: 3, cost: [200, 275, 350], desc: '10% interest on banked minerals each shop (up to 50)', unlock: { best: 10 } },
+    { id: 'vikings', tech: 'vikings', name: 'Starport', icon: 'btn-building-terran-starport', rarity: 'rare', cost: 250, desc: 'Viking wing in the armoury', unlock: { best: 12 } },
+    { id: 'siegerange', name: 'Siege Optics', icon: 'btn-upgrade-swann-vehiclerangeincrease', rarity: 'epic', cost: 300, req: 'tank', desc: 'Siege tanks +2 range', unlock: { buys: ['vehicle', 3] } },
+    { id: 'goliath', tech: 'goliath', name: 'Factory', icon: 'btn-building-terran-factory', rarity: 'epic', cost: 300, req: 'vehicle2', desc: 'Goliaths in the armoury', unlock: { buys: ['vehicle', 5] } },
+    { id: 'nuke', tech: 'nuke', name: 'Ghost Academy', icon: 'btn-building-terran-ghostacademy', rarity: 'epic', cost: 350, req: 'weapons3', desc: 'Tactical nukes in the armoury', unlock: { buys: ['weapons', 10] } },
+    { id: 'thor', tech: 'thor', name: 'Armory', icon: 'btn-building-terran-armory', rarity: 'epic', cost: 450, req: 'plating3', desc: 'Thors in the armoury', unlock: { buys: ['plating', 6] } },
+    { id: 'bc', tech: 'bc', name: 'Fusion Core', icon: 'btn-building-terran-fusioncore', rarity: 'legendary', cost: 800, req: 'wave20', desc: 'The battlecruiser in the armoury', unlock: { best: 25 } },
+    { id: 'odin', tech: 'odin', name: 'The Odin', icon: 'btn-unit-terran-odin', rarity: 'legendary', cost: 1200, req: 'bc', desc: 'The Odin in the armoury', unlock: { buys: ['bc', 1] } },
+  ];
+
+  // Between runs: every run earns vespene (gas per wave cleared, milestone extra every tenth, x arena in the arena), spent
+  // at the Hyperion on permanent perks (costs: one per level). Saved in localStorage by BS.Meta (meta.js).
+  BS.META = {
+    gas: { perWave: 1, milestone: 5, arena: 1.5 },
+    perks: [
+      { id: 'minerals', name: 'War Chest', icon: 'btn-building-terran-commandcenter', desc: '+50 starting minerals', costs: [10, 20, 35, 50, 70] },
+      { id: 'firebat', name: 'Veteran Fireteam', icon: 'btn-unit-terran-firebat', desc: 'Start with a firebat in the bunker', costs: [30] },
+      { id: 'hull', name: 'Reinforced Bunker', icon: 'btn-building-terran-planetaryfortress', desc: '+50 bunker HP', costs: [15, 30, 45, 60, 80] },
+      { id: 'luck', name: 'Field Intelligence', icon: 'btn-building-terran-sensortower-silver', desc: 'Rarer cards turn up more often', costs: [25, 50, 75] },
+      { id: 'reroll', name: 'Logistics', icon: 'btn-ability-terran-calldownextrasupplies', desc: 'One free reroll every shop', costs: [40, 80] },
+      { id: 'offer', name: 'Requisitions', icon: 'btn-building-terran-merccompound', desc: 'A fifth card in every shop', costs: [100] },
+    ],
+  };
 
   // Abilities on the action bar.
   BS.ABILITIES = [

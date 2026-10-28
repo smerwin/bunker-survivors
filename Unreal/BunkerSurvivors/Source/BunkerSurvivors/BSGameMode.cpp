@@ -216,7 +216,7 @@ void ABSGameMode::Tick(float Dt)
 			Game->Minerals += 9000;
 			for (int32 i = 0; i < 52; i++) Game->AddInfantry(i % 3 == 1 ? TEXT("firebat") : i % 3 == 2 ? TEXT("marauder") : TEXT("marine"), false, true);
 			Game->BuildStructure(true); Game->BuildStructure(true); Game->BuildStructure(true); Game->BuildStructure(false);
-			Game->BuyUpgrade(TEXT("stim")); Game->BuyUpgrade(TEXT("hisec")); Game->BuyUpgrade(TEXT("rails"));
+			Game->Research(TEXT("stim")); Game->Research(TEXT("hisec")); Game->Research(TEXT("rails"));
 		}
 		else if (SquadStep == 1 && Game->Time > 10.f)
 		{

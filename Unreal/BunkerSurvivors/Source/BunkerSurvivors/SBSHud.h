@@ -1,5 +1,5 @@
-// HUD: start screen, command strip, squad card, ability tiles, armoury, banners, world overlay and all player
-// input (touch, mouse, keyboard). Pure Slate with custom painting; the layout adapts to portrait and landscape.
+// HUD: start screen, the Hyperion (perks between runs), command strip, squad card, ability tiles, armoury, the shop
+// between waves, banners, world overlay and all player input (touch, mouse, keyboard). Pure Slate with custom painting; the layout adapts to portrait and landscape.
 #pragma once
 
 #include "CoreMinimal.h"
@@ -68,6 +68,10 @@ private:
 	TSharedRef<SWidget> BuildArmouryStrip();     // portrait: horizontal cards
 	TSharedRef<SWidget> BuildArmouryColumn();    // landscape: vertical build list
 	TSharedRef<SWidget> BuildModal(bool bGameOver);
+	TSharedRef<SWidget> BuildShop();                 // between waves: the offered cards, reroll, next wave
+	TSharedRef<SWidget> MakeOffer(int32 Index, bool bRow);
+	TSharedRef<SWidget> BuildHyperion();             // start screen: perks bought with vespene, and the card list
+	TSharedRef<SWidget> MakePerk(int32 Index);
 	TSharedRef<SWidget> MakeAbility(int32 Index);
 	TSharedRef<SWidget> MakeArmouryCard(int32 Index);
 	TSharedRef<SWidget> MakeArmouryRow(int32 Index);
@@ -89,6 +93,7 @@ private:
 	TArray<double> SegmentLostAt;
 	float BcLastHp = 0; double BcHitAt = -10;     // battlecruiser hull bar: flashes when the ship is hit
 	bool bArmouryOpen = true;
+	bool bHyperion = false;                      // the Hyperion panel is open over the start screen
 	TSharedPtr<SWidget> SquadCard;
 
 	// Input state.

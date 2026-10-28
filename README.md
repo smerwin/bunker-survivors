@@ -124,16 +124,18 @@ npm start
 
 ## How to play
 
-Zerg pour down the lane toward your bunker. Every kill pays minerals; spend them between and during waves. Every
-fifth wave is a heavy assault. When the bunker falls, the run is over.
+Zerg pour down the lane toward your bunker. Every kill pays minerals. During a wave you spend them in the armoury on
+troops, tanks, SCVs, turrets and repairs; once a wave is beaten the fight pauses for the shop, where your banked
+minerals buy research and other upgrades from a few random cards. Every fifth wave is a heavy assault. When the bunker
+falls, the run is over, and the vespene it earned buys permanent perks at the Hyperion for the runs after.
 
 **The road to wave 100.** Early waves ramp up steadily. Past wave 16 the swarm stops simply getting bigger
 and starts getting stranger: from wave 20 it evolves on its own (one more late-game strain every ten waves, on top of
 whatever your tech provokes), more zerg can be on the field at once (160 rising to 200 by wave 60), and every tenth
 wave from 30 is a named assault: an ultralisk stampede (30), an air armada (40), a lone leviathan (50), drop pods all
 round the base (60), a nydus breach (70), a defiler-led lurker siege (80) and the old brood in force (90), before
-Kerrigan herself at 100. In bot playtests a player who has the whole tech tree out by about wave 25 gets into the
-70s; near-perfect play reaches the finale.
+Kerrigan herself at 100. In bot playtests a fresh profile gets to waves 23-55 in the lane and 15-19 in the arena;
+Hyperion perks carry you further.
 
 **The lane** is a Y-shaped chokepoint: zerg come down from the north and along the north-east and north-west arms.
 Ranged zerg sometimes climb the ramps to the ledges overlooking the bunker, where they get extra reach and a third of
@@ -164,26 +166,77 @@ When the bunker is full, new recruits stand behind it, up to 48.
 | Missile turret (100) | Anti-air only. Up to three. |
 | Sensor tower (125) | The radar only works while one stands. |
 | Siege tank (300 for the first two, then +100 each) | Air-dropped; long-range splash against ground. Up to four. A destroyed tank can be replaced. |
-| Upgrades | Infantry Weapons, Vehicle Weapons and Building Armor (many levels), Stimpack, Neosteel Frame (six slots), Hi-Sec Auto Tracking (+1 range), Magnetic Rails (+2 bunker range; needs Hi-Sec), Medivac on Station (heals soldiers and SCVs; needs Stimpack). |
 
-**High-tech reinforcements.** Max out a tech tree and a surprise card appears at the front of the armoury:
+**The shop.** A wave ends once all of it has come and its zerg are dead (or 40 s after the last one arrived: the
+stragglers wait, frozen). You get a clear bonus (25 + 10 a wave, if the field is clear), then the fight pauses and the
+shop offers four random cards. Buy any you can afford (prices are in minerals), reroll the offer (25, then 25 more each
+time in the same visit), and hit NEXT WAVE. The armoury stays open while you shop. Keys: `1`-`5` buy, `X` rerolls,
+`Enter` or `Space` starts the next wave.
 
-| Card | Unlocked by | What it does |
+Rarer cards turn up later and less often: common from wave 1, rare from 3, epic from 8, legendary from 15. Every offer
+starts with a research card while there is research left, and research cards turn up twice as often as their rarity
+alone would give.
+
+| Card | Rarity | What it does |
 | --- | --- | --- |
-| Goliath (250, up to 4) | Vehicle Weapons maxed | Walkers at the bunker's shoulders: autocannons against ground, missiles against air. |
-| Tactical Nuke (400) | Infantry Weapons maxed | A ghost calls a nuke on the densest pack clear of the bunker. 45 s to reload. |
-| Viking Wing (300) | every bunker system (Stimpack, Neosteel, Hi-Sec, Magnetic Rails, Medivac) | Four fighters patrol overhead for 20 s, hunting air. |
-| Thor (600, up to 2) | Building Armor maxed | Heavy walkers firing long-range from behind the bunker. |
-| Battlecruiser (1500) | every tree maxed | Parks nose-south over the fork of the lane. As in StarCraft II, its laser batteries fire rapid amber bolts along six hardpoints (8 against ground, 5 against air), taking scourge (then devourers) first, a little beyond their usual range; missile pods fire at air only, and the Yamato charges at the bow for two seconds before it fires. |
-| Odin (2500) | the battlecruiser on station | Heavy artillery from behind the bunker. |
+| Infantry Weapons, Vehicle Weapons, Building Armor | common | One level of that research (many levels; Vehicle Weapons once you have a tank). |
+| Stimpack, Neosteel Frame, Medivac on Station | common | Unlock STIM; bunker holds six; a medivac heals the troops (needs Stimpack). |
+| Hi-Sec Auto Tracking / Magnetic Rails | rare / epic | +1 range for the bunker and tanks / +2 bunker range (needs Hi-Sec). |
+| Refinery | common, 5 levels | +1 mineral a second. |
+| Combat Shield | common, 3 levels | Troopers +10 HP. |
+| Advanced Repair | common, 2 levels | SCVs repair 50% faster. |
+| MULE Drop | rare, 3 levels | +30 minerals as each wave starts. |
+| Bounty Contracts | rare, 3 levels | Kills pay 15% more. |
+| Incinerator Gauntlets | rare, 2 levels | Firebat flames reach 40% wider and do +2 damage. |
+| Concussive Shells | rare, 2 levels | Marauder grenades slow 1 s longer and do +4 to armoured zerg. |
+| Stabilizer Medpacks | rare, 2 levels | The medivac heals 60% faster. |
+| Fire-Suppression System | rare, 2 levels | The bunker regenerates 3 HP a second. |
+| Hyperflight Rotors | rare, 2 levels | Air strike: one more banshee and 25% faster refuelling. |
+| Recruitment Drive | rare, 2 levels | Troopers cost 15% less. |
+| Spoils of War | rare, 3 levels | 10% interest on banked minerals at each shop (up to 50 a level). Unlocked by clearing wave 10. |
+| Starport | rare | Puts the viking wing in the armoury. Unlocked by clearing wave 12. |
+| Siege Optics | epic | Siege tanks +2 range. Unlocked by buying Vehicle Weapons 3 times. |
+| Factory | epic | Puts goliaths in the armoury (needs Vehicle Weapons 2). Unlocked by buying Vehicle Weapons 5 times. |
+| Ghost Academy | epic | Puts the tactical nuke in the armoury (needs Infantry Weapons 3). Unlocked by buying Infantry Weapons 10 times. |
+| Armory | epic | Puts thors in the armoury (needs Building Armor 3). Unlocked by buying Building Armor 6 times. |
+| Fusion Core | legendary | Puts the battlecruiser in the armoury (from wave 20). Unlocked by clearing wave 25. |
+| The Odin | legendary | Puts the Odin in the armoury (needs the Fusion Core). Unlocked by buying the Fusion Core once. |
 
-**Forward base** (lane). Max everything out (every tree researched, the battlecruiser on station, the Odin in position and
-no room for more troops) and the army expands onto the plateau east of the stem: the Odin, the goliaths and 16 troopers
+"Bought n times" counts every run you have played, so the deeper cards open up as you go.
+
+**High-tech reinforcements.** Once a shop card has put them in the armoury, they are bought like troops:
+
+| Unit | What it does |
+| --- | --- |
+| Goliath (250, up to 4) | Walkers at the bunker's shoulders: autocannons against ground, missiles against air. |
+| Tactical Nuke (400) | A ghost calls a nuke on the densest pack clear of the bunker. 45 s to reload. |
+| Viking Wing (300) | Four fighters patrol overhead for 20 s, hunting air. |
+| Thor (600, up to 2) | Heavy walkers firing long-range from behind the bunker. |
+| Battlecruiser (1500) | Parks nose-south over the fork of the lane. As in StarCraft II, its laser batteries fire rapid amber bolts along six hardpoints (8 against ground, 5 against air), taking scourge (then devourers) first, a little beyond their usual range; missile pods fire at air only, and the Yamato charges at the bow for two seconds before it fires. |
+| Odin (2500) | Heavy artillery from behind the bunker. |
+
+**The Hyperion.** Between runs, the Hyperion button on the start screen spends vespene on permanent perks. A run
+earns one vespene a wave cleared, five more every tenth wave, and half as much again in the arena. The Hyperion also
+lists every shop card, and what unlocks the ones you have not seen yet.
+
+| Perk | Levels | What it does |
+| --- | --- | --- |
+| War Chest | 5 (10, 20, 35, 50, 70) | +50 starting minerals a level. |
+| Veteran Fireteam | 1 (30) | A firebat joins the starting marines. |
+| Reinforced Bunker | 5 (15, 30, 45, 60, 80) | +50 bunker HP a level. |
+| Field Intelligence | 3 (25, 50, 75) | Rarer cards turn up more often. |
+| Logistics | 2 (40, 80) | A free reroll at every shop, per level. |
+| Requisitions | 1 (100) | A fifth card in every shop. |
+
+The browser keeps this in its own storage, the Unreal build in its user settings; they are separate.
+
+**Forward base** (lane). Max everything out (the battlecruiser on station, the Odin in position and no room for more
+troops) and the army expands onto the plateau east of the stem: the Odin, the goliaths and 16 troopers
 go up the arm's ramp and clear it, then an SCV builds a command center there that mines 3 minerals a second. Troopers on
 the high ground get +1 range and never miss for firing uphill. Lose the battlecruiser or the Odin, or drop below 24
 troopers outside, and they fall back to the bunker.
 
-**The Swarm answers.** Every tech card you unlock brings stranger zerg into the waves, and more of them:
+**The Swarm answers.** Every high-tech unit you put in the armoury brings stranger zerg into the waves, and more of them:
 
 | Zerg | What it does |
 | --- | --- |
@@ -216,6 +269,7 @@ look all the way round and pinch to zoom. Tap it again for the overhead view.
 | Reset camera | double-tap | double-click or `Home` |
 | Bunker view on / off | tap the bunker picture | `V` |
 | Stim / Air strike / Repair / Yamato | ability buttons | `S` / `A` / `R` / `Y` |
+| Shop: buy / reroll / next wave | tap a card / REROLL / NEXT WAVE | `1`-`5` / `X` / `Enter` or `Space` |
 | Pause | pause button | `P` or `Esc` |
 | Rotate camera (arena) | two-finger twist (Unreal) | `Q` / `E` |
 | Start lane / arena | mode buttons | `1` / `2` |

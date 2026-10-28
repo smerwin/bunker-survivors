@@ -36,12 +36,15 @@ window.BS = window.BS || {};
       this.hard = this.mode === 'arena';
       this.time = 0; this.acc = 0; this.step = 1 / 60;
       this.paused = false; this.over = false; this.started = false;
-      this.minerals = 150; this.income = 2; this.kills = 0; this.score = 0;
+      this.minerals = 150 + 50 * BS.Meta.perk('minerals'); this.income = 2; this.kills = 0; this.score = 0;
+      this.shop = null; this.lingerT = 0; this.wavesCleared = 0;
+      this.cards = {};                                              // passive shop cards: levels
       this.wave = 0; this.waveTimer = 8; this.waveLen = 30; this.spawnQueue = []; this.spawnTimer = 0;
       this.enemies = []; this.corpses = []; this.projectiles = []; this.floaters = []; this.walkers = []; this.drops = []; this.flashes = [];
       this.focus = null; this.focusUntil = 0; this.shake = 0;
       this.toasts = []; this.waveBanner = null;
-      this.bunker = { x: 0, y: 0, yaw: Math.PI / 2, hp: T().bunker.hp, maxHp: T().bunker.hp, armor: T().bunker.armor, slots: T().bunker.slots, units: [], handle: null, dead: false, flash: 0 };
+      const hull = T().bunker.hp + 50 * BS.Meta.perk('hull');
+      this.bunker = { x: 0, y: 0, yaw: Math.PI / 2, hp: hull, maxHp: hull, armor: T().bunker.armor, slots: T().bunker.slots, units: [], handle: null, dead: false, flash: 0 };
       this.tanks = []; this.scvs = []; this.banshees = []; this.squad = []; this.structures = []; this.squadDeaths = []; this.boundTeam = 0; this.boundT = 0; this.nextTeam = 0;
       this.up = { stim: 0, weapons: 0, vehicle: 0, neosteel: 0, plating: 0, hisec: 0, medivac: 0, rails: 0 };
       this.ab = { stimUntil: 0, stimCd: 0, strikeCd: 0, repairCd: 0, yamatoCd: 0 };
@@ -102,6 +105,7 @@ window.BS = window.BS || {};
     // Three marines double-time it into the bunker while the first wave gathers.
     beginOpening() {
       for (let i = 0; i < 3; i++) this.addWalker('marine', -3.3 + i * 0.25, 3.0 + i * 0.9, 0.5 + i * 0.45);
+      if (BS.Meta.perk('firebat')) this.addWalker('firebat', 3.2, 3.4, 1.2);       // Veteran Fireteam
     }
     addWalker(type, x, y, delay) {
       const w = { def: BS.INFANTRY[type], type, x, y, delay: delay || 0, walking: false, handle: this.r.spawn(type, x, y, 0, -Math.PI / 4).setTeam(1) };
@@ -114,7 +118,7 @@ window.BS = window.BS || {};
     addInfantry(type, free) {
       const d = BS.INFANTRY[type];
       if (this.troopsFull()) return this.toast('No room for more troops');
-      if (!free) { if (this.minerals < d.cost) return this.toast('Not enough minerals'); this.minerals -= d.cost; }
+      if (!free) { const cost = this.troopCost(type); if (this.minerals < cost) return this.toast('Not enough minerals'); this.minerals -= cost; }
       // Ride along with a medivac that is still inbound, or call a new one.
       const ride = this.drops.find(dr => dr.state === 'incoming' && dr.cargo.length < 4);
       if (ride) { ride.cargo.push(type); return true; }
@@ -151,7 +155,7 @@ window.BS = window.BS || {};
         // Bunker full: fall in behind it instead.
         if (!this.bunker.dead && this.bunker.units.length + this.walkers.filter(o => o !== w && o.delay <= 0 && !o.outside).length >= this.bunker.slots && this.squad.length < T().squad.max) {
           w.outside = true;
-          this.joinSquad(w.type, w.def.hp, w.x, w.y, w.handle);
+          this.joinSquad(w.type, this.trooperHp(w.type), w.x, w.y, w.handle);
           this.walkers.splice(i, 1); continue;
         }
         // Head for the nearest side hatch.
@@ -159,7 +163,8 @@ window.BS = window.BS || {};
         const dx = hx - w.x, dy = hy - w.y, dd = Math.hypot(dx, dy);
         if (dd < 0.3 || this.bunker.dead) {
           if (!this.bunker.dead && this.bunker.units.length < this.bunker.slots) {
-            this.bunker.units.push({ type: w.type, def: w.def, hp: w.def.hp, maxHp: w.def.hp, cd: Math.random() * 0.3 });
+            const hp = this.trooperHp(w.type);
+            this.bunker.units.push({ type: w.type, def: w.def, hp, maxHp: hp, cd: Math.random() * 0.3 });
             this.bunker.handle.play(/^stand work/i, true);
             this.floater(0, 0, 3, '+' + w.def.name, '#7fd8ff');
           }
@@ -216,7 +221,7 @@ window.BS = window.BS || {};
     joinSquad(type, hp, x, y, handle) {
       const def = BS.INFANTRY[type], spot = this.freeSquadSpot();
       if (!spot) { if (handle) handle.release(); return null; }
-      const m = { type, def, hp, maxHp: def.hp, cd: Math.random() * 0.3, x, y, yaw: -Math.PI / 2, spot, boarding: false, anim: '', dead: false, flash: 0, radius: 0.375,
+      const m = { type, def, hp, maxHp: this.trooperHp(type), cd: Math.random() * 0.3, x, y, yaw: -Math.PI / 2, spot, boarding: false, anim: '', dead: false, flash: 0, radius: 0.375,
         team: this.nextTeam, retreatUntil: 0 };
       this.nextTeam ^= 1;                       // alternate fire teams
       m.handle = handle || this.r.spawn(type, x, y, 0, m.yaw).setTeam(1);
@@ -431,14 +436,14 @@ window.BS = window.BS || {};
     }
 
     // ---- Forward base on the high ground ----------------------------------------------------------------
-    // Lane only. Once the army is maxed out - every tree researched, the battlecruiser on station, the Odin in position and
-    // a full squad - it expands onto the plateau east of the stem: the Odin, the goliaths and a detachment of troopers go up
+    // Lane only. Once the army is maxed out - the battlecruiser on station, the Odin in position and a full squad - it
+    // expands onto the plateau east of the stem: the Odin, the goliaths and a detachment of troopers go up
     // the stem, into the arm and up its ramp (BS.Terrain.ledgeRoute), clear the plateau, then an SCV builds a command
     // center there. The base mines minerals, and troopers up there outrange the lane (+1) and never miss for firing
     // uphill. If the battlecruiser or the Odin is lost, or the squad is cut down below expand.minSquad, they fall back.
     expandReady() {
       const odin = this.mechs.find(m => m.kind === 'odin');
-      return !!this.fwdRoute && this.treeMaxed('all') && !!this.bc && this.bc.state === 'station' && !!odin && odin.state === 'ready' && this.troopsFull();
+      return !!this.fwdRoute && !!this.bc && this.bc.state === 'station' && !!odin && odin.state === 'ready' && this.troopsFull();
     }
     expandHolds() { return !!this.bc && this.mechs.some(m => m.kind === 'odin') && this.squad.length >= T().expand.minSquad; }
     fwdUnits() { return this.squad.filter(m => m.fwd).concat(this.mechs.filter(m => m.fwd), this.scvs.filter(s => s.fwd)); }
@@ -572,11 +577,9 @@ window.BS = window.BS || {};
       if (id === 'rails' && !this.up.hisec) return false;
       return this.upgradeLevel(id) < BS.UPGRADES[id].costs.length;
     }
-    buyUpgrade(id) {
+    // One level of research (bought as a shop card).
+    research(id) {
       if (!this.upgradeAvailable(id)) return false;
-      const cost = this.upgradeCost(id);
-      if (this.minerals < cost) return this.toast('Not enough minerals');
-      this.minerals -= cost;
       const up = this.up; up[id]++;
       switch (id) {
         case 'stim': this.toast('Stimpack researched - hit STIM'); break;
@@ -588,27 +591,114 @@ window.BS = window.BS || {};
         case 'medivac': this.toast('Medivac on station'); break;
         case 'rails': this.toast('Magnetic rails fitted: +2 bunker range'); break;
       }
-      this.checkTech();
       return true;
     }
 
-    // ---- High-tech reinforcements -------------------------------------------------------------------------
-    // Surprise cards: each appears once its tech tree is maxed out (see BS.TECH).
-    treeMaxed(tree) {
-      const maxed = id => this.upgradeLevel(id) >= BS.UPGRADES[id].costs.length;
-      if (tree === 'systems') return ['stim', 'neosteel', 'hisec', 'rails', 'medivac'].every(maxed);
-      if (tree === 'all') return ['weapons', 'vehicle', 'plating', 'systems'].every(t => this.treeMaxed(t));
-      if (tree === 'bc') return !!this.bc;
-      return maxed(tree);
+    // ---- The shop, between waves --------------------------------------------------------------------------
+    // A wave ends once all of it has spawned and its zerg are dead (or BS.SHOP.linger seconds after the last spawn, the
+    // stragglers left frozen on the field): clear bonus, interest, then the shop pauses the fight until NEXT WAVE.
+    endWave() {
+      const S = BS.SHOP, cleared = !this.waveAlive();
+      const bonus = cleared ? S.clearBonus[0] + S.clearBonus[1] * this.wave : 0;
+      if (cleared) { this.minerals += bonus; this.score += 100 * this.wave; }
+      const interest = Math.min(50 * this.cardLevel('spoils'), Math.floor(this.minerals * 0.1 * this.cardLevel('spoils')));
+      this.minerals += interest;
+      this.wavesCleared = this.wave;
+      this.shop = { wave: this.wave, bonus, interest, rerolls: 0, free: BS.Meta.perk('reroll'), offers: [] };
+      this.shop.offers = this.rollOffers();
+      this.waveBanner = { text: 'WAVE ' + this.wave + ' CLEARED', t: this.time };
     }
-    checkTech() {
-      for (const c of BS.TECH) {
-        if (this.techUnlocked[c.id] || !this.treeMaxed(c.unlock)) continue;
-        this.techUnlocked[c.id] = true;
-        this.waveBanner = { text: 'NEW TECH  //  ' + c.banner, t: this.time };
-        this.toast(c.name + ' unlocked');
+    closeShop() {
+      if (!this.shop) return;
+      this.shop = null;
+      this.startWave();
+    }
+    card(id) { return BS.CARDS.find(c => c.id === id); }
+    cardLevel(id) {
+      const c = typeof id === 'string' ? this.card(id) : id;
+      if (c.up) return this.up[c.up];
+      if (c.tech) return this.techUnlocked[c.tech] ? 1 : 0;
+      return this.cards[c.id] || 0;
+    }
+    cardMax(c) { return c.up ? BS.UPGRADES[c.up].costs.length : (c.max || 1); }
+    cardCost(c) {
+      if (c.up) return this.upgradeCost(c.up);
+      return Array.isArray(c.cost) ? c.cost[Math.min(this.cardLevel(c), c.cost.length - 1)] : c.cost;
+    }
+    cardName(c) { return c.name || BS.UPGRADES[c.up].name; }
+    cardIcon(c) { if (!c.up) return c.icon; const u = BS.UPGRADES[c.up]; return u.icons[Math.min(this.up[c.up], u.icons.length - 1)]; }
+    cardDesc(c) { return c.desc || BS.UPGRADES[c.up].short; }
+    // What this run needs first (BS.CARDS req).
+    cardReq(c) {
+      const r = c.req;
+      if (!r) return true;
+      if (r === 'tank') return this.tanks.length > 0;
+      if (r === 'stim' || r === 'hisec' || r === 'medivac') return this.up[r] > 0;
+      if (r === 'bc') return !!this.techUnlocked.bc;
+      const m = /^(\w+?)(\d+)$/.exec(r);
+      if (m[1] === 'wave') return this.wave >= +m[2];
+      return this.up[m[1]] >= +m[2];
+    }
+    cardOpen(c) {
+      return BS.Meta.unlocked(c) && this.cardLevel(c) < this.cardMax(c) && this.cardReq(c) && this.wave >= BS.RARITY[c.rarity].from;
+    }
+    // Weighted by rarity (Field Intelligence shifts weight from common cards to the rarer ones); no repeats in one offer,
+    // and the first card is always research while there is any left.
+    rollOffers() {
+      const luck = BS.Meta.perk('luck'), n = BS.SHOP.offers + BS.Meta.perk('offer');
+      const wt = c => BS.RARITY[c.rarity].weight * (c.rarity === 'common' ? 1 - 0.15 * luck : 1 + 0.3 * luck) * (c.up ? BS.SHOP.research : 1);
+      const pool = BS.CARDS.filter(c => this.cardOpen(c)), out = [];
+      while (out.length < n && pool.length) {
+        const from = out.length || !pool.some(c => c.up) ? pool : pool.filter(c => c.up);
+        let roll = Math.random() * from.reduce((s, c) => s + wt(c), 0);
+        let i = 0;
+        for (; i < from.length - 1; i++) { roll -= wt(from[i]); if (roll <= 0) break; }
+        out.push({ id: from[i].id, bought: false });
+        pool.splice(pool.indexOf(from[i]), 1);
       }
+      return out;
     }
+    rerollCost() { const s = this.shop; return s.free > 0 ? 0 : BS.SHOP.reroll[0] + BS.SHOP.reroll[1] * s.rerolls; }
+    reroll() {
+      const s = this.shop;
+      if (!s) return false;
+      const cost = this.rerollCost();
+      if (this.minerals < cost) return this.toast('Not enough minerals');
+      this.minerals -= cost;
+      if (s.free > 0) s.free--; else s.rerolls++;
+      s.offers = this.rollOffers();
+      return true;
+    }
+    buyCard(i) {
+      const s = this.shop, o = s && s.offers[i];
+      if (!o || o.bought) return false;
+      const c = this.card(o.id);
+      if (this.cardLevel(c) >= this.cardMax(c)) return false;
+      const cost = this.cardCost(c);
+      if (this.minerals < cost) return this.toast('Not enough minerals');
+      this.minerals -= cost;
+      o.bought = true;
+      this.applyCard(c);
+      for (const u of BS.Meta.recordBuy(c.id)) this.toast('New card unlocked: ' + this.cardName(u));
+      return true;
+    }
+    applyCard(c) {
+      if (c.up) return this.research(c.up);
+      if (c.tech) {
+        this.techUnlocked[c.tech] = true;
+        const t = BS.TECH.find(x => x.id === c.tech);
+        this.waveBanner = { text: 'NEW TECH  //  ' + t.banner, t: this.time };
+        return this.toast(t.name + ' in the armoury');
+      }
+      this.cards[c.id] = (this.cards[c.id] || 0) + 1;
+      if (c.id === 'refinery') this.income += 1;
+      this.toast(this.cardName(c) + (this.cardMax(c) > 1 ? ' level ' + this.cards[c.id] : ''));
+    }
+    troopCost(type) { return Math.round(BS.INFANTRY[type].cost * (1 - 0.15 * this.cardLevel('recruit'))); }
+    trooperHp(type) { return BS.INFANTRY[type].hp + 10 * this.cardLevel('shield'); }
+
+    // ---- High-tech reinforcements -------------------------------------------------------------------------
+    // Shop cards put these in the armoury (see BS.TECH).
     // For the armoury: '' (buyable), 'max' (all out) or 'wait' (cooling down), plus the price.
     techCount(kind) { return this.mechs.filter(m => m.kind === kind).length; }
     techState(id) {
@@ -623,15 +713,15 @@ window.BS = window.BS || {};
       if (id === 'bc') return this.callBattlecruiser();
       return this.addMech(id);
     }
-    // Test helper (?tech=max): research every upgrade (with a tank on the field so Vehicle Weapons can be bought).
+    // Test helper (?tech=max): every card at its top level (with a tank on the field so Vehicle Weapons can be researched).
     grantAllTech() {
       this.minerals += 1e6;
       if (!this.tanks.length) this.dropTank();
-      for (const id of Object.keys(BS.UPGRADES)) for (let guard = 0; guard < 20 && this.upgradeAvailable(id); guard++) this.buyUpgrade(id);
+      for (const c of BS.CARDS) for (let guard = 0; guard < 20 && this.cardLevel(c) < this.cardMax(c); guard++) if (this.applyCard(c) === false) break;
       this.minerals += 20000;
     }
-    // Test helper (?wave=100): the next wave to start is wave n, right away.
-    skipToWave(n) { this.wave = Math.max(0, n - 1); this.waveTimer = 0; }
+    // Test helper (?wave=100): wave n starts right away.
+    skipToWave(n) { this.shop = null; this.wave = Math.max(0, n - 1); this.startWave(); }
 
     // Goliaths, thors and the odin walk in from the south to their posts, then fight with separate anti-ground and
     // anti-air weapons.
@@ -770,7 +860,6 @@ window.BS = window.BS || {};
       this.bc.handle = this.r.spawn('battlecruiser', this.bc.x, this.bc.y, this.bc.z, this.bc.yaw).setTeam(1).setScale(0.75);
       this.bc.handle.play(/^walk|^fly|^stand/i, true);
       this.toast('Battlecruiser inbound');
-      this.checkTech();
       return true;
     }
     updateBc(dt) {
@@ -980,12 +1069,12 @@ window.BS = window.BS || {};
 
     // ---- Abilities ----------------------------------------------------------------------------------
     callAirStrike() {
-      const d = T().banshee;
+      const d = T().banshee, rotors = this.cardLevel('rotors');
       if (this.ab.strikeCd > 0) return this.toast('Air support is refuelling');
       if (this.minerals < d.cost) return this.toast('Not enough minerals');
-      this.minerals -= d.cost; this.ab.strikeCd = d.cooldown;
+      this.minerals -= d.cost; this.ab.strikeCd = this.strikeCooldown();
       const lane = this.mode === 'lane';
-      for (let i = 0; i < d.count; i++) {
+      for (let i = 0; i < d.count + rotors; i++) {
         const post = this.strikePosts[i % this.strikePosts.length];
         const b = { post, x: post[0] * 0.5, y: (lane ? -16 : -34) - i * 1.2, z: d.fly + 1.5, yaw: Math.PI / 2, cd: 0.3 + i * 0.2, state: 'in', t: 0, anim: '', hp: d.hp, maxHp: d.hp };
         b.handle = this.r.spawn('banshee', b.x, b.y, b.z, b.yaw).setTeam(1);
@@ -995,6 +1084,7 @@ window.BS = window.BS || {};
       this.toast('Banshees inbound');
       return true;
     }
+    strikeCooldown() { return T().banshee.cooldown * (1 - 0.25 * this.cardLevel('rotors')); }
     useStim() {
       if (!this.up.stim) return this.toast('Research Stimpack first');
       if (this.ab.stimCd > 0) return false;
@@ -1049,7 +1139,10 @@ window.BS = window.BS || {};
     // ---- Waves ----------------------------------------------------------------------------------------
     startWave() {
       this.wave++;
+      this.lingerT = 0;
       const w = this.wave;
+      const mule = 30 * this.cardLevel('mule');
+      if (mule) { this.minerals += mule; this.floater(0, -3, 2, '+' + mule + ' MULE', '#7fd8ff'); }
       const finale = w === BS.FINALE.wave && !this.finale;
       const WV = BS.WAVES, quad = x => 20 + 8 * x + 0.3 * x * x;
       this.waveLen = Math.round(WV.len[0] + (WV.len[1] - WV.len[0]) * clamp((w - 1) / (WV.lenBy - 1), 0, 1));
@@ -1551,7 +1644,7 @@ window.BS = window.BS || {};
       }
     }
     // Zerg still to beat this wave (creep tumors linger and do not hold up the next one).
-    waveAlive() { return this.enemies.some(e => !e.def.tumor); }
+    waveAlive() { return this.enemies.some(e => !e.def.tumor && !e.def.creeper); }
     // Defiler (alternating dark swarm and plague) and viper (abduct) spells.
     castSpell(e, t) {
       const d = e.def;
@@ -1745,7 +1838,7 @@ window.BS = window.BS || {};
     killEnemy(e, suicide) {
       const d = e.def;
       e.hp = 0;
-      this.kills++; this.minerals += d.bounty; this.score += d.bounty * 2;
+      this.kills++; this.minerals += d.bounty * (1 + 0.15 * this.cardLevel('bounty')); this.score += d.bounty * 2;
       if (d.soundDeath) BS.audio.play(d.soundDeath, { vol: 0.5 });
       if (d.suicide && !suicide && !d.antiAir) this.banelingBlast(e, true);      // a shot-down baneling still bursts (scourge do not)
       const i = this.enemies.indexOf(e); if (i >= 0) this.enemies.splice(i, 1);
@@ -1786,7 +1879,7 @@ window.BS = window.BS || {};
 
     // ---- Update -----------------------------------------------------------------------------------------
     update(dt) {
-      if (this.paused || this.over || !this.started) return;
+      if (this.paused || this.over || !this.started || this.shop) return;
       this.acc += Math.min(dt, 0.1);
       let n = 0;
       while (this.acc >= this.step && n++ < 6) { this.tick(this.step); this.acc -= this.step; }
@@ -1799,9 +1892,10 @@ window.BS = window.BS || {};
       for (const k of ['stimCd', 'strikeCd', 'repairCd', 'yamatoCd']) this.ab[k] = Math.max(0, this.ab[k] - dt);
       for (const k of ['nuke', 'vikings']) this.techCd[k] = Math.max(0, this.techCd[k] - dt);
       this.waveTimer -= dt;
-      if (this.waveTimer <= 0 || (!this.spawnQueue.length && !this.waveAlive() && this.wave > 0 && this.waveTimer < this.waveLen - 6)) {
-        if (this.wave > 0 && !this.waveAlive()) { this.minerals += 10 + 5 * this.wave; this.score += 100 * this.wave; }
-        this.startWave();
+      if (!this.wave) { if (this.waveTimer <= 0) this.startWave(); }
+      else if (!this.spawnQueue.length) {
+        this.lingerT += dt;
+        if (!this.waveAlive() || this.lingerT > BS.SHOP.linger) { this.endWave(); return; }
       }
       this.spawnTimer += dt;
       // Due spawns come out in order while there is room on the field; at the alive cap they wait their turn (bosses
@@ -2015,6 +2109,8 @@ window.BS = window.BS || {};
       const b = this.bunker;
       if (b.dead) return;
       const stim = this.ab.stimUntil > this.time;
+      const regen = 3 * this.cardLevel('firesup');
+      if (regen) b.hp = Math.min(b.maxHp, b.hp + regen * dt);
       const bonus = T().bunker.rangeBonus + T().bunker.halfSize + (this.up.hisec ? T().hiSecRange : 0) + (this.up.rails ? T().railsRange : 0) + (this.hard ? 1 : 0);
       if (this.up.medivac) this.updateStation(dt);
       for (const u of b.units) {
@@ -2054,7 +2150,8 @@ window.BS = window.BS || {};
         }
         BS.audio.play('marineFire', { vol: 0.3, gap: 0.09 });
       } else if (u.type === 'firebat') {
-        if (dmg) for (const v of this.enemiesInRange(hx, hy, d.splash, pred)) this.hurtEnemy(v, dmg + (v.def.light ? d.dmgLight : 0), true);
+        const inc = this.cardLevel('incinerator');
+        if (dmg) for (const v of this.enemiesInRange(hx, hy, d.splash * (1 + 0.4 * inc), pred)) this.hurtEnemy(v, dmg + 2 * inc + (v.def.light ? d.dmgLight : 0), true);
         // The flames burn the creep away where they land and along the way.
         this.burnCreep(hx, hy, BS.CREEP.burn.radius, true);
         this.burnCreep((sx + hx) / 2, (sy + hy) / 2, BS.CREEP.burn.radius * 0.6, false);
@@ -2070,11 +2167,12 @@ window.BS = window.BS || {};
     }
     // Medivac on Station: parked at the bunker's shoulder; heals the troops inside and the most hurt SCV nearby.
     updateStation(dt) {
-      for (const u of this.bunker.units) u.hp = Math.min(u.maxHp, u.hp + 9 * dt);
-      for (const m of this.squad) if (!m.dead) m.hp = Math.min(m.maxHp, m.hp + 9 * dt);
+      const heal = 1 + 0.6 * this.cardLevel('medpacks');
+      for (const u of this.bunker.units) u.hp = Math.min(u.maxHp, u.hp + 9 * heal * dt);
+      for (const m of this.squad) if (!m.dead) m.hp = Math.min(m.maxHp, m.hp + 9 * heal * dt);
       let patient = null;
       for (const s of this.scvs) if (!s.dead && s.hp < s.maxHp - 0.5 && dist(0, 0.5, s.x, s.y) < 6 && (!patient || s.hp / s.maxHp < patient.hp / patient.maxHp)) patient = s;
-      if (patient) patient.hp = Math.min(patient.maxHp, patient.hp + 12.6 * dt);
+      if (patient) patient.hp = Math.min(patient.maxHp, patient.hp + 12.6 * heal * dt);
       if (!this.station) { this.station = { yaw: Math.PI / 2, anim: '', animT: 10, h: this.r.spawn('medivac', 1.9, -0.9, 2.7, Math.PI / 2).setTeam(1).setScale(0.75) }; }
       const st = this.station, px = 1.9, py = -0.9;
       const want = patient ? Math.atan2(patient.y - py, patient.x - px) : Math.PI / 2;
@@ -2113,7 +2211,7 @@ window.BS = window.BS || {};
           if (t.medivac) { t.mt += dt; t.my -= 10 * dt; t.mz += 2 * dt; t.medivac.setPos(t.mx, t.my, t.mz); if (t.mt > 3) { t.medivac.release(); t.medivac = null; } }
           t.cd -= dt;
           if (t.cd > 0) continue;
-          const range = D.range + (this.up.hisec ? T().hiSecRange : 0);
+          const range = D.range + (this.up.hisec ? T().hiSecRange : 0) + 2 * this.cardLevel('siegerange');
           const pred = e => !e.def.flying && dist(t.x, t.y, e.x, e.y) > D.minRange;
           let target = null;
           if (this.focus && this.focus.hp > 0 && pred(this.focus) && dist(t.x, t.y, this.focus.x, this.focus.y) <= range) target = this.focus;
@@ -2161,7 +2259,7 @@ window.BS = window.BS || {};
         } else if (job) {
           s.yaw = Math.atan2(job.y - s.y, job.x - s.x);
           if (s.anim !== 'work') { s.anim = 'work'; s.handle.play(/^work/i, true); BS.audio.play('scvRepair', { vol: 0.25, gap: 1.5 }); }
-          const amount = Math.min(D.repairRate * dt, job.obj.maxHp - job.obj.hp, this.minerals / job.cost);
+          const amount = Math.min(D.repairRate * (1 + 0.5 * this.cardLevel('scvrepair')) * dt, job.obj.maxHp - job.obj.hp, this.minerals / job.cost);
           if (amount > 0) { job.obj.hp += amount; this.minerals -= amount * job.cost; }
         } else if (s.anim !== 'stand') { s.anim = 'stand'; s.handle.play(/^stand$/i, true); }
         s.handle.setPos(s.x, s.y, 0).setYaw(s.yaw);
@@ -2235,7 +2333,8 @@ window.BS = window.BS || {};
             BS.audio.play('tankHit', { vol: 0.6, gap: 0.1 });
             this.shake = Math.min(1, this.shake + 0.1);
           } else if (p.kind === 'grenade') {
-            if (p.target && p.target.hp > 0 && p.dmg) { p.target.slowUntil = this.time + p.def.slow; p.target.anim = ''; this.hurtEnemy(p.target, p.dmg + (p.target.def.armored ? p.def.dmgArmored : 0)); }
+            const con = this.cardLevel('concussive');
+            if (p.target && p.target.hp > 0 && p.dmg) { p.target.slowUntil = this.time + p.def.slow + con; p.target.anim = ''; this.hurtEnemy(p.target, p.dmg + (p.target.def.armored ? p.def.dmgArmored + 4 * con : 0)); }
           } else if (p.kind === 'missile') {
             if (p.splash) { for (const v of this.enemiesInRange(p.tx, p.ty, p.splash, p.pred)) this.hurtEnemy(v, p.dmg, true); }
             else if (p.target && p.target.hp > 0) this.hurtEnemy(p.target, p.dmg);
@@ -2344,6 +2443,7 @@ window.BS = window.BS || {};
       BS.audio.play('explosion', { vol: 0.9 });
       this.shake = 1;
       this.finalScore = Math.round(this.score + this.kills * 10 + this.wave * 250);
+      this.metaResult = BS.Meta.endRun(this.mode, this.wavesCleared);
       try {
         const key = 'bs.best.' + this.mode, best = parseInt(localStorage.getItem(key) || '0', 10);
         this.best = Math.max(best, this.finalScore); this.newBest = this.finalScore > best;

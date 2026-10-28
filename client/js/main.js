@@ -1,5 +1,5 @@
-// Bootstrap: start screen over a staged scene, asset preload, input (tap to focus fire, drag to pan,
-// pinch/wheel to zoom), pause and game-over flow, and the main loop.
+// Bootstrap: start screen over a staged scene, the Hyperion (perks between runs), asset preload, input (tap to focus
+// fire, drag to pan, pinch/wheel to zoom), pause and game-over flow, and the main loop.
 window.BS = window.BS || {};
 (function (BS) {
   'use strict';
@@ -29,6 +29,10 @@ window.BS = window.BS || {};
     } catch (e) { /* private mode */ }
     $(isPortrait() ? 'tagLane' : 'tagArena').textContent = isPortrait() ? 'BEST ON PHONE' : 'BEST ON DESKTOP';
     document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => start(b.dataset.mode)));
+    $('hyperionBtn').onclick = () => { renderHyperion(); $('hyperion').classList.remove('hidden'); };
+    $('hyperionClose').onclick = () => $('hyperion').classList.add('hidden');
+    $('perks').onclick = ev => { const el = ev.target.closest('[data-p]'); if (el && BS.Meta.buyPerk(el.dataset.p)) renderHyperion(); };
+    renderHyperion();
     setupInput();
     stageAttract();
     renderer.fx.preload(BS.CORE_FX);
@@ -39,6 +43,25 @@ window.BS = window.BS || {};
     requestAnimationFrame(loop);
     const m = new URLSearchParams(location.search).get('mode');
     if (m === 'lane' || m === 'arena') start(m);
+  }
+
+  // The Hyperion: perks bought with vespene, and every shop card (locked ones say what unlocks them).
+  function renderHyperion() {
+    const s = BS.Meta.state();
+    $('gas').textContent = s.gas;
+    $('gasLine').textContent = s.gas + ' VESPENE';
+    $('perks').innerHTML = BS.META.perks.map(p => {
+      const l = BS.Meta.perk(p.id), cost = BS.Meta.perkCost(p.id);
+      const cls = 'perk' + (cost === null ? ' max' : s.gas < cost ? ' poor' : '');
+      const pips = p.costs.length > 1 ? '<span class="pips">' + p.costs.map((c, i) => '<i' + (i < l ? ' class="on"' : '') + '></i>').join('') + '</span>' : '';
+      return '<button class="' + cls + '" data-p="' + p.id + '"><img src="icon/' + p.icon + '.png" alt=""><span><b>' + p.name.toUpperCase() + '</b><small>' + p.desc + '</small>' + pips + '</span>' +
+        '<span class="cost">' + (cost === null ? 'MAX' : cost) + '</span></button>';
+    }).join('');
+    $('codex').innerHTML = BS.CARDS.map(c => {
+      const open = BS.Meta.unlocked(c), name = BS.Meta.cardName(c), ic = c.icon || BS.UPGRADES[c.up].icons[0];
+      return '<div class="codex' + (open ? '' : ' locked') + '" style="--rc:' + BS.RARITY[c.rarity].color + '"><img src="icon/' + ic + '.png" alt=""><span><b>' + name.toUpperCase() + '</b>' +
+        '<small>' + (open ? (s.buys[c.id] ? 'Bought ' + s.buys[c.id] + 'x' : BS.RARITY[c.rarity].name.toLowerCase()) : BS.Meta.unlockText(c)) + '</small></span></div>';
+    }).join('');
   }
 
   // Web edition, first visit with the folder linked: read every model, effect, sound and icon the game can use into the
@@ -111,7 +134,7 @@ window.BS = window.BS || {};
     const dt = Math.min(0.1, (t - last) / 1000); last = t;
     if (game) {
       game.update(dt);
-      const vdt = game.paused ? 0 : dt;
+      const vdt = game.paused || game.shop ? 0 : dt;
       game.updateVisuals(vdt);
       renderer.shake = game.shake;
       renderer.frame(vdt);
@@ -131,6 +154,8 @@ window.BS = window.BS || {};
     const b = $('overBest');
     b.textContent = game.newBest ? 'NEW BEST' : 'BEST ' + game.best;
     b.classList.toggle('new', !!game.newBest);
+    const mr = game.metaResult;
+    $('overMeta').innerHTML = mr ? '+' + mr.gas + ' VESPENE FOR THE HYPERION' + mr.unlocked.map(c => '<span>NEW CARD: ' + BS.Meta.cardName(c).toUpperCase() + '</span>').join('') : '';
   }
 
   // ---- Input ------------------------------------------------------------------------------------------
@@ -170,6 +195,12 @@ window.BS = window.BS || {};
     window.addEventListener('keydown', ev => {
       if (!game) { if (ev.key === '1') start('lane'); if (ev.key === '2') start('arena'); return; }
       const k = ev.key.toLowerCase();
+      // Shop: 1-4 buy, X rerolls, Enter or Space starts the next wave.
+      if (game.shop) {
+        if (k >= '1' && k <= '4') { game.buyCard(+k - 1); return; }
+        if (k === 'x') { game.reroll(); return; }
+        if (k === 'enter' || k === ' ') { ev.preventDefault(); game.closeShop(); return; }
+      }
       if (k === 'p' || k === 'escape') togglePause();
       else if (k === 'v') hud.toggleView();
       else if (k === 's') game.useStim(); else if (k === 'a') game.callAirStrike(); else if (k === 'r') game.emergencyRepair(); else if (k === 'y') game.useYamato();

@@ -74,9 +74,8 @@ struct FBSMechDef
 	float ADmg = 10, ACd = 1.5f, ARange = 8, ASplash = 0; int32 AShots = 2;
 };
 
-// A surprise armoury card: appears once its tech tree is maxed out. Trees: weapons, vehicle, plating (all levels),
-// systems (Stimpack, Neosteel, Hi-Sec, Magnetic Rails, Medivac on Station), all (every tree), bc (battlecruiser up).
-struct FBSTechCard { FString Id, Name, Icon, Unlock, Banner; };
+// High tech for the armoury: a shop card puts each there (see FBSCardDef), where it is bought like a trooper.
+struct FBSTechCard { FString Id, Name, Icon, Banner; };
 
 struct FBSUpgradeDef
 {
@@ -84,6 +83,24 @@ struct FBSUpgradeDef
 	TArray<FString> Icons;            // one per level (or a single icon)
 	TArray<int32> Costs;              // one per level
 };
+
+// A shop card (see ABSGame::EndWave). Up: one level of that research (its costs, icons and text); Tech: puts that
+// BSDefs::Tech entry in the armoury; otherwise a passive with Max levels at Costs[level]. Req: what this run needs
+// before it is offered ("tank", "stim", "hisec", "medivac", "bc", or a research or "wave" and a number). Unlock: what
+// it takes over all runs before the card joins the pool at all: UnlockBuys bought UnlockBuysN times, or wave
+// UnlockBest cleared (see BSMeta).
+struct FBSCardDef
+{
+	FString Id, Up, Tech, Name, Icon, Desc, Rarity, Req, UnlockBuys;
+	int32 Max = 1, UnlockBuysN = 0, UnlockBest = 0;
+	TArray<int32> Costs;
+};
+
+// Rarer cards turn up later (From: first wave they can be offered) and less often (Weight).
+struct FBSRarity { FString Key, Name; float Weight = 1; int32 From = 1; FLinearColor Color; };
+
+// A perk at the Hyperion, bought with vespene between runs (see BSMeta); Costs: one per level.
+struct FBSPerkDef { FString Id, Name, Icon, Desc; TArray<int32> Costs; };
 
 namespace BSDefs
 {
@@ -97,6 +114,21 @@ namespace BSDefs
 	const FBSMechDef* FindMech(const FString& Key);
 	const TArray<FBSTechCard>& Tech();
 	const FBSTechCard* FindTech(const FString& Id);
+	const TArray<FBSCardDef>& Cards();
+	const FBSCardDef* FindCard(const FString& Id);
+	const FBSRarity& FindRarity(const FString& Key);
+	const TArray<FBSPerkDef>& Perks();
+	const FBSPerkDef* FindPerk(const FString& Id);
+
+	// The shop. Every cleared wave pauses the fight and offers ShopOffers random cards, bought with banked minerals;
+	// troops, tanks, SCVs, turrets and repairs stay in the armoury throughout. A reroll costs RerollCost, RerollStep more
+	// each time in the same visit. ShopLinger: seconds after a wave's last spawn before the shop opens anyway (stragglers
+	// wait, frozen, while you shop). Clear bonus for a wave wiped out: ClearBonusA + ClearBonusB x wave. Research cards
+	// weigh ShopResearchWeight times their rarity, and every offer starts with one while there is research left.
+	constexpr int32 ShopOffers = 4, RerollCost = 25, RerollStep = 25, ClearBonusA = 25, ClearBonusB = 10;
+	constexpr float ShopLinger = 40, ShopResearchWeight = 2;
+	// Between runs: vespene per wave cleared, Milestone more every tenth, x GasArena in the arena.
+	constexpr float GasPerWave = 1, GasMilestone = 5, GasArena = 1.5f;
 
 	// Terran constants.
 	constexpr float BunkerHp = 400, BunkerArmor = 1, BunkerRangeBonus = 1, BunkerHalfSize = 1.5f;

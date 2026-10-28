@@ -4,6 +4,7 @@
 #include "BSAssets.h"
 #include "BSCameraPawn.h"
 #include "BSModelActor.h"
+#include "BSMeta.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Fonts/FontMeasure.h"
 #include "Rendering/DrawElements.h"
@@ -22,6 +23,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerController.h"
 #include "Misc/ConfigCacheIni.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 
 // =====================================================================================================
 // Design tokens
@@ -351,6 +354,7 @@ void SBSHud::Construct(const FArguments& Args)
 	PC = Args._PlayerController;
 	SegmentLostAt.Init(-10.0, 10);
 	SetCanTick(true);
+	bHyperion = FParse::Param(FCommandLine::Get(), TEXT("BSHyperion"));     // playtesting: open on the Hyperion
 
 	auto InGame = [this]() { return Game() ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed; };
 	auto PortraitOnly = [this]() { return Portrait() ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed; };
@@ -398,9 +402,11 @@ void SBSHud::Construct(const FArguments& Args)
 			]
 		]
 		+ SOverlay::Slot()[ SNew(SBSPaint).Visibility(EVisibility::HitTestInvisible).Paint([this](const FGeometry& G, FSlateWindowElementList& Out, int32 L) { return PaintBanner(G, Out, L); }) ]
+		+ SOverlay::Slot()[ BuildShop() ]
 		+ SOverlay::Slot()[ BuildModal(false) ]
 		+ SOverlay::Slot()[ BuildModal(true) ]
 		+ SOverlay::Slot()[ BuildStartScreen() ]
+		+ SOverlay::Slot()[ BuildHyperion() ]
 	];
 }
 
@@ -442,7 +448,7 @@ TSharedRef<SWidget> SBSHud::BuildCommandStrip()
 			const float Frac = FMath::Clamp(Gm->WaveTimer / FMath::Max(1.f, Gm->WaveLen), 0.f, 1.f);
 			D::Circle(Out, L + 2, G, Rc, 13, C::Faint, 2.5f);
 			D::Circle(Out, L + 3, G, Rc, 13, Frac < 0.2f ? C::Red : C::Cyan, 2.5f, 32, -PI / 2, -PI / 2 + 2 * PI * Frac);
-			D::Text(Out, L + 4, G, FString::FromInt(FMath::CeilToInt(Gm->WaveTimer)), D::Bold(9), FVector2f(Rc.X, Rc.Y - 7), C::Ink, 0.5f);
+			D::Text(Out, L + 4, G, FString::FromInt(FMath::Max(0, FMath::CeilToInt(Gm->WaveTimer))), D::Bold(9), FVector2f(Rc.X, Rc.Y - 7), C::Ink, 0.5f);
 		}
 		// Kills.
 		{
@@ -638,7 +644,8 @@ TSharedRef<SWidget> SBSHud::MakeAbility(int32 Index)
 		D::Image(Out, L + 2, G, Gm->GetAssets()->IconBrush(Ab.Icon), Ip + FVector2f(3, 3), FVector2f(Is - 6, Is - 6), Tint);
 		if (Cd > 0)
 		{
-			D::Pie(Out, L + 3, G, Ip + FVector2f(Is, Is) * 0.5f, Is * 0.5f - 3, Cd / Ab.MaxCd, C::A(FLinearColor::Black, 0.68f));
+			const float MaxCd = Index == 1 ? Gm->StrikeCooldown() : Ab.MaxCd;
+			D::Pie(Out, L + 3, G, Ip + FVector2f(Is, Is) * 0.5f, Is * 0.5f - 3, FMath::Min(1.f, Cd / MaxCd), C::A(FLinearColor::Black, 0.68f));
 			D::Text(Out, L + 4, G, FString::FromInt(FMath::CeilToInt(Cd)), D::Num(18), Ip + FVector2f(Is * 0.5f, Is * 0.5f - 13), C::Ink, 0.5f, true);
 		}
 		if (bActive)
@@ -687,7 +694,7 @@ struct FBSArmItem
 	TFunction<int32(ABSGame*)> Level;       // -1 = no level pips
 	int32 MaxLevel = 0;
 	TFunction<void(ABSGame*)> Buy;
-	TFunction<bool(ABSGame*)> Hidden;       // surprise cards stay hidden until unlocked
+	TFunction<bool(ABSGame*)> Hidden;       // high tech stays hidden until a shop card unlocks it
 	bool bTech = false;
 	bool IsHidden(ABSGame* G) const { return Hidden && Hidden(G); }
 };
@@ -697,7 +704,7 @@ static const TArray<FBSArmItem>& ArmItems()
 	static TArray<FBSArmItem> Items = []()
 	{
 		TArray<FBSArmItem> Out;
-		// Surprise cards first: hidden until their tech tree is maxed out (see ABSGame::CheckTech).
+		// High tech first: hidden until a shop card puts it here. Research comes from the shop, not the armoury.
 		for (const FBSTechCard& Tc : BSDefs::Tech())
 		{
 			const FString Id = Tc.Id, Ic = Tc.Icon;
@@ -719,7 +726,7 @@ static const TArray<FBSArmItem>& ArmItems()
 			const FString Key = Inf.Key;
 			FBSArmItem I; I.Id = Key; I.Name = Inf.Name; I.Short = Key == TEXT("marine") ? TEXT("Gauss rifle infantry") : Key == TEXT("firebat") ? TEXT("Flamethrower, anti-swarm") : TEXT("Slows, shreds armour");
 			I.Icon = [Key](ABSGame*) { return BSDefs::FindInfantry(Key)->Icon; };
-			I.Cost = [Key](ABSGame*) { return BSDefs::FindInfantry(Key)->Cost; };
+			I.Cost = [Key](ABSGame* G) { return G->TroopCost(BSDefs::FindInfantry(Key)); };
 			I.Avail = [](ABSGame* G) { return !G->TroopsFull(); };
 			I.Tag = [](ABSGame*) { return FString(TEXT("FULL")); };
 			I.Level = [](ABSGame*) { return -1; };
@@ -745,27 +752,6 @@ static const TArray<FBSArmItem>& ArmItems()
 			[](ABSGame* G) { return !G->HasSensor(); }, [](ABSGame* G) { G->BuildStructure(false); });
 		Simple(TEXT("tank"), TEXT("Siege Tank"), TEXT("Air-dropped, long-range splash"), TEXT("btn-unit-terran-siegetank"), 0,
 			[](ABSGame* G) { return G->Tanks.Num() < G->TankMax; }, [](ABSGame* G) { G->DropTank(); });
-		for (const FBSUpgradeDef& U : BSDefs::Upgrades())
-		{
-			const FString Key = U.Key;
-			FBSArmItem I; I.Id = Key; I.Name = U.Name; I.MaxLevel = U.Costs.Num();
-			I.Short = Key == TEXT("stim") ? TEXT("Unlocks STIM ability") : Key == TEXT("weapons") ? TEXT("+1 infantry damage") : Key == TEXT("neosteel") ? TEXT("Bunker holds six")
-				: Key == TEXT("plating") ? TEXT("+150 HP per level") : Key == TEXT("vehicle") ? TEXT("+5 tank damage") : Key == TEXT("hisec") ? TEXT("+1 range, bunker and tanks")
-				: Key == TEXT("rails") ? TEXT("+2 bunker range") : TEXT("Heals troops and SCVs");
-			I.Icon = [Key](ABSGame* G) { const FBSUpgradeDef* D0 = BSDefs::FindUpgrade(Key); return D0->Icons[FMath::Min(G->UpgradeLevel(Key), D0->Icons.Num() - 1)]; };
-			I.Cost = [Key](ABSGame* G) { return G->CostOfUpgrade(Key); };
-			I.Avail = [Key](ABSGame* G) { return G->UpgradeAvailable(Key); };
-			I.Tag = [Key](ABSGame* G)
-			{
-				if (Key == TEXT("medivac") && !G->Up.bStim) return FString(TEXT("NEEDS STIM"));
-				if (Key == TEXT("vehicle") && G->Tanks.Num() == 0 && G->Up.Vehicle < 3) return FString(TEXT("NEEDS TANK"));
-				if (Key == TEXT("rails") && !G->Up.bHiSec) return FString(TEXT("NEEDS HI-SEC"));
-				return FString(BSDefs::FindUpgrade(Key)->Costs.Num() > 1 ? TEXT("MAX") : TEXT("DONE"));
-			};
-			I.Level = [Key](ABSGame* G) { return BSDefs::FindUpgrade(Key)->Costs.Num() > 1 ? G->UpgradeLevel(Key) : -1; };
-			I.Buy = [Key](ABSGame* G) { G->BuyUpgrade(Key); };
-			Out.Add(I);
-		}
 		return Out;
 	}();
 	return Items;
@@ -972,17 +958,35 @@ TSharedRef<SWidget> SBSHud::BuildStartScreen()
 		return L + 4;
 	});
 
-	auto Cards = [ModeCard]()
+	// The Hyperion: perks between runs.
+	auto HyperionCard = [this]()
+	{
+		const FVector2D Size(340, 52);
+		return PaintedButton(Size, [this, Size](const FGeometry& G, FSlateWindowElementList& Out, int32 L, bool bHover, bool bPress)
+		{
+			const FVector2f S((float)Size.X, (float)Size.Y), P(0, bPress ? 1.f : 0.f);
+			D::RFill(Out, L, G, P, S, 14, bHover ? C::GlassHi : C::Glass);
+			D::RLine(Out, L + 1, G, P, S, 14, C::A(C::Amber, bHover ? 0.9f : 0.35f), bHover ? 1.5f : 1.f);
+			D::RFill(Out, L + 1, G, P + FVector2f(0, 12), FVector2f(3, S.Y - 24), 1.5f, C::Amber);
+			UBSAssets* As = GM.IsValid() ? GM->GetAssets() : nullptr;
+			if (As) D::Image(Out, L + 2, G, As->IconBrush(TEXT("btn-unit-terran-battlecruiser")), P + FVector2f(14, 8), FVector2f(36, 36));
+			D::Text(Out, L + 2, G, TEXT("HYPERION"), D::Title(13), P + FVector2f(62, 9), C::Ink);
+			D::Text(Out, L + 2, G, FString::Printf(TEXT("%d VESPENE  //  PERKS AND CARDS"), BSMeta::Gas()), D::Label(8), P + FVector2f(62, 30), C::Green);
+		}, [this]() { bHyperion = true; });
+	};
+
+	auto Cards = [ModeCard, HyperionCard]()
 	{
 		return SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 12)[ ModeCard(false) ]
-			+ SVerticalBox::Slot().AutoHeight()[ ModeCard(true) ];
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 12)[ ModeCard(true) ]
+			+ SVerticalBox::Slot().AutoHeight()[ HyperionCard() ];
 	};
 
 	return SNew(SOverlay)
 		.Visibility_Lambda([this]() { return Game() ? EVisibility::Collapsed : EVisibility::Visible; })
 		+ SOverlay::Slot()[ Backdrop ]
-		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom).Padding(0, 0, 0, 92)
+		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom).Padding(0, 0, 0, 80)
 		[ SNew(SBox).Visibility_Lambda([this]() { return Portrait() ? EVisibility::Visible : EVisibility::Collapsed; })[ Cards() ] ]
 		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Center).Padding(56, 120, 0, 0)
 		[ SNew(SBox).Visibility_Lambda([this]() { return Portrait() ? EVisibility::Collapsed : EVisibility::Visible; })[ Cards() ] ];
@@ -990,10 +994,11 @@ TSharedRef<SWidget> SBSHud::BuildStartScreen()
 
 TSharedRef<SWidget> SBSHud::BuildModal(bool bGameOver)
 {
-	auto Panel = SNew(SBSPaint).Size(FVector2D(340, 236)).Paint([this, bGameOver](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
+	const float PanelH = bGameOver ? 280.f : 236.f;
+	auto Panel = SNew(SBSPaint).Size(FVector2D(340, PanelH)).Paint([this, bGameOver, PanelH](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
 	{
 		ABSGame* Gm = Game(); if (!Gm) return L;
-		const FVector2f S(340, 236);
+		const FVector2f S(340, PanelH);
 		D::RFill(Out, L, G, FVector2f(0, 0), S, 18, C::A(C::Dark, 0.94f));
 		D::RLine(Out, L + 1, G, FVector2f(0, 0), S, 18, bGameOver ? C::A(C::Red, 0.5f) : C::Hair);
 		D::Rect(Out, L + 1, G, FVector2f(S.X * 0.5f - 24, 0), FVector2f(48, 2), bGameOver ? C::Red : C::Cyan);
@@ -1014,6 +1019,12 @@ TSharedRef<SWidget> SBSHud::BuildModal(bool bGameOver)
 			const FVector2f Bs = D::Measure(B, D::Label(9));
 			D::RFill(Out, L + 2, G, FVector2f(S.X * 0.5f - Bs.X * 0.5f - 10, 124), FVector2f(Bs.X + 20, 20), 10, C::A(Bc, Gm->bNewBest ? 0.18f + 0.1f * FMath::Sin(NowS * 5) : 0.1f));
 			D::Text(Out, L + 3, G, B, D::Label(9), FVector2f(S.X * 0.5f, 127), Bc, 0.5f);
+			// What the run banked at the Hyperion, and any card it unlocked.
+			const BSMeta::FRunResult& Mr = Gm->MetaResult;
+			D::Text(Out, L + 2, G, FString::Printf(TEXT("+%d VESPENE FOR THE HYPERION"), Mr.Gas), D::Label(9), FVector2f(S.X * 0.5f, 156), C::Green, 0.5f);
+			FString U;
+			for (const FBSCardDef* Cd : Mr.Unlocked) U += (U.IsEmpty() ? TEXT("NEW CARD: ") : TEXT(", ")) + BSMeta::CardName(*Cd).ToUpper();
+			if (!U.IsEmpty()) D::Text(Out, L + 2, G, U, D::Fit(U, [](float Sz) { return D::Label(Sz); }, 9, 6, S.X - 24), FVector2f(S.X * 0.5f, 174), C::Amber, 0.5f);
 		}
 		return L + 8;
 	});
@@ -1044,6 +1055,262 @@ TSharedRef<SWidget> SBSHud::BuildModal(bool bGameOver)
 			SNew(SOverlay)
 			+ SOverlay::Slot()[ Panel ]
 			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom).Padding(0, 0, 0, 20)[ Buttons ]
+		];
+}
+
+// =====================================================================================================
+// The shop (between waves) and the Hyperion (between runs)
+// =====================================================================================================
+// One offered card: a tall card in landscape, a row in portrait. Rarity colours the frame; bought cards fade.
+TSharedRef<SWidget> SBSHud::MakeOffer(int32 Index, bool bRow)
+{
+	const TAttribute<FVector2D> Size = TAttribute<FVector2D>::CreateLambda([this, bRow]() { return bRow ? FVector2D(FMath::Min(440.f, (float)LocalSize.X - 44), 62) : FVector2D(150, 192); });
+	return PaintedButton(Size, [this, Index, bRow](const FGeometry& G, FSlateWindowElementList& Out, int32 L, bool bHover, bool bPress)
+	{
+		ABSGame* Gm = Game(); if (!Gm || !Gm->Shop.Offers.IsValidIndex(Index)) return;
+		const FBSCardDef* Cd = BSDefs::FindCard(Gm->Shop.Offers[Index]);
+		if (!Cd) return;
+		const FBSRarity& R = BSDefs::FindRarity(Cd->Rarity);
+		const bool bBought = Gm->Shop.Bought[Index];
+		const int32 Lv = Gm->CardLevel(*Cd), Max = Gm->CardMax(*Cd), Cost = Gm->CardCost(*Cd);
+		const bool bPoor = !bBought && Gm->Minerals < Cost;
+		const float Fade = bBought ? 0.45f : 1.f;
+		const FVector2f S = FVector2f(G.GetLocalSize()), P(0, bPress && !bBought ? 1.f : 0.f);
+		D::RFill(Out, L, G, P, S, 14, C::A(bHover && !bBought ? C::GlassHi : C::Glass, 0.95f));
+		D::RLine(Out, L + 1, G, P, S, 14, C::A(R.Color, (bHover && !bBought ? 1.f : 0.75f) * Fade), 1.5f);
+		const FString Name = BSMeta::CardName(*Cd).ToUpper(), Desc = Gm->CardDesc(*Cd);
+		const FString LvText = Max > 1 ? FString::Printf(TEXT("LV %d / %d"), bBought ? Lv : Lv + 1, Max) : FString();
+		const FString Price = bBought ? FString(TEXT("BOUGHT")) : FString::FromInt(Cost);
+		const FLinearColor PriceCol = bBought ? C::Green : bPoor ? C::Red : C::Cyan;
+		const FLinearColor Tint = FLinearColor(Fade, Fade, Fade);
+		if (bRow)
+		{
+			const float Is = 44, RightW = 76, Tx = 64, TextW = S.X - Tx - RightW;
+			D::Image(Out, L + 2, G, Gm->GetAssets()->IconBrush(Gm->CardIcon(*Cd)), P + FVector2f(10, 9), FVector2f(Is, Is), Tint);
+			D::RLine(Out, L + 3, G, P + FVector2f(9, 8), FVector2f(Is + 2, Is + 2), 7, C::A(C::Ink, 0.2f));
+			D::Text(Out, L + 2, G, R.Name, D::Label(7.5f), P + FVector2f(Tx, 7), C::A(R.Color, Fade));
+			D::Text(Out, L + 2, G, Name, D::Fit(Name, [](float Sz) { return D::Label(Sz); }, 11, 7.5f, TextW), P + FVector2f(Tx, 19), C::A(C::Ink, Fade));
+			D::Text(Out, L + 2, G, Desc, D::Fit(Desc, [](float Sz) { return D::Body(Sz); }, 9.5f, 6.5f, TextW, D::BodySlack), P + FVector2f(Tx, 37), C::A(C::Muted, Fade));
+			if (!LvText.IsEmpty()) D::Text(Out, L + 2, G, LvText, D::Label(7.5f), P + FVector2f(S.X - 12, 9), C::A(C::Amber, Fade), 1.f);
+			D::CostPill(Out, L + 3, G, P + FVector2f(S.X - RightW * 0.5f - 6, S.Y * 0.5f + 7), Price, !bBought, PriceCol);
+		}
+		else
+		{
+			const float Is = 52;
+			const FVector2f Ip(P.X + (S.X - Is) * 0.5f, P.Y + 12);
+			D::Image(Out, L + 2, G, Gm->GetAssets()->IconBrush(Gm->CardIcon(*Cd)), Ip, FVector2f(Is, Is), Tint);
+			D::RLine(Out, L + 3, G, Ip - FVector2f(1, 1), FVector2f(Is + 2, Is + 2), 8, C::A(C::Ink, 0.2f));
+			D::Text(Out, L + 2, G, R.Name, D::Label(7.5f), FVector2f(S.X * 0.5f, P.Y + 70), C::A(R.Color, Fade), 0.5f);
+			D::Text(Out, L + 2, G, Name, D::Fit(Name, [](float Sz) { return D::Label(Sz); }, 10.5f, 7, S.X - 14), FVector2f(S.X * 0.5f, P.Y + 84), C::A(C::Ink, Fade), 0.5f);
+			if (!LvText.IsEmpty()) D::Text(Out, L + 2, G, LvText, D::Label(7.5f), FVector2f(S.X * 0.5f, P.Y + 101), C::A(C::Amber, Fade), 0.5f);
+			FString D1, D2;
+			if (D::Measure(Desc, D::Body(9.5f)).X * D::BodySlack > S.X - 16) D::SplitTwo(Desc, D1, D2); else D1 = Desc;
+			const FSlateFontInfo Df = D::Fit(D1.Len() > D2.Len() ? D1 : D2, [](float Sz) { return D::Body(Sz); }, 9.5f, 6.5f, S.X - 16, D::BodySlack);
+			D::Text(Out, L + 2, G, D1, Df, FVector2f(S.X * 0.5f, P.Y + 117), C::A(C::Ink, 0.85f * Fade), 0.5f);
+			if (!D2.IsEmpty()) D::Text(Out, L + 2, G, D2, Df, FVector2f(S.X * 0.5f, P.Y + 131), C::A(C::Ink, 0.85f * Fade), 0.5f);
+			D::CostPill(Out, L + 3, G, FVector2f(S.X * 0.5f, P.Y + S.Y - 18), Price, !bBought, PriceCol);
+		}
+	},
+	[this, Index]() { if (ABSGame* Gm = Game()) Gm->BuyCard(Index); });
+}
+
+TSharedRef<SWidget> SBSHud::BuildShop()
+{
+	constexpr int32 MaxOffers = 5;
+	auto Open = [this]() { ABSGame* Gm = Game(); return Gm && Gm->Shop.bOpen && !Gm->bOver; };
+	auto OfferVis = [this](int32 i, bool bRow)
+	{
+		ABSGame* Gm = Game();
+		return Gm && i < Gm->Shop.Offers.Num() && Portrait() == bRow ? EVisibility::Visible : EVisibility::Collapsed;
+	};
+	TSharedRef<SHorizontalBox> Cards = SNew(SHorizontalBox);
+	TSharedRef<SVerticalBox> Rows = SNew(SVerticalBox);
+	for (int32 i = 0; i < MaxOffers; i++)
+	{
+		Cards->AddSlot().AutoWidth().Padding(5, 0)[ SNew(SBox).Visibility_Lambda([OfferVis, i]() { return OfferVis(i, false); })[ MakeOffer(i, false) ] ];
+		Rows->AddSlot().AutoHeight().Padding(0, 3)[ SNew(SBox).Visibility_Lambda([OfferVis, i]() { return OfferVis(i, true); })[ MakeOffer(i, true) ] ];
+	}
+
+	auto Header = SNew(SBSPaint).Size(TAttribute<FVector2D>::CreateLambda([this]() { return FVector2D(Portrait() ? FMath::Min(440.f, (float)LocalSize.X - 44) : 420.f, 64); }))
+		.Paint([this](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
+	{
+		ABSGame* Gm = Game(); if (!Gm) return L;
+		const FVector2f S = FVector2f(G.GetLocalSize());
+		const FString T = FString::Printf(TEXT("WAVE %d CLEARED"), Gm->Shop.Wave);
+		D::Text(Out, L, G, T, D::Fit(T, [](float Sz) { return D::Title(Sz); }, 22, 13, S.X), FVector2f(S.X * 0.5f, 2), C::Ink, 0.5f);
+		FString B = Gm->Shop.Bonus ? FString::Printf(TEXT("+%d CLEAR BONUS"), Gm->Shop.Bonus) : FString(TEXT("WAVE HELD"));
+		if (Gm->Shop.Interest) B += FString::Printf(TEXT("   +%d INTEREST"), Gm->Shop.Interest);
+		D::Text(Out, L, G, B, D::Label(9), FVector2f(S.X * 0.5f, 46), C::Amber, 0.5f);
+		return L + 2;
+	});
+
+	auto Reroll = PaintedButton(FVector2D(160, 44), [this](const FGeometry& G, FSlateWindowElementList& Out, int32 L, bool bHover, bool bPress)
+	{
+		ABSGame* Gm = Game(); if (!Gm) return;
+		const int32 Cost = Gm->RerollCost();
+		const FVector2f S(160, 42), P(0, bPress ? 1.f : 0.f);
+		D::RFill(Out, L, G, P, S, 12, bHover ? C::GlassHi : C::A(C::Glass, 0.6f));
+		D::RLine(Out, L + 1, G, P, S, 12, C::A(C::Cyan, bHover ? 0.9f : 0.45f));
+		const FString T = Cost ? FString::Printf(TEXT("REROLL  %d"), Cost) : FString(TEXT("FREE REROLL"));
+		D::Text(Out, L + 2, G, T, D::Label(12), FVector2f(S.X * 0.5f, P.Y + 13), Gm->Minerals < Cost ? C::Red : C::Ink, 0.5f);
+	}, [this]() { if (ABSGame* Gm = Game()) Gm->Reroll(); });
+
+	auto Hint = SNew(SBSPaint).Size(FVector2D(330, 16)).Paint([](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
+	{
+		D::Text(Out, L, G, TEXT("Troops, tanks, SCVs and turrets stay in the armoury."), D::Body(9), FVector2f(G.GetLocalSize().X * 0.5f, 2), C::Muted, 0.5f);
+		return L + 2;
+	});
+
+	auto Panel = SNew(SOverlay)
+		+ SOverlay::Slot()[ SNew(SBSPaint).Paint([](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
+		{
+			const FVector2f S = FVector2f(G.GetLocalSize());
+			D::RFill(Out, L, G, FVector2f(0, 0), S, 18, C::A(C::Dark, 0.92f));
+			D::RLine(Out, L + 1, G, FVector2f(0, 0), S, 18, C::Hair);
+			D::Rect(Out, L + 1, G, FVector2f(S.X * 0.5f - 24, 0), FVector2f(48, 2), C::Cyan);
+			return L + 2;
+		}) ]
+		+ SOverlay::Slot().Padding(12, 14, 12, 12)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[ Header ]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 6)
+			[
+				SNew(SBox).Visibility_Lambda([this]() { return Portrait() ? EVisibility::Collapsed : EVisibility::Visible; })[ Cards ]
+			]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 4)
+			[
+				SNew(SBox).Visibility_Lambda([this]() { return Portrait() ? EVisibility::Visible : EVisibility::Collapsed; })[ Rows ]
+			]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 10, 0, 0)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().Padding(5, 0)[ Reroll ]
+				+ SHorizontalBox::Slot().AutoWidth().Padding(5, 0)[ MakeButton(TEXT("NEXT WAVE"), true, [this]() { if (ABSGame* Gm = Game()) Gm->CloseShop(); }, 160) ]
+			]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 8, 0, 0)[ Hint ]
+		];
+
+	// Only the panel takes the pointer: the armoury stays usable while shopping.
+	return SNew(SOverlay)
+		.Visibility_Lambda([Open]() { return Open() ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed; })
+		+ SOverlay::Slot()[ SNew(SBSPaint).Visibility(EVisibility::HitTestInvisible).Paint([](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
+		{
+			D::Rect(Out, L, G, FVector2f(0, 0), FVector2f(G.GetLocalSize()), C::A(FLinearColor::Black, 0.3f));
+			return L + 1;
+		}) ]
+		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Top).Padding(TAttribute<FMargin>::CreateLambda([this]() { return FMargin(0, Portrait() ? 150.f : 70.f, 0, 0); }))
+		[ Panel ];
+}
+
+// A Hyperion perk: icon, name, what it does, level pips, vespene cost.
+TSharedRef<SWidget> SBSHud::MakePerk(int32 Index)
+{
+	const TAttribute<FVector2D> Size = TAttribute<FVector2D>::CreateLambda([this]() { return FVector2D(FMath::Min(480.f, (float)LocalSize.X - 56), 58); });
+	return PaintedButton(Size, [this, Index](const FGeometry& G, FSlateWindowElementList& Out, int32 L, bool bHover, bool bPress)
+	{
+		const FBSPerkDef& Pk = BSDefs::Perks()[Index];
+		const int32 Lv = BSMeta::Perk(Pk.Id), Cost = BSMeta::PerkCost(Pk.Id);
+		const bool bMax = Cost == INDEX_NONE, bPoor = !bMax && BSMeta::Gas() < Cost;
+		const FVector2f S = FVector2f(G.GetLocalSize()) - FVector2f(0, 4), P(0, bPress ? 1.f : 0.f);
+		D::RFill(Out, L, G, P, S, 12, bHover ? C::GlassHi : C::Glass);
+		D::RLine(Out, L + 1, G, P, S, 12, bHover ? C::A(C::Green, 0.7f) : C::Hair);
+		UBSAssets* As = GM.IsValid() ? GM->GetAssets() : nullptr;
+		if (As) D::Image(Out, L + 2, G, As->IconBrush(Pk.Icon), P + FVector2f(9, 8), FVector2f(38, 38));
+		const float Tx = 58, RightW = 70, TextW = S.X - Tx - RightW;
+		D::Text(Out, L + 2, G, Pk.Name.ToUpper(), D::Fit(Pk.Name.ToUpper(), [](float Sz) { return D::Label(Sz); }, 10.5f, 7.5f, TextW), P + FVector2f(Tx, 8), C::Ink);
+		D::Text(Out, L + 2, G, Pk.Desc, D::Fit(Pk.Desc, [](float Sz) { return D::Body(Sz); }, 9.5f, 6.5f, TextW, D::BodySlack), P + FVector2f(Tx, 24), C::Muted);
+		if (Pk.Costs.Num() > 1)
+			for (int32 k = 0; k < Pk.Costs.Num(); k++) D::RFill(Out, L + 2, G, P + FVector2f(Tx + k * 17, 42), FVector2f(14, 4), 2, k < Lv ? C::Amber : C::Faint);
+		const FString T = bMax ? FString(TEXT("MAX")) : FString::FromInt(Cost);
+		D::CostPill(Out, L + 3, G, P + FVector2f(S.X - RightW * 0.5f - 4, S.Y * 0.5f), T, false, bMax ? C::Amber : bPoor ? C::Red : C::Green);
+	}, [Index]() { BSMeta::BuyPerk(BSDefs::Perks()[Index].Id); });
+}
+
+TSharedRef<SWidget> SBSHud::BuildHyperion()
+{
+	auto Width = [this]() { return FMath::Min(480.f, (float)LocalSize.X - 56); };
+	auto Head = SNew(SBSPaint).Size(TAttribute<FVector2D>::CreateLambda([Width]() { return FVector2D(Width(), 104); }))
+		.Paint([](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
+	{
+		const FVector2f S = FVector2f(G.GetLocalSize());
+		D::Text(Out, L, G, TEXT("HYPERION"), D::Title(24), FVector2f(S.X * 0.5f, 4), C::Ink, 0.5f);
+		D::Text(Out, L, G, FString::Printf(TEXT("%d VESPENE"), BSMeta::Gas()), D::Label(11), FVector2f(S.X * 0.5f, 48), C::Green, 0.5f);
+		const FString H = TEXT("Every run banks vespene: one a wave cleared, five more every tenth wave, half as much again in the arena.");
+		FString H1, H2; D::SplitTwo(H, H1, H2);
+		const FSlateFontInfo Hf = D::Fit(H1.Len() > H2.Len() ? H1 : H2, [](float Sz) { return D::Body(Sz); }, 9.5f, 6.5f, S.X, D::BodySlack);
+		D::Text(Out, L, G, H1, Hf, FVector2f(S.X * 0.5f, 70), C::Muted, 0.5f);
+		D::Text(Out, L, G, H2, Hf, FVector2f(S.X * 0.5f, 84), C::Muted, 0.5f);
+		return L + 2;
+	});
+	// Every shop card; locked ones say what unlocks them.
+	auto Codex = SNew(SBSPaint).Size(TAttribute<FVector2D>::CreateLambda([Width]()
+	{
+		const int32 Cols = Width() > 400 ? 3 : 2;
+		return FVector2D(Width(), 26 + FMath::DivideAndRoundUp(BSDefs::Cards().Num(), Cols) * 42);
+	})).Paint([this](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
+	{
+		const FVector2f S = FVector2f(G.GetLocalSize());
+		const int32 Cols = S.X > 400 ? 3 : 2;
+		const float Cw = (S.X - (Cols - 1) * 6) / Cols;
+		UBSAssets* As = GM.IsValid() ? GM->GetAssets() : nullptr;
+		D::Text(Out, L, G, TEXT("CARDS"), D::Label(9), FVector2f(S.X * 0.5f, 4), C::Muted, 0.5f);
+		const TArray<FBSCardDef>& All = BSDefs::Cards();
+		for (int32 i = 0; i < All.Num(); i++)
+		{
+			const FBSCardDef& Cd = All[i];
+			const bool bOpen = BSMeta::Unlocked(Cd);
+			const FBSRarity& R = BSDefs::FindRarity(Cd.Rarity);
+			const FVector2f P((i % Cols) * (Cw + 6), 26 + (i / Cols) * 42);
+			D::RFill(Out, L, G, P, FVector2f(Cw, 36), 8, C::Faint);
+			D::Rect(Out, L + 1, G, P + FVector2f(0, 4), FVector2f(2, 28), R.Color);
+			FString Ic = Cd.Icon;
+			if (!Cd.Up.IsEmpty()) Ic = BSDefs::FindUpgrade(Cd.Up)->Icons[0];
+			if (As) D::Image(Out, L + 1, G, As->IconBrush(Ic), P + FVector2f(8, 4), FVector2f(28, 28), bOpen ? FLinearColor::White : FLinearColor(0.25f, 0.25f, 0.28f));
+			const FString Name = BSMeta::CardName(Cd).ToUpper();
+			const int32 N = BSMeta::Buys(Cd.Id);
+			const FString Sub = !bOpen ? BSMeta::UnlockText(Cd) : N ? FString::Printf(TEXT("Bought %dx"), N) : R.Name.ToLower();
+			D::Text(Out, L + 1, G, Name, D::Fit(Name, [](float Sz) { return D::Label(Sz); }, 8.5f, 6, Cw - 46), P + FVector2f(42, 5), bOpen ? C::Ink : C::Muted);
+			D::Text(Out, L + 1, G, Sub, D::Fit(Sub, [](float Sz) { return D::Body(Sz); }, 8.5f, 6, Cw - 46, D::BodySlack), P + FVector2f(42, 19), C::Muted);
+		}
+		return L + 3;
+	});
+
+	TSharedRef<SVerticalBox> Perks = SNew(SVerticalBox);
+	for (int32 i = 0; i < BSDefs::Perks().Num(); i++) Perks->AddSlot().AutoHeight()[ MakePerk(i) ];
+
+	auto Panel = SNew(SOverlay)
+		+ SOverlay::Slot()[ SNew(SBSPaint).Paint([](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
+		{
+			const FVector2f S = FVector2f(G.GetLocalSize());
+			D::RFill(Out, L, G, FVector2f(0, 0), S, 18, C::A(C::Dark, 0.95f));
+			D::RLine(Out, L + 1, G, FVector2f(0, 0), S, 18, C::Hair);
+			D::Rect(Out, L + 1, G, FVector2f(S.X * 0.5f - 24, 0), FVector2f(48, 2), C::Amber);
+			return L + 2;
+		}) ]
+		+ SOverlay::Slot().Padding(14, 16, 14, 14)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().FillHeight(1.f)
+			[
+				SNew(SScrollBox).Orientation(Orient_Vertical).ScrollBarVisibility(EVisibility::Collapsed)
+				+ SScrollBox::Slot()[ Head ]
+				+ SScrollBox::Slot().Padding(0, 6)[ Perks ]
+				+ SScrollBox::Slot().Padding(0, 8)[ Codex ]
+			]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 10, 0, 0)[ MakeButton(TEXT("BACK"), true, [this]() { bHyperion = false; }, 160) ]
+		];
+
+	return SNew(SOverlay)
+		.Visibility_Lambda([this]() { return bHyperion && !Game() ? EVisibility::Visible : EVisibility::Collapsed; })
+		+ SOverlay::Slot()[ SNew(SBSPaint).Paint([](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
+		{
+			D::Rect(Out, L, G, FVector2f(0, 0), FVector2f(G.GetLocalSize()), C::A(C::Dark, 0.8f));
+			return L + 1;
+		}) ]
+		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Fill).Padding(0, 20)
+		[
+			SNew(SBox).WidthOverride_Lambda([Width]() { return Width() + 28; })[ Panel ]
 		];
 }
 
@@ -1424,11 +1691,20 @@ FReply SBSHud::OnKeyDown(const FGeometry& Geo, const FKeyEvent& Key)
 	const FKey K = Key.GetKey();
 	if (!Gm)
 	{
+		if (bHyperion && K == EKeys::Escape) { bHyperion = false; return FReply::Handled(); }
 		if (K == EKeys::One && GM.IsValid()) { GM->StartGame(EBSMode::Lane); return FReply::Handled(); }
 		if (K == EKeys::Two && GM.IsValid()) { GM->StartGame(EBSMode::Arena); return FReply::Handled(); }
 		return FReply::Unhandled();
 	}
 	const float H = LocalSize.Y * DpiScale;
+	// Shop: 1-5 buy, X rerolls, Enter or Space starts the next wave.
+	if (Gm->Shop.bOpen)
+	{
+		const FKey Nums[] = { EKeys::One, EKeys::Two, EKeys::Three, EKeys::Four, EKeys::Five };
+		for (int32 i = 0; i < 5; i++) if (K == Nums[i]) { Gm->BuyCard(i); return FReply::Handled(); }
+		if (K == EKeys::X) { Gm->Reroll(); return FReply::Handled(); }
+		if (K == EKeys::Enter || K == EKeys::SpaceBar) { Gm->CloseShop(); return FReply::Handled(); }
+	}
 	if (K == EKeys::P || K == EKeys::Escape) TogglePause();
 	else if (K == EKeys::V) ToggleBunkerView();
 	else if (K == EKeys::S) Gm->UseStim();

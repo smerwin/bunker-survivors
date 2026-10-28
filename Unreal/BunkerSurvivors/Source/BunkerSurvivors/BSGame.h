@@ -6,6 +6,7 @@
 #include "GameFramework/Actor.h"
 #include "BSTypes.h"
 #include "BSFx.h"
+#include "BSMeta.h"
 #include "BSGame.generated.h"
 
 class ABSModelActor;
@@ -265,7 +266,9 @@ public:
 	bool CallAirStrike();
 	bool UseStim();
 	bool EmergencyRepair();
+	// Bots and playtests: buy that research if the open shop offers it.
 	bool BuyUpgrade(const FString& Id);
+	bool Research(const FString& Id);       // one level, free (bought as a shop card, or by playtests)
 	bool FocusAt(float SimX, float SimY);
 	bool Eject(int32 Index);              // send a bunker trooper out to stand behind it
 	bool Board(int32 Index);              // walk an outside trooper back in (toggles)
@@ -278,20 +281,38 @@ public:
 	enum class EExpand : uint8 { Off, Advance, Build, Held, Fallback };
 	EExpand Expand = EExpand::Off;
 	float ExpandT = 0;
-	// High-tech reinforcements: surprise armoury cards unlocked by maxing out the tech trees (see BSDefs::Tech).
+	// The shop between waves (see EndWave): the cards on offer, rerolls, and the bonuses it opened with.
+	struct FShop { bool bOpen = false; int32 Wave = 0, Bonus = 0, Interest = 0, Rerolls = 0, Free = 0; TArray<FString> Offers; TArray<bool> Bought; } Shop;
+	TMap<FString, int32> Cards;           // passive shop cards: levels
+	float LingerT = 0;                    // seconds since the wave's last spawn
+	int32 WavesCleared = 0;
+	BSMeta::FRunResult MetaResult;        // what the run earned at the Hyperion (set by GameOver)
+	void EndWave();
+	void CloseShop();
+	bool BuyCard(int32 Index);
+	bool Reroll();
+	int32 RerollCost() const { return Shop.Free > 0 ? 0 : BSDefs::RerollCost + BSDefs::RerollStep * Shop.Rerolls; }
+	int32 CardLevel(const FBSCardDef& C) const;
+	int32 CardLevel(const FString& Id) const { const FBSCardDef* C = BSDefs::FindCard(Id); return C ? CardLevel(*C) : 0; }
+	int32 CardMax(const FBSCardDef& C) const;
+	int32 CardCost(const FBSCardDef& C) const;
+	FString CardIcon(const FBSCardDef& C) const;
+	FString CardDesc(const FBSCardDef& C) const;
+	int32 TroopCost(const FBSInfantryDef* D) const { return FMath::RoundToInt(D->Cost * (1 - 0.15f * CardLevel(TEXT("recruit")))); }
+	float TrooperHp(const FBSInfantryDef* D) const { return D->Hp + 10 * CardLevel(TEXT("shield")); }
+	float StrikeCooldown() const { return BSDefs::BansheeCooldown * (1 - 0.25f * CardLevel(TEXT("rotors"))); }
+	// High-tech reinforcements: shop cards put these in the armoury (see BSDefs::Tech).
 	TSet<FString> TechUnlocked;
 	float NukeCd = 0, VikingCd = 0;
 	TArray<TSharedPtr<FBSMech>> Mechs;
 	TSharedPtr<FBSBattlecruiser> Bc;
 	TArray<TSharedPtr<FBSBanshee>> VikingWing;
-	bool TreeMaxed(const FString& Tree) const;
-	void CheckTech();
 	int32 TechCount(const FString& Kind) const { int32 N = 0; for (auto& M : Mechs) N += M->Def->Key == Kind; return N; }
 	// For the armoury: Cost, and whether it can be bought now; Tag is "MAX" or the seconds left when it cannot.
 	bool TechReady(const FString& Id, int32& OutCost, FString& OutTag) const;
 	bool BuyTech(const FString& Id);
-	void GrantAllTech();                  // playtesting (-BSTechMax): research every upgrade
-	void SkipToWave(int32 N) { Wave = FMath::Max(0, N - 1); WaveTimer = 0; }   // playtesting (-BSWave=100): wave N starts now
+	void GrantAllTech();                  // playtesting (-BSTechMax): every shop card at its top level
+	void SkipToWave(int32 N) { Shop.bOpen = false; Wave = FMath::Max(0, N - 1); StartWave(); }   // playtesting (-BSWave=100): wave N starts now
 	// Wave 100 finale: Kerrigan and a leviathan lead a maxed-out wave; killing both wins (the game carries on).
 	struct FFinale { bool bOn = false, bWon = false; float T = 0, WonAt = -1; } Finale;
 	TArray<TSharedPtr<FBSEnemy>> Bosses() const { TArray<TSharedPtr<FBSEnemy>> Out; for (const TSharedPtr<FBSEnemy>& E : Enemies) if (!E->Def->Boss.IsEmpty() && E->Alive()) Out.Add(E); return Out; }
@@ -361,6 +382,10 @@ public:
 private:
 	void Step(float Dt);
 	void StartWave();
+	bool CardReq(const FBSCardDef& C) const;
+	bool CardOpen(const FBSCardDef& C) const;
+	TArray<FString> RollOffers();
+	void ApplyCard(const FBSCardDef& C);
 	TSharedPtr<FBSEnemy> SpawnEnemy(const FString& Type, float Ang, const FVector2D* At = nullptr);
 	void PlayEnemyAnim(FBSEnemy& E, const FString& Kind);
 	float EnemyCd(const FBSEnemy& E) const { return E.Def->Cd / (bHard ? 1.05f : 1.f); }
@@ -478,6 +503,7 @@ private:
 	void UpdateVisuals(float Dt);
 	void AutoPlay();
 	void AutoPlayImpl();
+	void AutoShop();                      // bots: buy research and cards from the shop, then carry on
 	void PlaySound(const FString& Key, float Vol = 0.6f, float MinGap = 0.07f);
 
 	// Pools.
