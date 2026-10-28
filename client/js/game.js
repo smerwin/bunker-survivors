@@ -1055,18 +1055,21 @@ window.BS = window.BS || {};
       this.waveLen = Math.round(WV.len[0] + (WV.len[1] - WV.len[0]) * clamp((w - 1) / (WV.lenBy - 1), 0, 1));
       let budget = (w <= WV.knee ? quad(w) : quad(WV.knee) + WV.perWave[0] * (w - WV.knee) + WV.perWave[1] * (w - WV.knee) * (w - WV.knee)) * (this.hard ? 1.15 : 1) * (finale ? BS.FINALE.budget : 1);
       // Late game: every high-tech card unlocked brings stranger zerg, and more of them. Guardians come for the mechs;
-      // scourge and devourers only when there is Terran air to hunt. Brood queens (ramp) grow commoner with every card;
-      // the finale throws in the whole late roster.
+      // scourge and devourers only when there is Terran air to hunt. The finale throws in the whole late roster.
+      // Rare units (max: brood queens) never number more than max on the field and on their way, counting this wave.
       const tier = finale ? Math.max(this.lateTier(), BS.TECH.length) : this.lateTier(), air = this.airPresence();
-      const wt = d => d.weight * (d.late ? 0.6 + 0.4 * tier : 1) * (1 + (d.ramp || 0) * tier) * (d.prefer === 'mech' && this.mechs.length ? 2 : 1) * (d.antiAir && !air ? 0 : 1);
+      const wt = d => d.weight * (d.late ? 0.6 + 0.4 * tier : 1) * (d.prefer === 'mech' && this.mechs.length ? 2 : 1) * (d.antiAir && !air ? 0 : 1);
       // Winged zerglings only in lane mode, where they hop the mesa in the middle of the Y.
       const types = Object.entries(BS.ZERG).filter(([, d]) => d.budget > 0 && w >= Math.ceil(d.unlock * (this.hard ? 0.85 : 1)) && (!d.late || tier >= d.late) && (!d.hops || this.mode === 'lane'));
-      const list = [];
+      const list = [], have = {};
+      for (const e of this.enemies) have[e.type] = (have[e.type] || 0) + 1;
+      for (const s of this.spawnQueue) have[s.type] = (have[s.type] || 0) + 1;
+      const can = (k, d) => d.budget <= budget && !(d.max && (have[k] || 0) >= d.max);
       for (let guard = 0; budget > 0 && guard < 400; guard++) {
-        const total = types.reduce((s, [, d]) => s + (d.budget <= budget ? wt(d) : 0), 0);
+        const total = types.reduce((s, [k, d]) => s + (can(k, d) ? wt(d) : 0), 0);
         if (total <= 0) break;
         let roll = Math.random() * total;
-        for (const [k, d] of types) { if (d.budget > budget) continue; roll -= wt(d); if (roll <= 0) { list.push(k); budget -= d.budget; break; } }
+        for (const [k, d] of types) { if (!can(k, d)) continue; roll -= wt(d); if (roll <= 0) { list.push(k); budget -= d.budget; have[k] = (have[k] || 0) + 1; break; } }
       }
       if (w % 5 === 0) list.push(w >= 10 ? 'ultralisk' : 'roach', 'roach');
       if (this.hard && w % 10 === 0) list.push('ultralisk', 'ultralisk');

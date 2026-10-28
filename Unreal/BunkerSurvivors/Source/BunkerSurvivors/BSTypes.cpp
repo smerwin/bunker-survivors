@@ -120,11 +120,11 @@ namespace
 			D.Bounty = 50; D.Budget = 16; D.Late = 3; D.Weight = 1.5f; D.HitFrac = 0; D.Height = 1.4f;
 		}
 		// Mid game on: the Brood War queen hangs back and casts Spawn Broodling (see ABSGame::CastBroodling). Not tech-gated:
-		// she joins at wave 14, and Ramp makes her more common with every tech card.
+		// she joins at wave 14, and stays rare: never more than Max of her on the field (see ABSGame::StartWave).
 		{
 			FBSZergDef& D = Add(TEXT("broodqueen"), TEXT("Brood Queen"), TEXT("broodqueen"), TEXT("broodqueenDeath"), TEXT("btn-unit-zerg-broodqueen"));
 			D.Hp = 120; D.Armor = 1; D.Dmg = 0; D.Cd = 9; D.Range = 9; D.Speed = 3.8f; D.Radius = 0.75f; D.bFlying = true; D.Fly = 4; D.Spell = TEXT("broodling");
-			D.Bounty = 45; D.Budget = 14; D.Unlock = 14; D.Ramp = 0.5f; D.Weight = 1.2f; D.HitFrac = 0; D.SoundDeath = TEXT("broodqueenDeath"); D.Height = 1.4f;
+			D.Bounty = 45; D.Budget = 14; D.Unlock = 14; D.Max = 2; D.Weight = 0.6f; D.HitFrac = 0; D.SoundDeath = TEXT("broodqueenDeath"); D.Height = 1.4f;
 		}
 		// Not bought from the wave budget: special events scheduled by StartWave.
 		{

@@ -1939,26 +1939,30 @@ void ABSGame::StartWave()
 	WaveLen = FMath::RoundToFloat(BSDefs::WaveLenStart + (BSDefs::WaveLenEnd - BSDefs::WaveLenStart) * FMath::Clamp((Wv - 1) / float(BSDefs::WaveLenBy - 1), 0.f, 1.f));
 	float Budget = (Wv <= BSDefs::WaveKnee ? Quad(Wv) : Quad(BSDefs::WaveKnee) + BSDefs::WavePerWaveA * (Wv - BSDefs::WaveKnee) + BSDefs::WavePerWaveB * FMath::Square(float(Wv - BSDefs::WaveKnee))) * (bHard ? 1.15f : 1.f) * (bFinale ? BSDefs::FinaleBudget : 1.f);
 	// Late game: every high-tech card unlocked brings stranger zerg, and more of them. Guardians come for the mechs;
-	// scourge and devourers only when there is Terran air to hunt. Brood queens (Ramp) grow commoner with every card;
-	// the finale throws in the whole late roster.
+	// scourge and devourers only when there is Terran air to hunt. The finale throws in the whole late roster.
+	// Rare units (Max: brood queens) never number more than Max on the field and on their way, counting this wave.
 	const int32 Tier = bFinale ? FMath::Max(LateTier(), BSDefs::Tech().Num()) : LateTier();
 	const bool bAirUp = AirPresence();
-	auto Wt = [&](const FBSZergDef* D) { return D->Weight * (D->Late ? 0.6f + 0.4f * Tier : 1.f) * (1 + D->Ramp * Tier) * (D->bPreferMech && Mechs.Num() ? 2.f : 1.f) * (D->bAntiAir && !bAirUp ? 0.f : 1.f); };
+	auto Wt = [&](const FBSZergDef* D) { return D->Weight * (D->Late ? 0.6f + 0.4f * Tier : 1.f) * (D->bPreferMech && Mechs.Num() ? 2.f : 1.f) * (D->bAntiAir && !bAirUp ? 0.f : 1.f); };
 	TArray<const FBSZergDef*> Types;
 	for (const FBSZergDef& D : BSDefs::Zerg())
 		if (D.Budget > 0 && Wv >= FMath::CeilToInt(D.Unlock * (bHard ? 0.85f : 1.f)) && (!D.Late || Tier >= D.Late) && (!D.bHops || Mode == EBSMode::Lane)) Types.Add(&D);   // winged zerglings only in lane mode, where they hop the mesa
 	TArray<FString> List;
+	TMap<FString, int32> Have;
+	for (const TSharedPtr<FBSEnemy>& E : Enemies) Have.FindOrAdd(E->Def->Key)++;
+	for (const FBSSpawn& S : SpawnQueue) Have.FindOrAdd(S.Type)++;
+	auto Can = [&](const FBSZergDef* D) { return D->Budget <= Budget && !(D->Max && Have.FindRef(D->Key) >= D->Max); };
 	for (int32 Guard = 0; Budget > 0 && Guard < 400; Guard++)
 	{
 		float Total = 0;
-		for (const FBSZergDef* D : Types) if (D->Budget <= Budget) Total += Wt(D);
+		for (const FBSZergDef* D : Types) if (Can(D)) Total += Wt(D);
 		if (Total <= 0) break;
 		float Roll = FMath::FRand() * Total;
 		for (const FBSZergDef* D : Types)
 		{
-			if (D->Budget > Budget) continue;
+			if (!Can(D)) continue;
 			Roll -= Wt(D);
-			if (Roll <= 0) { List.Add(D->Key); Budget -= D->Budget; break; }
+			if (Roll <= 0) { List.Add(D->Key); Budget -= D->Budget; Have.FindOrAdd(D->Key)++; break; }
 		}
 	}
 	if (Wv % 5 == 0) { List.Add(Wv >= 10 ? TEXT("ultralisk") : TEXT("roach")); List.Add(TEXT("roach")); }

@@ -275,8 +275,8 @@ window.BS = window.BS || {};
     defiler: { name: 'Defiler', model: 'defiler', death: 'defilerDeath', hp: 80, armor: 1, dmg: 0, cd: 8, range: 9, speed: 2.6, radius: 0.6, spell: 'defiler', bounty: 50, budget: 14, unlock: 1, late: 2, weight: 2, hitFrac: 0, height: 1.2 },
     viper: { name: 'Viper', model: 'viper', death: 'viperDeath', hp: 150, armor: 1, dmg: 0, cd: 11, range: 9, speed: 4, radius: 0.75, flying: true, fly: 4, spell: 'abduct', bounty: 50, budget: 16, unlock: 1, late: 3, weight: 1.5, hitFrac: 0, height: 1.4 },
     // Mid game on: the Brood War queen hangs back and casts Spawn Broodling (see Game.castBroodling). Not tech-gated:
-    // she joins at wave 14, and ramp makes her more common with every tech card (weight x (1 + ramp x tier)).
-    broodqueen: { name: 'Brood Queen', model: 'broodqueen', death: 'broodqueenDeath', hp: 120, armor: 1, dmg: 0, cd: 9, range: 9, speed: 3.8, radius: 0.75, flying: true, fly: 4, spell: 'broodling', bounty: 45, budget: 14, unlock: 14, ramp: 0.5, weight: 1.2, hitFrac: 0, soundDeath: 'broodqueenDeath', height: 1.4 },
+    // she joins at wave 14, and stays rare: never more than max of her on the field (see Game.startWave).
+    broodqueen: { name: 'Brood Queen', model: 'broodqueen', death: 'broodqueenDeath', hp: 120, armor: 1, dmg: 0, cd: 9, range: 9, speed: 3.8, radius: 0.75, flying: true, fly: 4, spell: 'broodling', bounty: 45, budget: 14, unlock: 14, max: 2, weight: 0.6, hitFrac: 0, soundDeath: 'broodqueenDeath', height: 1.4 },
     // Not bought from the wave budget: special events scheduled by startWave.
     overlord: { name: 'Overlord', model: 'overlord', death: 'overlordDeath', hp: 400, armor: 1, dmg: 0, cd: 1, range: 0, speed: 3, radius: 1.0, armored: true, flying: true, fly: 4.2, transport: true, bounty: 25, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2 },
     nydus: { name: 'Nydus Worm', model: 'nydus', death: null, hp: 450, armor: 1, dmg: 0, cd: 1, range: 0, speed: 0, radius: 1.3, armored: true, nydus: true, bounty: 60, budget: 0, unlock: 999, weight: 0, hitFrac: 0, height: 3 },
@@ -329,7 +329,7 @@ window.BS = window.BS || {};
       60: { name: 'DROP POD ASSAULT', toast: 'Drop pods landing all round the base!', pods: 6 },
       70: { name: 'NYDUS BREACH', toast: 'Nydus worms breaching behind our lines!', nydus: 3 },
       80: { name: 'DARK SWARM', toast: 'Defilers lead a lurker siege!', zerg: { defiler: 4, lurker: 8, ultralisk: 4 } },
-      90: { name: 'BROOD WAR', toast: 'The old brood returns in force!', zerg: { broodqueen: 4, guardian: 6, defiler: 2, ultralisk: 4 } },
+      90: { name: 'BROOD WAR', toast: 'The old brood returns in force!', zerg: { broodqueen: 2, guardian: 6, defiler: 2, ultralisk: 4 } },
     } };
 
   BS.FINALE = { wave: 100, budget: 1.5, pods: 8, podStart: 6, podEvery: 2, podLand: 2.7, podCargo: 4, podDmg: 60, podRadius: 2, podMinR: 7, podMaxR: 13,

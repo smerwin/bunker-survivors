@@ -30,7 +30,7 @@ struct FBSZergDef
 	bool bHops = false, bAntiAir = false, bPreferMech = false, bTransport = false, bNydus = false;
 	float Acid = 0;                   // devourer: seconds the target fires slower
 	FString Spell;                    // "defiler" (dark swarm / plague), "abduct" (viper) or "broodling" (brood queen)
-	float Ramp = 0;                   // brood queen: weight x (1 + Ramp x tech cards unlocked), without being tech-gated
+	int32 Max = 0;                    // rare units (brood queen): never more than Max on the field and on their way
 	// Creep (see BSCreep): queens plant tumors, tumors spread creep, creep overlords generate it from the sky.
 	bool bTumors = false, bTumor = false, bCreeper = false;
 	// Wave 100 finale bosses: "kerrigan" (Leaping Strike, Apocalypse) or "leviathan" (bombards, spawns mutalisks). Bosses
@@ -158,7 +158,7 @@ namespace BSDefs
 		{ 60, TEXT("DROP POD ASSAULT"), TEXT("Drop pods landing all round the base!"), TEXT(""), 6, 0 },
 		{ 70, TEXT("NYDUS BREACH"), TEXT("Nydus worms breaching behind our lines!"), TEXT(""), 0, 3 },
 		{ 80, TEXT("DARK SWARM"), TEXT("Defilers lead a lurker siege!"), TEXT("defiler:4,lurker:8,ultralisk:4"), 0, 0 },
-		{ 90, TEXT("BROOD WAR"), TEXT("The old brood returns in force!"), TEXT("broodqueen:4,guardian:6,defiler:2,ultralisk:4"), 0, 0 },
+		{ 90, TEXT("BROOD WAR"), TEXT("The old brood returns in force!"), TEXT("broodqueen:2,guardian:6,defiler:2,ultralisk:4"), 0, 0 },
 	};
 	constexpr int32 WaveLenBy = 12, WaveKnee = 16, SwarmKnee = 12, SwarmMax = 360, WaveHpFrom = 10;
 	// Wave 100 finale (ABSGame::StartFinale): Kerrigan leads a leviathan and a maxed-out wave (budget x FinaleBudget, every
