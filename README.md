@@ -127,7 +127,7 @@ npm start
 Zerg pour down the lane toward your bunker. Every kill pays minerals; spend them between and during waves. Every
 fifth wave is a heavy assault. When the bunker falls, the run is over.
 
-**The road to wave 100.** Early waves are short and ramp up fast. Past wave 16 the swarm stops simply getting bigger
+**The road to wave 100.** Early waves ramp up steadily. Past wave 16 the swarm stops simply getting bigger
 and starts getting stranger: from wave 20 it evolves on its own (one more late-game strain every ten waves, on top of
 whatever your tech provokes), more zerg can be on the field at once (160 rising to 200 by wave 60), and every tenth
 wave from 30 is a named assault: an ultralisk stampede (30), an air armada (40), a lone leviathan (50), drop pods all

@@ -1935,7 +1935,7 @@ void ABSGame::StartWave()
 	Wave++;
 	const int32 Wv = Wave;
 	const bool bFinale = Wv == BSDefs::FinaleWave && !Finale.bOn;
-	auto Quad = [](float X) { return 20 + 10 * X + 0.45f * X * X; };
+	auto Quad = [](float X) { return 20 + 8 * X + 0.3f * X * X; };
 	WaveLen = FMath::RoundToFloat(BSDefs::WaveLenStart + (BSDefs::WaveLenEnd - BSDefs::WaveLenStart) * FMath::Clamp((Wv - 1) / float(BSDefs::WaveLenBy - 1), 0.f, 1.f));
 	float Budget = (Wv <= BSDefs::WaveKnee ? Quad(Wv) : Quad(BSDefs::WaveKnee) + BSDefs::WavePerWaveA * (Wv - BSDefs::WaveKnee) + BSDefs::WavePerWaveB * FMath::Square(float(Wv - BSDefs::WaveKnee))) * (bHard ? 1.15f : 1.f) * (bFinale ? BSDefs::FinaleBudget : 1.f);
 	// Late game: every high-tech card unlocked brings stranger zerg, and more of them. Guardians come for the mechs;
@@ -1965,11 +1965,11 @@ void ABSGame::StartWave()
 			if (Roll <= 0) { List.Add(D->Key); Budget -= D->Budget; Have.FindOrAdd(D->Key)++; break; }
 		}
 	}
-	if (Wv % 5 == 0) { List.Add(Wv >= 10 ? TEXT("ultralisk") : TEXT("roach")); List.Add(TEXT("roach")); }
-	// On top of the budget: a zergling swarm that snowballs fast (4 at wave 1, ~50 by wave 8, ~150 by wave 15, ~260 by wave 20).
-	auto Sq = [](float X) { return 2 + 1.2f * X + 0.6f * X * X; };
+	if (Wv % 5 == 0) { List.Add(Wv >= 15 ? TEXT("ultralisk") : TEXT("roach")); List.Add(TEXT("roach")); }
+	// On top of the budget: a zergling swarm that snowballs (4 at wave 1, ~30 by wave 8, ~75 by wave 15, ~100 by wave 20).
+	auto Sq = [](float X) { return 2 + 1.2f * X + 0.3f * X * X; };
 	const int32 Swarm = FMath::RoundToInt(Wv <= BSDefs::SwarmKnee ? Sq(Wv) : FMath::Min<float>(BSDefs::SwarmMax, Sq(BSDefs::SwarmKnee) + BSDefs::SwarmPerWave * (Wv - BSDefs::SwarmKnee)));
-	if (bHard && Wv % 10 == 0) { List.Add(TEXT("ultralisk")); List.Add(TEXT("ultralisk")); }
+	if (bHard && Wv % 10 == 0 && Wv >= 20) { List.Add(TEXT("ultralisk")); List.Add(TEXT("ultralisk")); }
 	for (int32 i = List.Num() - 1; i > 0; i--) List.Swap(i, FMath::RandRange(0, i));
 
 	// Split into packs of 2-5 and spread the packs evenly over the first ~22 s of the wave, so every wave

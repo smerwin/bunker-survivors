@@ -1051,7 +1051,7 @@ window.BS = window.BS || {};
       this.wave++;
       const w = this.wave;
       const finale = w === BS.FINALE.wave && !this.finale;
-      const WV = BS.WAVES, quad = x => 20 + 10 * x + 0.45 * x * x;
+      const WV = BS.WAVES, quad = x => 20 + 8 * x + 0.3 * x * x;
       this.waveLen = Math.round(WV.len[0] + (WV.len[1] - WV.len[0]) * clamp((w - 1) / (WV.lenBy - 1), 0, 1));
       let budget = (w <= WV.knee ? quad(w) : quad(WV.knee) + WV.perWave[0] * (w - WV.knee) + WV.perWave[1] * (w - WV.knee) * (w - WV.knee)) * (this.hard ? 1.15 : 1) * (finale ? BS.FINALE.budget : 1);
       // Late game: every high-tech card unlocked brings stranger zerg, and more of them. Guardians come for the mechs;
@@ -1071,11 +1071,11 @@ window.BS = window.BS || {};
         let roll = Math.random() * total;
         for (const [k, d] of types) { if (!can(k, d)) continue; roll -= wt(d); if (roll <= 0) { list.push(k); budget -= d.budget; have[k] = (have[k] || 0) + 1; break; } }
       }
-      if (w % 5 === 0) list.push(w >= 10 ? 'ultralisk' : 'roach', 'roach');
-      if (this.hard && w % 10 === 0) list.push('ultralisk', 'ultralisk');
+      if (w % 5 === 0) list.push(w >= 15 ? 'ultralisk' : 'roach', 'roach');      // no ultralisks before they join the waves
+      if (this.hard && w % 10 === 0 && w >= 20) list.push('ultralisk', 'ultralisk');
       for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
-      // On top of the budget: a zergling swarm that snowballs fast (4 at wave 1, ~50 by wave 8, ~150 by wave 15).
-      const sq = x => 2 + 1.2 * x + 0.6 * x * x;
+      // On top of the budget: a zergling swarm that snowballs (4 at wave 1, ~30 by wave 8, ~75 by wave 15).
+      const sq = x => 2 + 1.2 * x + 0.3 * x * x;
       const swarm = Math.round(w <= WV.swarmKnee ? sq(w) : Math.min(WV.swarmMax, sq(WV.swarmKnee) + WV.swarmPerWave * (w - WV.swarmKnee)));
       // Lane packs pick an approach: mostly true north, the rest sweeping in from the north-east and north-west.
       const packAng = flank => this.mode === 'lane' ? (Math.random() < flank ? (Math.random() < 0.5 ? 1 : 2) : 0) : Math.random() * Math.PI * 2;

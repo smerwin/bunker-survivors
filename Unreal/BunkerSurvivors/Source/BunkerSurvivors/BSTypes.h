@@ -141,7 +141,7 @@ namespace BSDefs
 	constexpr int32 RepairCost = 75;
 	// The difficulty curve, waves 1-100 (BS.WAVES): short early waves that ramp fast; past the knee the budget, the zergling
 	// swarm and the zerg's extra hit points grow linearly, so a maxed-out player meets a steady climb rather than a wall.
-	constexpr float WaveLenStart = 22, WaveLenEnd = 30, WavePerWaveA = 16, WavePerWaveB = 0.12f, SwarmPerWave = 5, WaveHp = 0.02f;
+	constexpr float WaveLenStart = 30, WaveLenEnd = 30, WavePerWaveA = 16, WavePerWaveB = 0.12f, SwarmPerWave = 5, WaveHp = 0.02f;
 	// Alive/AliveHard: zerg on the field at once, rising from [0] at wave AliveFrom to [1] by AliveBy (the rest wait their
 	// turn). Past ShadowCrowd alive, small zerg spawn without dynamic shadows: a crowd of zerglings reads fine without
 	// them and their shadow passes are most of the cost.
