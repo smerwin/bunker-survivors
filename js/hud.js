@@ -193,7 +193,7 @@ window.BS = window.BS || {};
         $('shopCards').innerHTML = s.offers.map((o, i) => {
           const c = g.card(o.id), R = BS.RARITY[c.rarity], lv = g.cardLevel(c), max = g.cardMax(c), cost = g.cardCost(c);
           // Bought: the level it was bought at.
-          const lvText = max > 1 ? 'LV ' + (o.bought ? lv : lv + 1) + ' / ' + max : '';
+          const lvText = max > 1 ? 'LV ' + (o.bought ? lv : lv + 1) + (c.grow ? '' : ' / ' + max) : '';
           const cls = 'offer' + (o.bought ? ' bought' : m < cost ? ' poor' : '');
           return '<button class="' + cls + '" data-c="' + i + '" style="--rc:' + R.color + '"><img src="' + icon(g.cardIcon(c)) + '" alt="">' +
             '<span class="rar">' + R.name + '</span><b>' + g.cardName(c).toUpperCase() + '</b><span class="lv">' + lvText + '</span>' +

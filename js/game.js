@@ -623,6 +623,7 @@ window.BS = window.BS || {};
     cardMax(c) { return c.up ? BS.UPGRADES[c.up].costs.length : (c.max || 1); }
     cardCost(c) {
       if (c.up) return this.upgradeCost(c.up);
+      if (c.grow) return c.cost + c.grow * this.cardLevel(c);
       return Array.isArray(c.cost) ? c.cost[Math.min(this.cardLevel(c), c.cost.length - 1)] : c.cost;
     }
     cardName(c) { return c.name || BS.UPGRADES[c.up].name; }
@@ -692,6 +693,7 @@ window.BS = window.BS || {};
       }
       this.cards[c.id] = (this.cards[c.id] || 0) + 1;
       if (c.id === 'refinery') this.income += 1;
+      if (c.id === 'fortified') { this.bunker.maxHp += 150; this.bunker.hp += 150; }
       this.toast(this.cardName(c) + (this.cardMax(c) > 1 ? ' level ' + this.cards[c.id] : ''));
     }
     troopCost(type) { return Math.round(BS.INFANTRY[type].cost * (1 - 0.15 * this.cardLevel('recruit'))); }
@@ -717,7 +719,7 @@ window.BS = window.BS || {};
     grantAllTech() {
       this.minerals += 1e6;
       if (!this.tanks.length) this.dropTank();
-      for (const c of BS.CARDS) for (let guard = 0; guard < 20 && this.cardLevel(c) < this.cardMax(c); guard++) if (this.applyCard(c) === false) break;
+      for (const c of BS.CARDS) if (!c.grow) for (let guard = 0; guard < 20 && this.cardLevel(c) < this.cardMax(c); guard++) if (this.applyCard(c) === false) break;
       this.minerals += 20000;
     }
     // Test helper (?wave=100): wave n starts right away.
@@ -772,7 +774,7 @@ window.BS = window.BS || {};
           m.handle.setPos(m.x, m.y, BS.Terrain.height(m.x, m.y)).setYaw(m.yaw);
           continue;
         }
-        const bonus = this.up.vehicle * 2;
+        const bonus = (this.up.vehicle + (this.cards.maelstrom || 0)) * 2;
         m.cdG -= dt; m.cdA -= dt;
         for (const air of [false, true]) {
           if ((air ? m.cdA : m.cdG) > 0) continue;
@@ -2147,7 +2149,7 @@ window.BS = window.BS || {};
     fireInfantry(u, sx, sy, sz, target) {
       const d = u.def, pred = e => !(d.groundOnly && e.def.flying);
       const miss = BS.Terrain.onHigh(target.x, target.y) && !(u.fwd && BS.Terrain.onHigh(sx, sy)) && Math.random() < 0.3;   // firing up at the high ground
-      const dmg = miss ? 0 : d.dmg + this.up.weapons;
+      const dmg = miss ? 0 : d.dmg + this.up.weapons + (this.cards.capacitors || 0);
       const hx = target.x, hy = target.y, hz = target.z + target.def.height * 0.5, ang = Math.atan2(hy - sy, hx - sx);
       if (u.type === 'marine') {
         if (dmg) this.hurtEnemy(target, dmg);
@@ -2234,11 +2236,11 @@ window.BS = window.BS || {};
           t.cd = D.cd;
           const ang = Math.atan2(target.y - t.y, target.x - t.x);
           t.aim = ang; t.handle.play(/^attack/i, false);           // the hull stays put; the turret traverses (updateVisuals)
-          const fx = t.x + Math.cos(ang) * 1.4, fy = t.y + Math.sin(ang) * 1.4;
+          const fx = t.x + Math.cos(ang) * 1.4, fy = t.y + Math.sin(ang) * 1.4, vw = this.up.vehicle + (this.cards.maelstrom || 0);
           // SC2 siege shells are not drawn: launch flash, then the impact.
           this.fx.play('tankLaunch', fx, fy, 1.3, ang);
           this.projectiles.push({ kind: 'shell', friendly: true, fx, fy, fz: 1.3, tx: target.x, ty: target.y, tz: 0.1, t: 0, dur: 0.35, arc: 4,
-            dmg: D.dmg + 5 * this.up.vehicle, dmgArmored: D.dmgArmored + 3 * this.up.vehicle, impact: 'tankImpact' });
+            dmg: D.dmg + 5 * vw, dmgArmored: D.dmgArmored + 3 * vw, impact: 'tankImpact' });
           BS.audio.play('tankFire', { vol: 0.7, gap: 0.2 });
           this.shake = Math.min(1, this.shake + 0.15);
         }
