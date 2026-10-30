@@ -49,10 +49,10 @@ window.BS = window.BS || {};
       s.buys[id] = (s.buys[id] || 0) + 1; save();
       return was.filter(c => Meta.unlocked(c));
     },
-    // The run is over: bank its vespene and best wave. Returns { gas, unlocked: [cards] }.
-    endRun(mode, wavesCleared) {
+    // The run is over (evacuated: the Hyperion took you off): bank its vespene and best wave. Returns { gas, unlocked: [cards] }.
+    endRun(mode, wavesCleared, evacuated) {
       const s = load(), G = BS.META.gas, was = BS.CARDS.filter(c => !Meta.unlocked(c));
-      const gas = Math.round((wavesCleared * G.perWave + Math.floor(wavesCleared / 10) * G.milestone) * (mode === 'arena' ? G.arena : 1));
+      const gas = Math.round((wavesCleared * G.perWave + Math.floor(wavesCleared / 10) * G.milestone + (evacuated ? G.evac : 0)) * (mode === 'arena' ? G.arena : 1));
       s.gas += gas; s.best = Math.max(s.best, wavesCleared); save();
       return { gas, unlocked: was.filter(c => Meta.unlocked(c)) };
     },

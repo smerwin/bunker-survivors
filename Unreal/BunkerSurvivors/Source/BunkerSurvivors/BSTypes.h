@@ -33,7 +33,7 @@ struct FBSZergDef
 	int32 Max = 0;                    // rare units (brood queen): never more than Max on the field and on their way
 	// Creep (see BSCreep): queens plant tumors, tumors spread creep, creep overlords generate it from the sky.
 	bool bTumors = false, bTumor = false, bCreeper = false;
-	// Wave 100 finale bosses: "kerrigan" (Leaping Strike, Apocalypse) or "leviathan" (bombards, spawns mutalisks). Bosses
+	// Finale bosses: "kerrigan" (Leaping Strike, Apocalypse) or "leviathan" (bombards, spawns mutalisks). Bosses
 	// keep their own hit points (no late-wave toughening) and always spawn, whatever the alive cap.
 	FString Boss;
 	float Bombard = 0;                // leviathan bile: splash radius of each shot
@@ -128,8 +128,9 @@ namespace BSDefs
 	// weigh ShopResearchWeight times their rarity, and every offer starts with one while there is research left.
 	constexpr int32 ShopOffers = 4, RerollCost = 25, RerollStep = 25, ClearBonusA = 25, ClearBonusB = 10;
 	constexpr float ShopLinger = 40, ShopResearchWeight = 2;
-	// Between runs: vespene per wave cleared, Milestone more every tenth, x GasArena in the arena.
-	constexpr float GasPerWave = 1, GasMilestone = 5, GasArena = 1.5f;
+	// Between runs: vespene per wave cleared, Milestone more every tenth, GasEvac when the Hyperion took you off, x GasArena
+	// in the arena.
+	constexpr float GasPerWave = 1, GasMilestone = 5, GasEvac = 25, GasArena = 1.5f;
 
 	// Terran constants.
 	constexpr float BunkerHp = 400, BunkerArmor = 1, BunkerRangeBonus = 1, BunkerHalfSize = 1.5f;
@@ -172,32 +173,39 @@ namespace BSDefs
 	constexpr float HiSecRange = 1.f;
 	constexpr float StimDuration = 11, StimCooldown = 13, RepairCooldown = 20, RepairAmount = 150;
 	constexpr int32 RepairCost = 75;
-	// The difficulty curve, waves 1-100 (BS.WAVES): short early waves that ramp fast; past the knee the budget, the zergling
-	// swarm and the zerg's extra hit points grow linearly, so a maxed-out player meets a steady climb rather than a wall.
-	constexpr float WaveLenStart = 30, WaveLenEnd = 30, WavePerWaveA = 16, WavePerWaveB = 0.12f, SwarmPerWave = 5, WaveHp = 0.02f;
+	// The difficulty curve over a 30-minute run, about 40 waves (BS.WAVES): short early waves that ramp fast; past the knee
+	// the budget, the zergling swarm and the zerg's extra hit points climb steadily rather than hitting a wall.
+	constexpr float WaveLenStart = 30, WaveLenEnd = 30, WavePerWaveA = 16, WavePerWaveB = 0.4f, SwarmPerWave = 5, WaveHp = 0.02f;
 	// Alive/AliveHard: zerg on the field at once, rising from [0] at wave AliveFrom to [1] by AliveBy (the rest wait their
 	// turn). Past ShadowCrowd alive, small zerg spawn without dynamic shadows: a crowd of zerglings reads fine without
 	// them and their shadow passes are most of the cost.
-	constexpr int32 Alive[2] = { 160, 200 }, AliveHard[2] = { 200, 250 }, AliveFrom = 20, AliveBy = 60, ShadowCrowd = 100;
+	constexpr int32 Alive[2] = { 160, 220 }, AliveHard[2] = { 200, 250 }, AliveFrom = 20, AliveBy = 40, ShadowCrowd = 100;
 	// The swarm evolves on its own as well as answering your tech: from TierFrom, every TierEvery waves count as one more
 	// tech card for the late-game strains (ABSGame::LateTier).
-	constexpr int32 TierFrom = 20, TierEvery = 10;
-	// A named assault every ten waves from 30 (BS.WAVES.milestones), on top of the budget: Zerg is "type:count,...".
+	constexpr int32 TierFrom = 20, TierEvery = 5;
+	// A named assault every three waves from 28 (BS.WAVES.milestones), on top of the budget: Zerg is "type:count,...".
 	struct FMilestone { int32 Wave; const TCHAR* Name; const TCHAR* Toast; const TCHAR* Zerg; int32 Pods, Nydus; };
 	inline constexpr FMilestone Milestones[] = {
-		{ 30, TEXT("ULTRALISK STAMPEDE"), TEXT("Ultralisks stampeding down the lane!"), TEXT("ultralisk:6"), 0, 0 },
-		{ 40, TEXT("AIR ARMADA"), TEXT("A swarm of fliers darkens the sky!"), TEXT("mutalisk:12,guardian:4,devourer:3,broodlord:2"), 0, 0 },
-		{ 50, TEXT("THE LEVIATHAN"), TEXT("A leviathan looms over the field!"), TEXT("leviathan:1"), 0, 0 },
-		{ 60, TEXT("DROP POD ASSAULT"), TEXT("Drop pods landing all round the base!"), TEXT(""), 6, 0 },
-		{ 70, TEXT("NYDUS BREACH"), TEXT("Nydus worms breaching behind our lines!"), TEXT(""), 0, 3 },
-		{ 80, TEXT("DARK SWARM"), TEXT("Defilers lead a lurker siege!"), TEXT("defiler:4,lurker:8,ultralisk:4"), 0, 0 },
-		{ 90, TEXT("BROOD WAR"), TEXT("The old brood returns in force!"), TEXT("broodqueen:2,guardian:6,defiler:2,ultralisk:4"), 0, 0 },
+		{ 28, TEXT("ULTRALISK STAMPEDE"), TEXT("Ultralisks stampeding down the lane!"), TEXT("ultralisk:6"), 0, 0 },
+		{ 31, TEXT("AIR ARMADA"), TEXT("A swarm of fliers darkens the sky!"), TEXT("mutalisk:12,guardian:4,devourer:3,broodlord:2"), 0, 0 },
+		{ 34, TEXT("THE LEVIATHAN"), TEXT("A leviathan looms over the field!"), TEXT("leviathan:1"), 0, 0 },
+		{ 37, TEXT("DROP POD ASSAULT"), TEXT("Drop pods landing all round the base!"), TEXT(""), 6, 0 },
+		{ 40, TEXT("NYDUS BREACH"), TEXT("Nydus worms breaching behind our lines!"), TEXT(""), 0, 3 },
+		{ 43, TEXT("DARK SWARM"), TEXT("Defilers lead a lurker siege!"), TEXT("defiler:4,lurker:8,ultralisk:4"), 0, 0 },
+		{ 46, TEXT("BROOD WAR"), TEXT("The old brood returns in force!"), TEXT("broodqueen:2,guardian:6,defiler:2,ultralisk:4"), 0, 0 },
 	};
 	constexpr int32 WaveLenBy = 12, WaveKnee = 16, SwarmKnee = 12, SwarmMax = 360, WaveHpFrom = 10;
-	// Wave 100 finale (ABSGame::StartFinale): Kerrigan leads a leviathan and a maxed-out wave (budget x FinaleBudget, every
-	// late-game strain) while zerg drop pods land all round the base. A pod hits the ground PodLand s after it appears (its
-	// Birth sequence), crushing what it lands on, then lets out PodCargo zerg. FinaleVictory: score for killing both bosses.
-	constexpr int32 FinaleWave = 100, FinalePods = 8, PodCargo = 4;   // every other pod brings an ultralisk
+	// The run lasts EvacAt seconds of fighting (the clock stops while you shop), then the Hyperion evacuates everyone left:
+	// the run is won (+EvacScore). She arrives EvacArrive seconds before and comes down over the bunker from EvacFrom to
+	// EvacHover (metres) while the fight goes on (BS.EVAC).
+	constexpr float EvacAt = 1800, EvacArrive = 10, EvacScale = 1.2f, EvacScore = 25000;
+	inline const FVector EvacFrom(0, -40, 14), EvacHover(0, 2.5f, 6.5f);
+	// The finale (ABSGame::StartFinale), the swarm's last push: the first wave to start FinaleAt seconds in. Kerrigan leads
+	// a leviathan, and from then until the evac every wave is maxed out (budget x FinaleBudget, every late-game strain),
+	// while zerg drop pods land all round the base. A pod hits the ground PodLand s after it appears (its Birth sequence),
+	// crushing what it lands on, then lets out PodCargo zerg. FinaleVictory: score for killing both bosses.
+	constexpr float FinaleAt = 1560;
+	constexpr int32 FinalePods = 8, PodCargo = 4;   // every other pod brings an ultralisk
 	constexpr float FinaleBudget = 1.5f, PodStart = 6, PodEvery = 2, PodLand = 2.7f, PodDmg = 60, PodRadius = 2, PodMinR = 7, PodMaxR = 13;
 	constexpr float LeapCd = 8, LeapMin = 3, LeapMax = 9, LeapDur = 0.7f, LeapDmg = 90, LeapRadius = 1.8f;           // Leaping Strike onto a defender out of reach
 	constexpr float ApocCd = 13, ApocRange = 9, ApocDelay = 1.2f, ApocDmg = 70, ApocRadius = 2;                      // a psionic blast on the thickest knot of defenders

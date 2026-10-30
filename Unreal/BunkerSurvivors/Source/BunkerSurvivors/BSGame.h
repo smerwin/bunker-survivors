@@ -241,7 +241,7 @@ struct FBSFlash { ABSModelActor* A = nullptr; FVector P = FVector::ZeroVector; f
 struct FBSFloater { FVector Pos; FString Text; FLinearColor Color; float T = 0; };
 struct FBSCorpse { ABSModelActor* Actor = nullptr; float T = 0, Hold = 3.5f, X = 0, Y = 0, Z = 0, Yaw = 0; bool bSink = true, bVanish = false; };
 struct FBSSpawn { float T = 0; FString Type; float Ang = 0; };
-// A zerg drop pod (the wave 100 finale): T counts up from a negative delay; it lands at PodLand and lets its cargo out.
+// A zerg drop pod (the finale): T counts up from a negative delay; it lands at PodLand and lets its cargo out.
 struct FBSPod { float X = 0, Y = 0, Yaw = 0, T = 0, SpawnT = 0; TArray<FString> Cargo; ABSModelActor* Actor = nullptr; bool bDropped = false, bLanded = false; };
 
 UCLASS()
@@ -313,8 +313,13 @@ public:
 	bool BuyTech(const FString& Id);
 	void GrantAllTech();                  // playtesting (-BSTechMax): every shop card at its top level
 	void SkipToWave(int32 N) { Shop.bOpen = false; Wave = FMath::Max(0, N - 1); StartWave(); }   // playtesting (-BSWave=100): wave N starts now
-	// Wave 100 finale: Kerrigan and a leviathan lead a maxed-out wave; killing both wins (the game carries on).
+	// The finale, the swarm's last push: Kerrigan and a leviathan lead a maxed-out wave; killing both wins it (the game
+	// carries on to the evac).
 	struct FFinale { bool bOn = false, bWon = false; float T = 0, WonAt = -1; } Finale;
+	// The end of the run: the Hyperion comes down over the bunker (BSDefs::EvacAt) and takes everyone off; bWon once she has.
+	struct FEvac { bool bOn = false; float T = 0, Bob = 0; FVector P = FVector::ZeroVector; ABSModelActor* Actor = nullptr; } Evac;
+	bool bWon = false;
+	float EvacIn() const { return FMath::Max(0.f, BSDefs::EvacAt - Time); }
 	TArray<TSharedPtr<FBSEnemy>> Bosses() const { TArray<TSharedPtr<FBSEnemy>> Out; for (const TSharedPtr<FBSEnemy>& E : Enemies) if (!E->Def->Boss.IsEmpty() && E->Alive()) Out.Add(E); return Out; }
 	void Toast(const FString& Msg);
 
@@ -398,6 +403,10 @@ private:
 	void Corpse(const FString& Key, float X, float Y, float Z, float Yaw, float Hold, float Scale = 1.f, bool bTerran = false);
 	void Floater(float X, float Y, float Z, const FString& Text, const FLinearColor& C);
 	void GameOver();
+	void StartEvac();
+	void Evacuate();
+	void UpdateEvac(float Dt);
+	void FinishRun();                     // the run is over either way: score, telemetry, vespene, best
 	void UpdateEnemies(float Dt);
 	void UpdateBunker(float Dt);
 	void UpdateTanks(float Dt);
@@ -478,7 +487,7 @@ private:
 	void CastBroodling(FBSEnemy& E);
 	void BroodlingHit(const FBSTarget& T);
 	void UpdateSpells(float Dt);
-	// Wave 100 finale.
+	// The finale.
 	void StartFinale();
 	void DropPods(int32 N, float T0, float Every);
 	void UpdatePods(float Dt);

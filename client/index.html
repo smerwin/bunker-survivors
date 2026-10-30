@@ -20,6 +20,8 @@
       <div class="sep"></div>
       <div class="stat"><div><small>WAVE</small><b id="wave" class="amber">00</b></div><svg id="wavering" viewBox="0 0 36 36"><circle class="track" cx="18" cy="18" r="15"/><circle id="waveArc" class="arc" cx="18" cy="18" r="15"/><text id="waveSecs" x="18" y="22">0</text></svg></div>
       <div class="sep"></div>
+      <div class="stat"><div><small>HYPERION</small><b id="evacT">30:00</b></div></div>
+      <div class="sep"></div>
       <div class="stat"><div><small>KILLS</small><b id="kills">0</b></div></div>
     </div>
     <div id="sysbtns">
@@ -52,21 +54,21 @@
       <p class="hint">Troops, tanks, SCVs and turrets stay in the armoury.</p>
     </div></div>
     <div id="pausedModal" class="modal hidden"><div class="card glass"><h2>PAUSED</h2><div class="btns"><button id="resume" class="primary">RESUME</button><button class="menuBtn">MAIN MENU</button></div></div></div>
-    <div id="overModal" class="modal hidden"><div class="card glass over"><h2>BUNKER LOST</h2><div id="overStats" class="stats"></div><div id="overBest" class="pill"></div><div id="overMeta" class="overMeta"></div><div class="btns"><button id="redeploy" class="primary">REDEPLOY</button><button class="menuBtn">MAIN MENU</button></div></div></div>
+    <div id="overModal" class="modal hidden"><div class="card glass over"><h2 id="overTitle">BUNKER LOST</h2><div id="overStats" class="stats"></div><div id="overBest" class="pill"></div><div id="overMeta" class="overMeta"></div><div class="btns"><button id="redeploy" class="primary">REDEPLOY</button><button class="menuBtn">MAIN MENU</button></div></div></div>
   </div>
 
   <div id="start">
     <div class="title"><h1>BUNKER<br><span>SURVIVORS</span></h1><div class="bar"></div><p>ONE FIRETEAM. &nbsp;ONE BUNKER. &nbsp;THE SWARM.</p></div>
     <div class="modes">
-      <button class="mode glass" data-mode="lane"><img src="icon/btn-unit-terran-marine.png" alt=""><span><b>LANE DEFENCE</b><small>Hold the lane as the Swarm pours down from the north.</small></span><em id="tagLane"></em></button>
-      <button class="mode glass arena" data-mode="arena"><img src="icon/btn-unit-zerg-ultralisk.png" alt=""><span><b>360 ARENA</b><small>Waves from every side. Bigger, faster, deadlier.</small></span><em id="tagArena"></em></button>
+      <button class="mode glass" data-mode="lane"><img src="icon/btn-unit-terran-marine.png" alt=""><span><b>LANE DEFENCE</b><small>Hold the lane for 30 minutes as the Swarm pours down from the north.</small></span><em id="tagLane"></em></button>
+      <button class="mode glass arena" data-mode="arena"><img src="icon/btn-unit-zerg-ultralisk.png" alt=""><span><b>360 ARENA</b><small>Waves from every side for 30 minutes. Bigger, faster, deadlier.</small></span><em id="tagArena"></em></button>
     </div>
     <div class="foot"><button id="hyperionBtn" class="glass"><img src="icon/btn-unit-terran-battlecruiser.png" alt=""><span>HYPERION<small id="gasLine"></small></span></button><p id="best"></p><p id="status">CONNECTING TO STARCRAFT II...</p><p id="progress"></p><button id="relink" class="hidden">LINK STARCRAFT II FOLDER AGAIN</button></div>
   </div>
 
   <div id="hyperion" class="modal hidden"><div class="card glass">
     <h2>HYPERION</h2><p class="gas"><i class="gasIcon"></i><b id="gas">0</b> VESPENE</p>
-    <p class="hint">Every run banks vespene: one a wave cleared, five more every tenth wave, half as much again in the arena.</p>
+    <p class="hint">Every run banks vespene: one a wave cleared, five more every tenth wave, 25 if the Hyperion takes you off, half as much again in the arena.</p>
     <div id="perks"></div>
     <h3>CARDS</h3><div id="codex"></div>
     <div class="btns"><button id="hyperionClose" class="primary">BACK</button></div>

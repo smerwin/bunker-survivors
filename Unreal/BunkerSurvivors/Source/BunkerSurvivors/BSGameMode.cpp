@@ -71,7 +71,10 @@ void ABSGameMode::StartGame(EBSMode Mode)
 	FParse::Value(Cmd, TEXT("BSTelemetry="), Game->TelemetryPath);
 	Game->bStarted = true;
 	Game->BeginOpening();
-	// -BSWave=100: jump straight to that wave (the Kerrigan finale); combine with -BSTechMax.
+	// -BSWave=30: jump straight to that wave; -BSClock=26: set the run clock to that many minutes (26: the next wave is the
+	// Kerrigan finale, 29.5: the Hyperion is on her way); combine with -BSTechMax.
+	float Clock = 0;
+	if (FParse::Value(Cmd, TEXT("BSClock="), Clock) && Clock > 0) Game->Time = Clock * 60;
 	int32 JumpWave = 0;
 	if (FParse::Value(Cmd, TEXT("BSWave="), JumpWave) && JumpWave > 1) Game->SkipToWave(JumpWave);
 	// Weapon-effects test: a pack of zerg right outside the bunker, fireteam with a firebat.

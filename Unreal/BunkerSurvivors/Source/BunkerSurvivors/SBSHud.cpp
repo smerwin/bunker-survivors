@@ -411,7 +411,7 @@ void SBSHud::Construct(const FArguments& Args)
 }
 
 // =====================================================================================================
-// Command strip: minerals, wave, kills, score, sound and pause
+// Command strip: minerals, wave, the Hyperion's ETA, kills, score, sound and pause
 // =====================================================================================================
 TSharedRef<SWidget> SBSHud::BuildCommandStrip()
 {
@@ -430,7 +430,7 @@ TSharedRef<SWidget> SBSHud::BuildCommandStrip()
 			D::Text(Out, L + 2, G, Label, D::Label(8.5f), FVector2f(X, 8), C::Muted);
 			D::Text(Out, L + 2, G, Value, D::Fit(Value, [](float S) { return D::Num(S); }, 20, 12, Wd - 8), FVector2f(X + Shake, 19), Col);
 		};
-		const int32 N = bWide ? 4 : 3;
+		const int32 N = bWide ? 5 : 4;
 		const float Sw = W / N;
 		// Minerals.
 		{
@@ -450,15 +450,22 @@ TSharedRef<SWidget> SBSHud::BuildCommandStrip()
 			D::Circle(Out, L + 3, G, Rc, 13, Frac < 0.2f ? C::Red : C::Cyan, 2.5f, 32, -PI / 2, -PI / 2 + 2 * PI * Frac);
 			D::Text(Out, L + 4, G, FString::FromInt(FMath::Max(0, FMath::CeilToInt(Gm->WaveTimer))), D::Bold(9), FVector2f(Rc.X, Rc.Y - 7), C::Ink, 0.5f);
 		}
-		// Kills.
+		// Time left until the Hyperion takes everyone off (amber from the finale on).
 		{
 			const float X = Sw * 2;
+			const int32 Ev = FMath::CeilToInt(Gm->EvacIn());
+			D::Line(Out, L + 2, G, FVector2f(X, 12), FVector2f(X, 38), C::Hair);
+			Section(X + 14, Sw - 18, TEXT("HYPERION"), FString::Printf(TEXT("%02d:%02d"), Ev / 60, Ev % 60), Ev <= BSDefs::EvacAt - BSDefs::FinaleAt ? C::Amber : C::Ink);
+		}
+		// Kills.
+		{
+			const float X = Sw * 3;
 			D::Line(Out, L + 2, G, FVector2f(X, 12), FVector2f(X, 38), C::Hair);
 			Section(X + 14, Sw - 18, TEXT("KILLS"), D::Int(Gm->Kills), C::Ink);
 		}
 		if (bWide)
 		{
-			const float X = Sw * 3;
+			const float X = Sw * 4;
 			D::Line(Out, L + 2, G, FVector2f(X, 12), FVector2f(X, 38), C::Hair);
 			Section(X + 14, Sw - 18, TEXT("SCORE"), D::Int(Gm->Score + Gm->Kills * 10 + Gm->Wave * 250), C::Ink);
 		}
@@ -901,7 +908,7 @@ TSharedRef<SWidget> SBSHud::BuildStartScreen()
 			if (As) D::Image(Out, L + 2, G, As->IconBrush(bArena ? TEXT("btn-unit-zerg-ultralisk") : TEXT("btn-unit-terran-marine")), P + FVector2f(18, 18), FVector2f(60, 60));
 			if (As) D::RLine(Out, L + 3, G, P + FVector2f(17, 17), FVector2f(62, 62), 10, C::A(C::Ink, 0.2f));
 			D::Text(Out, L + 2, G, bArena ? TEXT("360 ARENA") : TEXT("LANE DEFENCE"), D::Fit(bArena ? TEXT("360 ARENA") : TEXT("LANE DEFENCE"), [](float Sz) { return D::Title(Sz); }, 14.5f, 10, S.X - 94 - 14), P + FVector2f(94, 20), C::Ink);
-			const FString Desc = bArena ? TEXT("Waves from every side. Bigger, faster, deadlier.") : TEXT("Hold the lane as the Swarm pours down from the north.");
+			const FString Desc = bArena ? TEXT("Waves from every side for 30 minutes. Bigger, faster, deadlier.") : TEXT("Hold the lane for 30 minutes as the Swarm pours down from the north.");
 			FString D1, D2;
 			D::SplitTwo(Desc, D1, D2);
 			const FSlateFontInfo Df = D::Fit(D1.Len() > D2.Len() ? D1 : D2, [](float Sz) { return D::Body(Sz); }, 10.5f, 8, S.X - 110, D::BodySlack);
@@ -1000,9 +1007,10 @@ TSharedRef<SWidget> SBSHud::BuildModal(bool bGameOver)
 		ABSGame* Gm = Game(); if (!Gm) return L;
 		const FVector2f S(340, PanelH);
 		D::RFill(Out, L, G, FVector2f(0, 0), S, 18, C::A(C::Dark, 0.94f));
-		D::RLine(Out, L + 1, G, FVector2f(0, 0), S, 18, bGameOver ? C::A(C::Red, 0.5f) : C::Hair);
-		D::Rect(Out, L + 1, G, FVector2f(S.X * 0.5f - 24, 0), FVector2f(48, 2), bGameOver ? C::Red : C::Cyan);
-		D::Text(Out, L + 2, G, bGameOver ? TEXT("BUNKER LOST") : TEXT("PAUSED"), D::Fit(TEXT("BUNKER LOST"), [](float Sz) { return D::Title(Sz); }, 26, 14, S.X - 36), FVector2f(S.X * 0.5f, 22), bGameOver ? C::Red : C::Ink, 0.5f);
+		const FLinearColor EndCol = Gm->bWon ? C::Green : C::Red;     // evacuated by the Hyperion, or overrun
+		D::RLine(Out, L + 1, G, FVector2f(0, 0), S, 18, bGameOver ? C::A(EndCol, 0.5f) : C::Hair);
+		D::Rect(Out, L + 1, G, FVector2f(S.X * 0.5f - 24, 0), FVector2f(48, 2), bGameOver ? EndCol : C::Cyan);
+		D::Text(Out, L + 2, G, bGameOver ? (Gm->bWon ? TEXT("EVACUATED") : TEXT("BUNKER LOST")) : TEXT("PAUSED"), D::Fit(TEXT("BUNKER LOST"), [](float Sz) { return D::Title(Sz); }, 26, 14, S.X - 36), FVector2f(S.X * 0.5f, 22), bGameOver ? EndCol : C::Ink, 0.5f);
 		const int32 Score = bGameOver ? Gm->FinalScore : FMath::RoundToInt(Gm->Score + Gm->Kills * 10 + Gm->Wave * 250);
 		const TArray<TPair<FString, FString>> Stats = {
 			{ TEXT("WAVE"), FString::FromInt(Gm->Wave) }, { TEXT("KILLS"), FString::FromInt(Gm->Kills) }, { TEXT("SCORE"), FString::FromInt(Score) } };
@@ -1236,7 +1244,7 @@ TSharedRef<SWidget> SBSHud::BuildHyperion()
 		const FVector2f S = FVector2f(G.GetLocalSize());
 		D::Text(Out, L, G, TEXT("HYPERION"), D::Title(24), FVector2f(S.X * 0.5f, 4), C::Ink, 0.5f);
 		D::Text(Out, L, G, FString::Printf(TEXT("%d VESPENE"), BSMeta::Gas()), D::Label(11), FVector2f(S.X * 0.5f, 48), C::Green, 0.5f);
-		const FString H = TEXT("Every run banks vespene: one a wave cleared, five more every tenth wave, half as much again in the arena.");
+		const FString H = TEXT("Every run banks vespene: one a wave cleared, five more every tenth wave, 25 if the Hyperion takes you off, half as much again in the arena.");
 		FString H1, H2; D::SplitTwo(H, H1, H2);
 		const FSlateFontInfo Hf = D::Fit(H1.Len() > H2.Len() ? H1 : H2, [](float Sz) { return D::Body(Sz); }, 9.5f, 6.5f, S.X, D::BodySlack);
 		D::Text(Out, L, G, H1, Hf, FVector2f(S.X * 0.5f, 70), C::Muted, 0.5f);
@@ -1364,7 +1372,7 @@ int32 SBSHud::PaintBanner(const FGeometry& G, FSlateWindowElementList& Out, int3
 		D::Disc(Out, L + 1, G, P + FVector2f(14, 13), 3, C::A(C::Cyan, Alpha), 12);
 		D::Text(Out, L + 2, G, T, F, FVector2f(P.X + 24, P.Y + 13 - Sz.Y * 0.5f), C::A(C::Ink, Alpha));
 	}
-	// Wave 100 finale: a long health bar per boss under the toast.
+	// The finale: a long health bar per boss under the toast.
 	{
 		const TArray<TSharedPtr<FBSEnemy>> Bosses = Game()->Bosses();
 		const float W = FMath::Min(420.f, S.X - 40), X0 = S.X * 0.5f - W * 0.5f;

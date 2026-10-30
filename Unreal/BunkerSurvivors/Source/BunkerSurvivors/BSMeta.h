@@ -19,7 +19,7 @@ namespace BSMeta
 	FString CardName(const FBSCardDef& C);
 	// A card bought in a run; returns the cards this purchase unlocked.
 	TArray<const FBSCardDef*> RecordBuy(const FString& CardId);
-	// The run is over: bank its vespene and best wave.
+	// The run is over (bEvacuated: the Hyperion took you off): bank its vespene and best wave.
 	struct FRunResult { int32 Gas = 0; TArray<const FBSCardDef*> Unlocked; };
-	FRunResult EndRun(bool bArena, int32 WavesCleared);
+	FRunResult EndRun(bool bArena, int32 WavesCleared, bool bEvacuated);
 }

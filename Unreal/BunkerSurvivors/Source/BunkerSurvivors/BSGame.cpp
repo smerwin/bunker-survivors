@@ -2080,14 +2080,15 @@ void ABSGame::StartWave()
 	const int32 Mule = 30 * CardLevel(TEXT("mule"));
 	if (Mule) { Minerals += Mule; Floater(0, -3, 2, FString::Printf(TEXT("+%d MULE"), Mule), FLinearColor(0.5f, 0.85f, 1)); }
 	const int32 Wv = Wave;
-	const bool bFinale = Wv == BSDefs::FinaleWave && !Finale.bOn;
+	const bool bFinale = !Finale.bOn && Time >= BSDefs::FinaleAt;
+	const bool bPush = bFinale || Finale.bOn;              // from the finale to the evac every wave is the swarm's last push
 	auto Quad = [](float X) { return 20 + 8 * X + 0.3f * X * X; };
 	WaveLen = FMath::RoundToFloat(BSDefs::WaveLenStart + (BSDefs::WaveLenEnd - BSDefs::WaveLenStart) * FMath::Clamp((Wv - 1) / float(BSDefs::WaveLenBy - 1), 0.f, 1.f));
-	float Budget = (Wv <= BSDefs::WaveKnee ? Quad(Wv) : Quad(BSDefs::WaveKnee) + BSDefs::WavePerWaveA * (Wv - BSDefs::WaveKnee) + BSDefs::WavePerWaveB * FMath::Square(float(Wv - BSDefs::WaveKnee))) * (bHard ? 1.15f : 1.f) * (bFinale ? BSDefs::FinaleBudget : 1.f);
+	float Budget = (Wv <= BSDefs::WaveKnee ? Quad(Wv) : Quad(BSDefs::WaveKnee) + BSDefs::WavePerWaveA * (Wv - BSDefs::WaveKnee) + BSDefs::WavePerWaveB * FMath::Square(float(Wv - BSDefs::WaveKnee))) * (bHard ? 1.15f : 1.f) * (bPush ? BSDefs::FinaleBudget : 1.f);
 	// Late game: every high-tech card unlocked brings stranger zerg, and more of them. Guardians come for the mechs;
-	// scourge and devourers only when there is Terran air to hunt. The finale throws in the whole late roster.
+	// scourge and devourers only when there is Terran air to hunt. The last push throws in the whole late roster.
 	// Rare units (Max: brood queens) never number more than Max on the field and on their way, counting this wave.
-	const int32 Tier = bFinale ? FMath::Max(LateTier(), BSDefs::Tech().Num()) : LateTier();
+	const int32 Tier = bPush ? FMath::Max(LateTier(), BSDefs::Tech().Num()) : LateTier();
 	const bool bAirUp = AirPresence();
 	auto Wt = [&](const FBSZergDef* D) { return D->Weight * (D->Late ? 0.6f + 0.4f * Tier : 1.f) * (D->bPreferMech && Mechs.Num() ? 2.f : 1.f) * (D->bAntiAir && !bAirUp ? 0.f : 1.f); };
 	TArray<const FBSZergDef*> Types;
@@ -2198,7 +2199,7 @@ void ABSGame::StartWave()
 	if (bFinale) StartFinale();
 }
 
-// ---- Wave 100 finale ------------------------------------------------------------------------------------
+// ---- The finale: the swarm's last push before the Hyperion arrives ---------------------------------------
 // Kerrigan leads a leviathan and a maxed-out wave in person, while drop pods slam down all round the base.
 void ABSGame::StartFinale()
 {
@@ -3229,6 +3230,8 @@ void ABSGame::Tick(float Dt)
 void ABSGame::Step(float Dt)
 {
 	Time += Dt;
+	if (!Evac.bOn && Time >= BSDefs::EvacAt - BSDefs::EvacArrive) StartEvac();
+	else if (Evac.bOn && Time >= BSDefs::EvacAt) { Evacuate(); return; }
 	Minerals += Income * Dt;
 	Score += Dt * 0.5f;
 	Shake = FMath::Max(0.f, Shake - Dt * 2);
@@ -4018,6 +4021,7 @@ void ABSGame::UpdateProjectiles(float Dt)
 
 void ABSGame::UpdateVisuals(float Dt)
 {
+	UpdateEvac(Dt);
 	// -BSShowSlits: mark the bunker's four gun slits (red Weapon, green 02, blue 04, yellow 06).
 	static const bool bShowSlits = FParse::Param(FCommandLine::Get(), TEXT("BSShowSlits"));
 	if (bShowSlits && Bunker.Actor)
@@ -4263,6 +4267,37 @@ void ABSGame::AutoShop()
 	}
 }
 
+// ---- The end of the run ----------------------------------------------------------------------------------
+// BSDefs::EvacAt seconds in (the clock stops while you shop) everyone still standing is evacuated by the Hyperion: the
+// run is won. She arrives EvacArrive seconds before, and the fight goes on while she comes down over the bunker.
+void ABSGame::StartEvac()
+{
+	Evac.bOn = true; Evac.T = Time; Evac.P = BSDefs::EvacFrom;
+	WaveBanner = TEXT("THE HYPERION HAS ARRIVED  //  HOLD ON"); WaveBannerT = Time; WaveSerial++;
+	Toast(TEXT("Hyperion inbound: hold the bunker!"));
+	Shake = 0.5f;
+	Evac.Actor = AcquireModel(TEXT("battlecruiser"));
+	if (Evac.Actor) { Evac.Actor->SetScale(BSDefs::EvacScale); Evac.Actor->SetTeamColor(TerranColor); Evac.Actor->SetSim(Evac.P.X, Evac.P.Y, Evac.P.Z, PI / 2); Evac.Actor->Play(StandNames, true); }
+}
+
+void ABSGame::Evacuate()
+{
+	if (bOver) return;
+	bOver = true; bWon = true;
+	Score += BSDefs::EvacScore;
+	EndReason = TEXT("evacuated");
+	FinishRun();
+}
+
+// The Hyperion glides in from the south and settles over the bunker.
+void ABSGame::UpdateEvac(float Dt)
+{
+	if (!Evac.Actor) return;
+	Evac.P += (BSDefs::EvacHover - Evac.P) * (1 - FMath::Exp(-Dt * 0.9f));
+	Evac.Bob += Dt;
+	Evac.Actor->SetSim(Evac.P.X, Evac.P.Y, Evac.P.Z + 0.2f * FMath::Sin(Evac.Bob * 0.8f), PI / 2);
+}
+
 void ABSGame::GameOver()
 {
 	if (bOver) return;
@@ -4272,12 +4307,17 @@ void ABSGame::GameOver()
 	AddFx(EBSFxKind::Blast, FVector(0, 0, 0.05f), FVector::ZeroVector, 1.2f, 6, FLinearColor(1, 0.5f, 0.2f), 10);
 	PlaySound(BSSounds::Explosion, 0.9f);
 	Shake = 1;
-	FinalScore = FMath::RoundToInt(Score + Kills * 10 + Wave * 250);
 	if (EndReason.IsEmpty()) EndReason = TEXT("overrun");
+	FinishRun();
+}
+
+void ABSGame::FinishRun()
+{
+	FinalScore = FMath::RoundToInt(Score + Kills * 10 + Wave * 250);
 	WriteTelemetry(TEXT("wave"));
 	WriteTelemetry(TEXT("final"));
 	if (bAutoPlay) return;
-	MetaResult = BSMeta::EndRun(Mode == EBSMode::Arena, WavesCleared);
+	MetaResult = BSMeta::EndRun(Mode == EBSMode::Arena, WavesCleared, bWon);
 	bNewBest = FinalScore > Best;
 	Best = FMath::Max(Best, FinalScore);
 	GConfig->SetInt(TEXT("BunkerSurvivors"), *(FString(TEXT("Best.")) + (Mode == EBSMode::Lane ? TEXT("Lane") : TEXT("Arena"))), Best, GGameUserSettingsIni);
