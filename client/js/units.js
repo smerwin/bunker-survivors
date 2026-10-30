@@ -407,9 +407,9 @@ window.BS = window.BS || {};
   // The shop. Every cleared wave (Game.endWave) pauses the fight and offers `offers` random cards, bought with banked
   // minerals; troops, tanks, SCVs, turrets and repairs stay in the armoury throughout. A reroll costs reroll[0], reroll[1] more
   // each time in the same visit. linger: seconds after a wave's last spawn before the shop opens anyway (stragglers wait,
-  // frozen, while you shop). clearBonus: minerals for a wave wiped out, [0] + [1] x wave. research: weight multiplier for
-  // research cards (up), the backbone of every build.
-  BS.SHOP = { offers: 4, reroll: [25, 25], linger: 40, clearBonus: [25, 10], research: 2 };
+  // frozen, while you shop); flyers still aloft pressIn seconds after it close in. clearBonus: minerals for a wave wiped
+  // out, [0] + [1] x wave. research: weight multiplier for research cards (up), the backbone of every build.
+  BS.SHOP = { offers: 4, reroll: [25, 25], linger: 40, pressIn: 10, clearBonus: [25, 10], research: 2 };
   // Rarer cards turn up later (from: first wave they can be offered) and less often (weight). Every offer includes at
   // least one research card (up) while there is research left.
   BS.RARITY = {

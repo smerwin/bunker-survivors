@@ -3383,7 +3383,9 @@ void ABSGame::UpdateEnemies(float Dt)
 		const float Reach = Dd - T.Radius - E.Radius;
 		// A brood queen with no prey about (only the bunker or buildings) presses in under the guns to find some.
 		const bool bPrey = D->Spell != TEXT("broodling") || BroodPriority(T.Kind) > 0;
-		const float Range = (bPrey ? D->Range : 4.f) + (T.Kind == FBSTarget::Bunker ? 0.2f : 0);
+		// Flyers still about well after the wave's last spawn close in under the guns rather than siege from afar.
+		const bool bPressIn = D->bFlying && SpawnQueue.Num() == 0 && LingerT > BSDefs::ShopPressIn;
+		const float Range = FMath::Min(bPrey ? D->Range : 4.f, bPressIn ? 4.f : TNumericLimits<float>::Max()) + (T.Kind == FBSTarget::Bunker ? 0.2f : 0);
 		const bool bSlowed = E.SlowUntil > Time;
 		if (D->bSuicide && Reach <= Range)
 		{
