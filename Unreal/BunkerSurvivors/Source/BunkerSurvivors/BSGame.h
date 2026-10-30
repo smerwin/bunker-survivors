@@ -156,7 +156,7 @@ struct FBSEnemy
 	int32 Id = 0;
 	const FBSZergDef* Def = nullptr;
 	float X = 0, Y = 0, Z = 0, Yaw = 0, Hp = 0, MaxHp = 0;
-	float Retarget = 0, Cd = 0, HitAt = -1, SlowUntil = 0, Radius = 0, Life = 0, BurrowT = 0, Sx = 0, Sy = 0, Flash = 0;
+	float Retarget = 0, Cd = 0, HitAt = -1, SlowUntil = 0, Radius = 0, Life = 0, BurrowT = 0, UnburrowT = 0, Sx = 0, Sy = 0, Flash = 0;
 	bool bPendingHit = false, bBurrowed = false, bBurrowing = false, bAttacking = false;
 	TArray<FVector2D> Route;                  // lane terrain: waypoints through the Y (or up a ramp to a ledge)
 	bool bHighRoute = false, bPerched = false;

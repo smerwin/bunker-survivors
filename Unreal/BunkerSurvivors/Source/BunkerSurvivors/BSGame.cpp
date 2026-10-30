@@ -3410,12 +3410,23 @@ void ABSGame::UpdateEnemies(float Dt)
 				continue;
 			}
 		}
+		const bool bHigh = BSTerrain::OnHigh(E.X, E.Y);          // the high ground adds a metre of reach
 		if (D->bBurrows)
 		{
-			if (!E.bBurrowed && Reach <= Range - 1) { E.bBurrowed = true; E.BurrowT = 1.0f; PlayEnemyAnim(E, TEXT("burrow")); }
-			else if (E.bBurrowed) E.BurrowT -= Dt;
+			if (!E.bBurrowed && Reach <= Range - 1) { E.bBurrowed = true; E.BurrowT = 1.0f; E.UnburrowT = 0; PlayEnemyAnim(E, TEXT("burrow")); }
+			else if (E.bBurrowed)
+			{
+				E.BurrowT -= Dt;
+				// Its prey dead or gone and nothing else in reach: come up after a moment and move on.
+				if (Reach > Range + (bHigh ? 1.f : 0.f))
+				{
+					const FBSTarget* Near = Targets.FindByPredicate([&](const FBSTarget& O) { return FMath::Sqrt(Dist2(E.X, E.Y, O.X, O.Y)) - O.Radius - E.Radius <= D->Range + (bHigh ? 1.f : 0.f); });
+					if (Near) { E.Target = *Near; E.UnburrowT = 0; }
+					else { E.UnburrowT += Dt; if (E.UnburrowT > 1.5f) E.bBurrowed = false; }
+				}
+				else E.UnburrowT = 0;
+			}
 		}
-		const bool bHigh = BSTerrain::OnHigh(E.X, E.Y);          // the high ground adds a metre of reach
 		const bool bCanAttack = Reach <= Range + (bHigh ? 1.f : 0.f) && !(D->bBurrows && (!E.bBurrowed || E.BurrowT > 0)) && !(E.Route.Num() && E.bHighRoute);
 		if (bCanAttack)
 		{
