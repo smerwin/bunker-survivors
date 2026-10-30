@@ -194,6 +194,9 @@ alone would give.
 | Hyperflight Rotors | rare, 2 levels | Air strike: one more banshee and 25% faster refuelling. |
 | Recruitment Drive | rare, 2 levels | Troopers cost 15% less. |
 | Spoils of War | rare, 3 levels | 10% interest on banked minerals at each shop (up to 50 a level). Unlocked by clearing wave 10. |
+| Ultra-Capacitors | common, endless | Infantry +1 damage a level. Turns up once Infantry Weapons is maxed. |
+| Maelstrom Rounds | common, endless | Siege tanks +5 damage, goliaths, thors and the Odin +2, a level. Once Vehicle Weapons is maxed. |
+| Neosteel Fortified Armor | common, endless | Bunker +150 HP a level. Once Building Armor is maxed. |
 | Starport | rare | Puts the viking wing in the armoury. Unlocked by clearing wave 12. |
 | Siege Optics | epic | Siege tanks +2 range. Unlocked by buying Vehicle Weapons 3 times. |
 | Factory | epic | Puts goliaths in the armoury (needs Vehicle Weapons 2). Unlocked by buying Vehicle Weapons 5 times. |
@@ -203,6 +206,9 @@ alone would give.
 | The Odin | legendary | Puts the Odin in the armoury (needs the Fusion Core). Unlocked by buying the Fusion Core once. |
 
 "Bought n times" counts every run you have played, so the deeper cards open up as you go.
+
+The endless cards carry each research tree on past its top level, so late shops always have something to buy: 500
+minerals for the first level (450 for the armor), 125 more for each one after.
 
 **High-tech reinforcements.** Once a shop card has put them in the armoury, they are bought like troops:
 

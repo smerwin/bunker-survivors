@@ -94,6 +94,7 @@ struct FBSCardDef
 	FString Id, Up, Tech, Name, Icon, Desc, Rarity, Req, UnlockBuys;
 	int32 Max = 1, UnlockBuysN = 0, UnlockBest = 0;
 	TArray<int32> Costs;
+	int32 Grow = 0;                       // endless cards: Costs[0] + Grow x level
 };
 
 // Rarer cards turn up later (From: first wave they can be offered) and less often (Weight).

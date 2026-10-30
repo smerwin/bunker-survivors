@@ -1437,6 +1437,7 @@ int32 ABSGame::CardMax(const FBSCardDef& C) const
 int32 ABSGame::CardCost(const FBSCardDef& C) const
 {
 	if (!C.Up.IsEmpty()) return CostOfUpgrade(C.Up);
+	if (C.Grow) return C.Costs[0] + C.Grow * CardLevel(C);
 	return C.Costs[FMath::Min(CardLevel(C), C.Costs.Num() - 1)];
 }
 
@@ -1542,6 +1543,7 @@ void ABSGame::ApplyCard(const FBSCardDef& C)
 	}
 	const int32 L = ++Cards.FindOrAdd(C.Id);
 	if (C.Id == TEXT("refinery")) Income += 1;
+	if (C.Id == TEXT("fortified")) { Bunker.MaxHp += 150; Bunker.Hp += 150; }
 	Toast(C.Max > 1 ? FString::Printf(TEXT("%s level %d"), *C.Name, L) : C.Name);
 }
 
@@ -1572,7 +1574,7 @@ void ABSGame::GrantAllTech()
 	Minerals += 1e6f;
 	if (!Tanks.Num()) DropTank();
 	for (const FBSCardDef& C : BSDefs::Cards())
-		for (int32 Guard = 0; Guard < 20 && CardLevel(C) < CardMax(C); Guard++) ApplyCard(C);
+		if (!C.Grow) for (int32 Guard = 0; Guard < 20 && CardLevel(C) < CardMax(C); Guard++) ApplyCard(C);
 	Minerals += 20000;
 }
 
@@ -1642,7 +1644,7 @@ void ABSGame::UpdateMechs(float Dt)
 			if (M.Actor) M.Actor->SetSim(M.X, M.Y, BSTerrain::Height(M.X, M.Y), M.Yaw);
 			continue;
 		}
-		const float Bonus = Up.Vehicle * 2.f;
+		const float Bonus = (Up.Vehicle + Cards.FindRef(TEXT("maelstrom"))) * 2.f;
 		M.CdG -= Dt; M.CdA -= Dt;
 		for (const bool bAir : { false, true })
 		{
@@ -3611,7 +3613,7 @@ void ABSGame::FireInfantry(const FBSInfantryDef* D, const FVector& Muzzle, const
 {
 	auto Pred = [D](const FBSEnemy& E) { return !(D->bGroundOnly && E.Def->bFlying); };
 	const bool bMiss = BSTerrain::OnHigh(Target->X, Target->Y) && !(bFwd && BSTerrain::OnHigh(Muzzle.X, Muzzle.Y)) && FMath::FRand() < 0.3f;   // firing up at the high ground
-	const float DmgBase = bMiss ? 0.f : D->Dmg + Up.Weapons;
+	const float DmgBase = bMiss ? 0.f : D->Dmg + Up.Weapons + Cards.FindRef(TEXT("capacitors"));
 	const FVector Hit(Target->X, Target->Y, Target->Z + Target->Def->Height * 0.5f);
 	const float Ang = FMath::Atan2(Hit.Y - Muzzle.Y, Hit.X - Muzzle.X);
 	if (D->Key == TEXT("marine"))
@@ -3734,7 +3736,8 @@ void ABSGame::UpdateTanks(float Dt)
 			FBSProjectile P; P.Kind = EBSProjKind::Shell; P.bFriendly = true;
 			P.From = FVector(K.X + FMath::Cos(Ang) * 1.4f, K.Y + FMath::Sin(Ang) * 1.4f, 1.3f);
 			P.To = FVector(Target->X, Target->Y, 0.1f); P.Dur = 0.55f; P.Arc = 4;
-			P.Dmg = BSDefs::TankDmg + 5 * Up.Vehicle; P.DmgArmored = BSDefs::TankDmgArmored + 3 * Up.Vehicle;
+			const int32 Vw = Up.Vehicle + Cards.FindRef(TEXT("maelstrom"));
+			P.Dmg = BSDefs::TankDmg + 5 * Vw; P.DmgArmored = BSDefs::TankDmgArmored + 3 * Vw;
 			P.ImpactFx = TEXT("tankImpact");
 			if (!PlayFx(TEXT("tankLaunch"), P.From, Ang)) { AddProjectileVisual(P, FLinearColor(1, 0.75f, 0.35f), 0.3f); AddFx(EBSFxKind::Flash, P.From, P.From, 0.14f, 0.7f, FLinearColor(1, 0.8f, 0.45f), 14); }
 			else P.Dur = 0.35f;
@@ -4237,7 +4240,8 @@ void ABSGame::AutoShop()
 {
 	static const TCHAR* Order[] = { TEXT("weapons"), TEXT("neosteel"), TEXT("stim"), TEXT("medivac"), TEXT("plating"), TEXT("hisec"), TEXT("vehicle"), TEXT("rails"),
 		TEXT("refinery"), TEXT("shield"), TEXT("firesup"), TEXT("spoils"), TEXT("incinerator"), TEXT("bounty"), TEXT("mule"), TEXT("scvrepair"), TEXT("medpacks"),
-		TEXT("concussive"), TEXT("rotors"), TEXT("recruit"), TEXT("siegerange"), TEXT("goliath"), TEXT("thor"), TEXT("nuke"), TEXT("bc"), TEXT("odin"), TEXT("vikings") };
+		TEXT("concussive"), TEXT("rotors"), TEXT("recruit"), TEXT("siegerange"), TEXT("goliath"), TEXT("thor"), TEXT("nuke"), TEXT("bc"), TEXT("odin"), TEXT("vikings"),
+		TEXT("capacitors"), TEXT("maelstrom"), TEXT("fortified") };
 	auto Rank = [](const FString& Id) { for (int32 i = 0; i < UE_ARRAY_COUNT(Order); i++) if (Id == Order[i]) return i; return 99; };
 	if (Bot == TEXT("passive")) return;
 	for (int32 Pass = 0; Pass < 4; Pass++)

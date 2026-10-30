@@ -1079,7 +1079,7 @@ TSharedRef<SWidget> SBSHud::MakeOffer(int32 Index, bool bRow)
 		D::RFill(Out, L, G, P, S, 14, C::A(bHover && !bBought ? C::GlassHi : C::Glass, 0.95f));
 		D::RLine(Out, L + 1, G, P, S, 14, C::A(R.Color, (bHover && !bBought ? 1.f : 0.75f) * Fade), 1.5f);
 		const FString Name = BSMeta::CardName(*Cd).ToUpper(), Desc = Gm->CardDesc(*Cd);
-		const FString LvText = Max > 1 ? FString::Printf(TEXT("LV %d / %d"), bBought ? Lv : Lv + 1, Max) : FString();
+		const FString LvText = Max <= 1 ? FString() : Cd->Grow ? FString::Printf(TEXT("LV %d"), bBought ? Lv : Lv + 1) : FString::Printf(TEXT("LV %d / %d"), bBought ? Lv : Lv + 1, Max);
 		const FString Price = bBought ? FString(TEXT("BOUGHT")) : FString::FromInt(Cost);
 		const FLinearColor PriceCol = bBought ? C::Green : bPoor ? C::Red : C::Cyan;
 		const FLinearColor Tint = FLinearColor(Fade, Fade, Fade);

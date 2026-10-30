@@ -443,6 +443,10 @@ window.BS = window.BS || {};
     { id: 'rotors', name: 'Hyperflight Rotors', icon: 'btn-upgrade-terran-hyperflightrotors', rarity: 'rare', max: 2, cost: [150, 225], desc: 'Air strike: +1 banshee, 25% faster refuel' },
     { id: 'recruit', name: 'Recruitment Drive', icon: 'btn-building-terran-barracks', rarity: 'rare', max: 2, cost: [200, 300], desc: 'Troopers cost 15% less' },
     { id: 'spoils', name: 'Spoils of War', icon: 'btn-ability-terran-salvage', rarity: 'rare', max: 3, cost: [200, 275, 350], desc: '10% interest on banked minerals each shop (up to 50)', unlock: { best: 10 } },
+    // Past the top of a research tree: levels without end (grow: each costs that much more than the last).
+    { id: 'capacitors', name: 'Ultra-Capacitors', icon: 'btn-research-terran-ultracapacitors', rarity: 'common', max: 99, cost: 500, grow: 125, req: 'weapons10', desc: 'Infantry +1 damage' },
+    { id: 'maelstrom', name: 'Maelstrom Rounds', icon: 'btn-techupgrade-terran-maelstromrounds', rarity: 'common', max: 99, cost: 500, grow: 125, req: 'vehicle10', desc: 'Tanks +5 damage, mechs +2' },
+    { id: 'fortified', name: 'Neosteel Fortified Armor', icon: 'btn-upgrade-mengsk-engineeringbay-neosteelfortifiedarmor', rarity: 'common', max: 99, cost: 450, grow: 125, req: 'plating8', desc: 'Bunker +150 HP' },
     { id: 'vikings', tech: 'vikings', name: 'Starport', icon: 'btn-building-terran-starport', rarity: 'rare', cost: 250, desc: 'Viking wing in the armoury', unlock: { best: 12 } },
     { id: 'siegerange', name: 'Siege Optics', icon: 'btn-upgrade-swann-vehiclerangeincrease', rarity: 'epic', cost: 300, req: 'tank', desc: 'Siege tanks +2 range', unlock: { buys: ['vehicle', 3] } },
     { id: 'goliath', tech: 'goliath', name: 'Factory', icon: 'btn-building-terran-factory', rarity: 'epic', cost: 300, req: 'vehicle2', desc: 'Goliaths in the armoury', unlock: { buys: ['vehicle', 5] } },

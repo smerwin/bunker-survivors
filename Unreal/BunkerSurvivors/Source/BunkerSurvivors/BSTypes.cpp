@@ -288,6 +288,15 @@ namespace
 		Card(TEXT("rotors"), TEXT("Hyperflight Rotors"), TEXT("btn-upgrade-terran-hyperflightrotors"), TEXT("rare"), { 150, 225 }, TEXT("Air strike: +1 banshee, 25% faster refuel"));
 		Card(TEXT("recruit"), TEXT("Recruitment Drive"), TEXT("btn-building-terran-barracks"), TEXT("rare"), { 200, 300 }, TEXT("Troopers cost 15% less"));
 		Card(TEXT("spoils"), TEXT("Spoils of War"), TEXT("btn-ability-terran-salvage"), TEXT("rare"), { 200, 275, 350 }, TEXT("10% interest on banked minerals each shop (up to 50)")).UnlockBest = 10;
+		// Past the top of a research tree: levels without end, each Grow dearer than the last.
+		auto Endless = [&Card](const TCHAR* Id, const TCHAR* Name, const TCHAR* Icon, int32 Cost, const TCHAR* Desc, const TCHAR* Req)
+		{
+			FBSCardDef& C = Card(Id, Name, Icon, TEXT("common"), { Cost }, Desc, Req);
+			C.Max = 99; C.Grow = 125;
+		};
+		Endless(TEXT("capacitors"), TEXT("Ultra-Capacitors"), TEXT("btn-research-terran-ultracapacitors"), 500, TEXT("Infantry +1 damage"), TEXT("weapons10"));
+		Endless(TEXT("maelstrom"), TEXT("Maelstrom Rounds"), TEXT("btn-techupgrade-terran-maelstromrounds"), 500, TEXT("Tanks +5 damage, mechs +2"), TEXT("vehicle10"));
+		Endless(TEXT("fortified"), TEXT("Neosteel Fortified Armor"), TEXT("btn-upgrade-mengsk-engineeringbay-neosteelfortifiedarmor"), 450, TEXT("Bunker +150 HP"), TEXT("plating8"));
 		Card(TEXT("vikings"), TEXT("Starport"), TEXT("btn-building-terran-starport"), TEXT("rare"), { 250 }, TEXT("Viking wing in the armoury")).UnlockBest = 12;
 		{ FBSCardDef& C = Card(TEXT("siegerange"), TEXT("Siege Optics"), TEXT("btn-upgrade-swann-vehiclerangeincrease"), TEXT("epic"), { 300 }, TEXT("Siege tanks +2 range"), TEXT("tank")); C.UnlockBuys = TEXT("vehicle"); C.UnlockBuysN = 3; }
 		{ FBSCardDef& C = Card(TEXT("goliath"), TEXT("Factory"), TEXT("btn-building-terran-factory"), TEXT("epic"), { 300 }, TEXT("Goliaths in the armoury"), TEXT("vehicle2")); C.UnlockBuys = TEXT("vehicle"); C.UnlockBuysN = 5; }
