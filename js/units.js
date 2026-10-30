@@ -89,7 +89,7 @@ window.BS = window.BS || {};
     battlecruiserDeath: U + 'terran/battlecruiserdeath/battlecruiserdeath_00.m3',
     bansheeDeath: U + 'terran/bansheedeath/bansheedeath.m3',
     vikingDeath: U + 'terran/vikingfighterdeath/vikingfighterdeath_00.m3',
-    // Wave 100 finale: the Queen of Blades (her own model carries her Death sequence), a leviathan, zerg drop pods.
+    // The finale: the Queen of Blades (her own model carries her Death sequence), a leviathan, zerg drop pods.
     kerrigan: U + 'zerg/kerriganinfested/kerriganinfested.m3',
     kerriganDeath: U + 'zerg/kerriganinfested/kerriganinfested.m3',
     leviathan: U + 'zerg/leviathan/leviathan.m3',
@@ -159,7 +159,7 @@ window.BS = window.BS || {};
   // Brood queen: Spawn Broodling flies as a parasite dart and bursts into broodlings on the victim.
   broodSpellMissile: [E + 'zerg/infestorparasitemissile/infestorparasitemissile.m3', null, true],
   broodSpellImpact: [E + 'zerg/kerriganspawnbroodlingsimpact/kerriganspawnbroodlingsimpact.m3'],
-  // Wave 100 finale: Kerrigan's Leaping Strike and Apocalypse, the drop pods' streak down and burst.
+  // The finale: Kerrigan's Leaping Strike and Apocalypse, the drop pods' streak down and burst.
   psionicShift: [E + 'zerg/psionicshift/psionicshift.m3', '^birth'], leapImpact: [E + 'zerg/leapingstrikeimpact/leapingstrikeimpact.m3'],
   apocalypseChannel: [E + 'zerg/kerriganapocalypsechannel/kerriganapocalypsechannel.m3', '^stand', true], apocalypse: [E + 'zerg/kerriganapocalypseexplosion/kerriganapocalypseexplosion.m3'],
   podFall: [E + 'zerg/zergdroppod/zergdroppod.m3', '^birth'], podImpact: [E + 'zerg/kerrigandroppodexplosion/kerrigandroppodexplosion.m3'],
@@ -236,7 +236,7 @@ window.BS = window.BS || {};
     tumorPlant: [1, 2, 3, 4].map(i => S + 'creeptumor_placeflarp_' + i + '.wav'),
     tumorBirth: [1, 2, 3, 4, 5].map(i => S + 'creeptumor_newemerge_' + i + '.wav'),
     generateCreep: [S + 'zerg/overlord/overlord_generatecreep0.wav'],
-    // Wave 100 finale.
+    // The finale.
     finaleRoar: [S + 'zerg/leviathan/leviathan_roar0.wav'],
     kerriganPsi: [0, 1, 2, 3].map(i => S + 'kerrigan_psionicshift0' + i + '.wav'),
     kerriganLeap: [0, 1].map(i => S + 'spell_leapingstrike_launch_0' + i + '.wav'),
@@ -286,7 +286,7 @@ window.BS = window.BS || {};
     queen: { name: 'Queen', model: 'queen', death: 'queenDeath', hp: 175, armor: 1, dmg: 8, cd: 0.71, range: 5, speed: 2.4, radius: 0.875, tumors: true, bounty: 30, budget: 0, unlock: 999, weight: 0, hitFrac: 0.3, attackSeq: /^attack$/i, projectile: 'spine', soundDeath: 'queenDeath', height: 1.8 },
     creeptumor: { name: 'Creep Tumor', model: 'creeptumor', death: 'creeptumorDeath', hp: 50, armor: 0, dmg: 0, cd: 1, range: 0, speed: 0, radius: 0.5, tumor: true, bounty: 3, budget: 0, unlock: 999, weight: 0, hitFrac: 0, height: 0.6 },
     overlordCreep: { name: 'Overlord', model: 'overlordCreep', death: 'overlordCreepDeath', hp: 200, armor: 0, dmg: 0, cd: 1, range: 0, speed: 1.4, radius: 1.0, armored: true, flying: true, fly: 4.8, creeper: true, bounty: 20, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2 },
-    // Wave 100 finale (see Game.startFinale): bosses keep their own hit points (no late-wave toughening) and always spawn,
+    // The finale (see Game.startFinale): bosses keep their own hit points (no late-wave toughening) and always spawn,
     // whatever the alive cap. Kerrigan casts Leaping Strike and Apocalypse; the leviathan bombards (bombard = splash
     // radius) and spawns mutalisks. See BS.FINALE.
     kerrigan: { name: 'Kerrigan', model: 'kerrigan', death: 'kerriganDeath', scale: 1.3, hp: 6000, armor: 3, dmg: 45, cd: 0.7, range: 1.2, speed: 3.4, radius: 0.9, armored: true, boss: 'kerrigan', bounty: 2500, budget: 0, unlock: 999, weight: 0, hitFrac: 0.4, attackSeq: /^attack/i, soundDeath: 'kerriganDeath', height: 2.4, deathHold: 6, impactFx: 'ultraliskImpact' },
@@ -305,34 +305,40 @@ window.BS = window.BS || {};
     burn: { radius: 1.6, regrow: 5, tumorDmg: 10 },
   };
 
-  // Wave 100 finale. budget: the wave's budget multiplier (and every late-game strain joins, tech or not). Drop pods
+  // The run lasts EVAC.at seconds of fighting (the clock stops while you shop), then the Hyperion evacuates everyone left:
+  // the run is won (+score). She arrives `arrive` seconds before and comes down over the bunker from `from` to `hover`
+  // while the fight goes on. finale: the first wave to start after that many seconds is the finale (BS.FINALE).
+  BS.EVAC = { at: 1800, finale: 1560, arrive: 10, from: [0, -40, 14], hover: [0, 2.5, 6.5], scale: 1.2, score: 25000 };
+
+  // The finale, the swarm's last push: Kerrigan and a leviathan lead it, and from then until the evac every wave's budget
+  // is x budget, with every late-game strain in it, tech or not. Drop pods
   // land all round the base, behind the lines too (podMinR..podMaxR from the bunker): podLand is when the pod hits the
   // ground (its Birth sequence), crushing what it lands on (podDmg within podRadius), then it lets out podCargo zerg.
   // victory: score for killing both bosses.
-  // The difficulty curve, waves 1-100. Early waves ramp up steadily; past their knees the budget grows gently
+  // The difficulty curve over a 30-minute run (about 40 waves). Early waves ramp up steadily; past their knees the budget grows
   // (perWave[0] x + perWave[1] x^2 more, x waves past the knee) and the zergling swarm linearly (+swarmPerWave a wave, up
   // to swarmMax), so a maxed-out player meets a steady climb (new strains, creep, drops, milestone assaults) rather than
   // a wall of zerglings. len: wave length in seconds, len[0] at wave 1 to len[1] by lenBy. hp: zerg hit points x
   // (1 + hp x waves past hpFrom).
   // alive/aliveHard: how many zerg may be on the field at once, rising from [0] at wave aliveFrom to [1] by aliveBy (phones
-  // scale it down); the rest wait their turn. The cap is what the late game leans on hardest: at 240 the wave-100 finale
-  // overruns a maxed-out army, at 200 it can be won.
+  // scale it down); the rest wait their turn.
   // tierFrom/tierEvery: the swarm evolves on its own as well as answering your tech: from tierFrom, every tierEvery waves
-  // count as one more tech card for the late-game strains (see Game.lateTier). milestones: a named assault every ten
-  // waves from 30, on top of the budget: extra zerg, drop pods or nydus breaches.
-  BS.WAVES = { alive: [160, 200], aliveHard: [200, 250], aliveFrom: 20, aliveBy: 60, len: [30, 30], lenBy: 12, knee: 16, perWave: [16, 0.12], swarmKnee: 12, swarmPerWave: 5, swarmMax: 360, hp: 0.02, hpFrom: 10,
-    tierFrom: 20, tierEvery: 10,
+  // count as one more tech card for the late-game strains (see Game.lateTier). milestones: a named assault every three
+  // waves from 28 (around 17 minutes in), on top of the budget: extra zerg, drop pods or nydus breaches. A run that
+  // clears fast meets more of them before the finale.
+  BS.WAVES = { alive: [160, 220], aliveHard: [200, 250], aliveFrom: 20, aliveBy: 40, len: [30, 30], lenBy: 12, knee: 16, perWave: [16, 0.4], swarmKnee: 12, swarmPerWave: 5, swarmMax: 360, hp: 0.02, hpFrom: 10,
+    tierFrom: 20, tierEvery: 5,
     milestones: {
-      30: { name: 'ULTRALISK STAMPEDE', toast: 'Ultralisks stampeding down the lane!', zerg: { ultralisk: 6 } },
-      40: { name: 'AIR ARMADA', toast: 'A swarm of fliers darkens the sky!', zerg: { mutalisk: 12, guardian: 4, devourer: 3, broodlord: 2 } },
-      50: { name: 'THE LEVIATHAN', toast: 'A leviathan looms over the field!', zerg: { leviathan: 1 } },
-      60: { name: 'DROP POD ASSAULT', toast: 'Drop pods landing all round the base!', pods: 6 },
-      70: { name: 'NYDUS BREACH', toast: 'Nydus worms breaching behind our lines!', nydus: 3 },
-      80: { name: 'DARK SWARM', toast: 'Defilers lead a lurker siege!', zerg: { defiler: 4, lurker: 8, ultralisk: 4 } },
-      90: { name: 'BROOD WAR', toast: 'The old brood returns in force!', zerg: { broodqueen: 2, guardian: 6, defiler: 2, ultralisk: 4 } },
+      28: { name: 'ULTRALISK STAMPEDE', toast: 'Ultralisks stampeding down the lane!', zerg: { ultralisk: 6 } },
+      31: { name: 'AIR ARMADA', toast: 'A swarm of fliers darkens the sky!', zerg: { mutalisk: 12, guardian: 4, devourer: 3, broodlord: 2 } },
+      34: { name: 'THE LEVIATHAN', toast: 'A leviathan looms over the field!', zerg: { leviathan: 1 } },
+      37: { name: 'DROP POD ASSAULT', toast: 'Drop pods landing all round the base!', pods: 6 },
+      40: { name: 'NYDUS BREACH', toast: 'Nydus worms breaching behind our lines!', nydus: 3 },
+      43: { name: 'DARK SWARM', toast: 'Defilers lead a lurker siege!', zerg: { defiler: 4, lurker: 8, ultralisk: 4 } },
+      46: { name: 'BROOD WAR', toast: 'The old brood returns in force!', zerg: { broodqueen: 2, guardian: 6, defiler: 2, ultralisk: 4 } },
     } };
 
-  BS.FINALE = { wave: 100, budget: 1.5, pods: 8, podStart: 6, podEvery: 2, podLand: 2.7, podCargo: 4, podDmg: 60, podRadius: 2, podMinR: 7, podMaxR: 13,
+  BS.FINALE = { budget: 1.5, pods: 8, podStart: 6, podEvery: 2, podLand: 2.7, podCargo: 4, podDmg: 60, podRadius: 2, podMinR: 7, podMaxR: 13,
     podZerg: ['hydralisk', 'hydralisk', 'roach', 'roach', 'lurker'],        // every other pod brings an ultralisk too
     leap: { cd: 8, min: 3, max: 9, dur: 0.7, dmg: 90, radius: 1.8 },        // Leaping Strike onto a defender out of reach
     apocalypse: { cd: 13, range: 9, delay: 1.2, dmg: 70, radius: 2 },       // a psionic blast on the thickest knot of defenders
@@ -456,10 +462,11 @@ window.BS = window.BS || {};
     { id: 'odin', tech: 'odin', name: 'The Odin', icon: 'btn-unit-terran-odin', rarity: 'legendary', cost: 1200, req: 'bc', desc: 'The Odin in the armoury', unlock: { buys: ['bc', 1] } },
   ];
 
-  // Between runs: every run earns vespene (gas per wave cleared, milestone extra every tenth, x arena in the arena), spent
+  // Between runs: every run earns vespene (gas per wave cleared, milestone extra every tenth, evac when the Hyperion took
+  // you off, x arena in the arena), spent
   // at the Hyperion on permanent perks (costs: one per level). Saved in localStorage by BS.Meta (meta.js).
   BS.META = {
-    gas: { perWave: 1, milestone: 5, arena: 1.5 },
+    gas: { perWave: 1, milestone: 5, evac: 25, arena: 1.5 },
     perks: [
       { id: 'minerals', name: 'War Chest', icon: 'btn-building-terran-commandcenter', desc: '+50 starting minerals', costs: [10, 20, 35, 50, 70] },
       { id: 'firebat', name: 'Veteran Fireteam', icon: 'btn-unit-terran-firebat', desc: 'Start with a firebat in the bunker', costs: [30] },

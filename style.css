@@ -152,6 +152,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .modal .card.over { border-color: rgba(255, 106, 90, 0.5); }
 .modal h2 { margin: 0 0 18px; font: 500 30px var(--wide); letter-spacing: 0.04em; }
 .modal .over h2 { color: var(--red); }
+.modal .card.over.won { border-color: rgba(120, 220, 140, 0.5); }
+.modal .over.won h2 { color: var(--green); }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 12px; }
 .stats b { display: block; font: 500 24px var(--wide); margin-top: 6px; }
 .pill { display: inline-block; padding: 4px 12px; border-radius: 99px; background: rgba(255, 255, 255, 0.08); font: 700 11px var(--body); letter-spacing: 0.1em; color: var(--muted); }

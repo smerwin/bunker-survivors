@@ -51,7 +51,8 @@ window.BS = window.BS || {};
       this.techUnlocked = {}; this.techCd = { nuke: 0, vikings: 0 };
       this.swarms = []; this.abductions = []; this.airTgs = [];      // late-game zerg: dark swarm clouds, viper pulls
       this.mechs = []; this.bc = null; this.vikingWing = []; this.nukes = [];
-      this.pods = []; this.finale = null;                          // wave 100: zerg drop pods, the boss fight
+      this.pods = []; this.finale = null;                          // the last push: zerg drop pods, the boss fight
+      this.evac = null; this.won = false;                          // the Hyperion's arrival (BS.EVAC)
       this.station = null;
       this.fwd = { state: 'off', t: 0 };                            // forward base on the high ground (updateExpansion)
       BS.Terrain.setMode(this.mode);
@@ -1145,14 +1146,15 @@ window.BS = window.BS || {};
       const w = this.wave;
       const mule = 30 * this.cardLevel('mule');
       if (mule) { this.minerals += mule; this.floater(0, -3, 2, '+' + mule + ' MULE', '#7fd8ff'); }
-      const finale = w === BS.FINALE.wave && !this.finale;
+      const finale = !this.finale && this.time >= BS.EVAC.finale;
+      const push = finale || !!this.finale;                  // from the finale to the evac every wave is the swarm's last push
       const WV = BS.WAVES, quad = x => 20 + 8 * x + 0.3 * x * x;
       this.waveLen = Math.round(WV.len[0] + (WV.len[1] - WV.len[0]) * clamp((w - 1) / (WV.lenBy - 1), 0, 1));
-      let budget = (w <= WV.knee ? quad(w) : quad(WV.knee) + WV.perWave[0] * (w - WV.knee) + WV.perWave[1] * (w - WV.knee) * (w - WV.knee)) * (this.hard ? 1.15 : 1) * (finale ? BS.FINALE.budget : 1);
+      let budget = (w <= WV.knee ? quad(w) : quad(WV.knee) + WV.perWave[0] * (w - WV.knee) + WV.perWave[1] * (w - WV.knee) * (w - WV.knee)) * (this.hard ? 1.15 : 1) * (push ? BS.FINALE.budget : 1);
       // Late game: every high-tech card unlocked brings stranger zerg, and more of them. Guardians come for the mechs;
-      // scourge and devourers only when there is Terran air to hunt. The finale throws in the whole late roster.
+      // scourge and devourers only when there is Terran air to hunt. The last push throws in the whole late roster.
       // Rare units (max: brood queens) never number more than max on the field and on their way, counting this wave.
-      const tier = finale ? Math.max(this.lateTier(), BS.TECH.length) : this.lateTier(), air = this.airPresence();
+      const tier = push ? Math.max(this.lateTier(), BS.TECH.length) : this.lateTier(), air = this.airPresence();
       const wt = d => d.weight * (d.late ? 0.6 + 0.4 * tier : 1) * (d.prefer === 'mech' && this.mechs.length ? 2 : 1) * (d.antiAir && !air ? 0 : 1);
       // Winged zerglings only in lane mode, where they hop the mesa in the middle of the Y.
       const types = Object.entries(BS.ZERG).filter(([, d]) => d.budget > 0 && w >= Math.ceil(d.unlock * (this.hard ? 0.85 : 1)) && (!d.late || tier >= d.late) && (!d.hops || this.mode === 'lane'));
@@ -1222,7 +1224,7 @@ window.BS = window.BS || {};
       if (finale) this.startFinale();
     }
 
-    // ---- Wave 100 finale --------------------------------------------------------------------------------
+    // ---- The finale: the swarm's last push before the Hyperion arrives -----------------------------------
     // Kerrigan leads a leviathan and a maxed-out wave in person, while drop pods slam down all round the base.
     startFinale() {
       const F = BS.FINALE;
@@ -1893,6 +1895,8 @@ window.BS = window.BS || {};
     }
     tick(dt) {
       this.time += dt;
+      if (!this.evac && this.time >= BS.EVAC.at - BS.EVAC.arrive) this.startEvac();
+      else if (this.evac && this.time >= BS.EVAC.at) { this.evacuate(); return; }
       this.minerals += this.income * dt;
       this.score += dt * 0.5;
       this.shake = Math.max(0, this.shake - dt * 2);
@@ -2401,6 +2405,7 @@ window.BS = window.BS || {};
 
     // Visual state that follows game speed (called every frame).
     updateVisuals(dt) {
+      this.updateEvac(dt);
       for (const e of this.enemies) {
         e.flash = Math.max(0, e.flash - dt * 9);
         e.handle.setPos(e.x, e.y, e.z).setYaw(e.yaw);
@@ -2450,6 +2455,36 @@ window.BS = window.BS || {};
       return false;
     }
 
+    // ---- The end of the run ---------------------------------------------------------------------------------
+    // BS.EVAC.at seconds in (the clock stops while you shop) everyone still standing is evacuated by the Hyperion: the run
+    // is won. She arrives arrive seconds before, and the fight goes on while she comes down over the bunker.
+    evacIn() { return Math.max(0, BS.EVAC.at - this.time); }
+    startEvac() {
+      const E = BS.EVAC;
+      this.evac = { t: this.time };
+      this.waveBanner = { text: 'THE HYPERION HAS ARRIVED  //  HOLD ON', t: this.time };
+      this.toast('Hyperion inbound: hold the bunker!');
+      this.shake = 0.5;
+      const h = this.r.spawn('battlecruiser', E.from[0], E.from[1], E.from[2], Math.PI / 2).setTeam(1).setScale(E.scale);
+      h.play(/^stand$/i, true);
+      this.evac.ship = { h, x: E.from[0], y: E.from[1], z: E.from[2] };
+    }
+    evacuate() {
+      if (this.over) return;
+      this.over = true; this.won = true;
+      this.score += BS.EVAC.score;
+      this.endRun();
+    }
+    // The Hyperion glides in from the south and settles over the bunker.
+    updateEvac(dt) {
+      const s = this.evac && this.evac.ship, E = BS.EVAC;
+      if (!s) return;
+      const k = 1 - Math.exp(-dt * 0.9);
+      s.x += (E.hover[0] - s.x) * k; s.y += (E.hover[1] - s.y) * k; s.z += (E.hover[2] - s.z) * k;
+      s.t = (s.t || 0) + dt;
+      s.h.setPos(s.x, s.y, s.z + 0.2 * Math.sin(s.t * 0.8)).setYaw(Math.PI / 2);
+    }
+
     gameOver() {
       if (this.over) return;
       this.over = true; this.bunker.dead = true; this.bunker.hp = 0;
@@ -2457,8 +2492,11 @@ window.BS = window.BS || {};
       this.corpse('bunkerDeath', 0, 0, 0, this.bunker.yaw, 60, 1, true);
       BS.audio.play('explosion', { vol: 0.9 });
       this.shake = 1;
+      this.endRun();
+    }
+    endRun() {
       this.finalScore = Math.round(this.score + this.kills * 10 + this.wave * 250);
-      this.metaResult = BS.Meta.endRun(this.mode, this.wavesCleared);
+      this.metaResult = BS.Meta.endRun(this.mode, this.wavesCleared, this.won);
       try {
         const key = 'bs.best.' + this.mode, best = parseInt(localStorage.getItem(key) || '0', 10);
         this.best = Math.max(best, this.finalScore); this.newBest = this.finalScore > best;

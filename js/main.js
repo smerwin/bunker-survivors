@@ -109,8 +109,10 @@ window.BS = window.BS || {};
     game.started = true;
     // Playtesting: ?tech=max researches everything (unlocking the high-tech cards) and banks minerals.
     if (new URLSearchParams(location.search).get('tech') === 'max') setTimeout(() => game.grantAllTech(), 1500);
-    // Playtesting: ?wave=100 jumps straight to that wave (the Kerrigan finale); combine with ?tech=max.
-    const jump = parseInt(new URLSearchParams(location.search).get('wave'), 10);
+    // Playtesting: ?wave=30 jumps straight to that wave, ?clock=26 sets the run clock to that many minutes (26: the next
+    // wave is the Kerrigan finale, 29.5: the Hyperion is on her way); combine with ?tech=max.
+    const q = new URLSearchParams(location.search), jump = parseInt(q.get('wave'), 10), clock = parseFloat(q.get('clock'));
+    if (clock > 0) game.time = clock * 60;
     if (jump > 1) game.skipToWave(jump);
     // Stream the rest in the background: zerg in unlock order, then variants and projectiles, then effects.
     const rest = Object.keys(BS.MODELS).filter(k => !BS.CORE_MODELS.includes(k));
@@ -150,6 +152,8 @@ window.BS = window.BS || {};
 
   function showGameOver() {
     $('overModal').classList.remove('hidden');
+    $('overTitle').textContent = game.won ? 'EVACUATED' : 'BUNKER LOST';
+    document.querySelector('#overModal .card').classList.toggle('won', !!game.won);
     $('overStats').innerHTML = [['WAVE', game.wave], ['KILLS', game.kills], ['SCORE', game.finalScore]].map(([k, v]) => '<div><small>' + k + '</small><b>' + v + '</b></div>').join('');
     const b = $('overBest');
     b.textContent = game.newBest ? 'NEW BEST' : 'BEST ' + game.best;

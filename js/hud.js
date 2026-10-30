@@ -89,6 +89,9 @@ window.BS = window.BS || {};
       this.set('minerals', String(Math.floor(g.minerals)));
       this.set('wave', pad2(g.wave));
       this.set('kills', String(g.kills));
+      const ev = Math.ceil(g.evacIn());
+      this.set('evacT', pad2(Math.floor(ev / 60)) + ':' + pad2(ev % 60));
+      if (this.cache.evacHot !== (ev <= BS.EVAC.at - BS.EVAC.finale)) $('evacT').classList.toggle('amber', this.cache.evacHot = ev <= BS.EVAC.at - BS.EVAC.finale);
       const secs = Math.max(0, Math.ceil(g.waveTimer));
       this.set('waveSecs', String(secs));
       $('waveArc').style.strokeDashoffset = String(94.2 * (1 - Math.max(0, g.waveTimer) / g.waveLen));
@@ -237,7 +240,7 @@ window.BS = window.BS || {};
       this.drawRadar();
     }
 
-    // Wave 100 finale: a long health bar per boss under the squad card.
+    // The finale: a long health bar per boss under the squad card.
     drawBosses(c, W) {
       const bosses = this.g.bosses();
       if (!bosses.length) return;
