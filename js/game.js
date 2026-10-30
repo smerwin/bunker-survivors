@@ -1397,7 +1397,7 @@ window.BS = window.BS || {};
       if (pool && Math.random() < share) { const v = pick(pool); model = v; if (BS.EXTRA_MODELS[v + 'Death']) death = v + 'Death'; }
       const z = d.flying ? d.fly : BS.Terrain.height(x, y);
       const e = { type, def: d, x, y, z, yaw: Math.atan2(-y, -x), hp: 0, maxHp: 0, radius: d.radius, life: d.life || 0, cd: rnd(0, d.cd), retarget: 0,
-        target: null, hitAt: -1, pendingHit: false, slowUntil: 0, burrowed: false, burrowT: 0, attacking: false, anim: '', flash: 0, sx: 0, sy: 0, model, death };
+        target: null, hitAt: -1, pendingHit: false, slowUntil: 0, burrowed: false, burrowT: 0, unburrowT: 0, attacking: false, anim: '', flash: 0, sx: 0, sy: 0, model, death };
       // Lane terrain: ground zerg follow the Y; some ranged ones climb a ramp to a ledge over the bunker.
       if (!d.flying && !at && !d.hops && !d.nydus) {
         const high = this.mode === 'lane' && ['acid', 'spine', 'bullet'].includes(d.projectile) && Math.random() < 0.4;
@@ -2020,11 +2020,19 @@ window.BS = window.BS || {};
             continue;
           }
         }
-        if (d.burrows) {
-          if (!e.burrowed && reach <= range - 1) { e.burrowed = true; e.burrowT = 1; this.playAnim(e, 'burrow'); }
-          else if (e.burrowed) e.burrowT -= dt;
-        }
         const high = BS.Terrain.onHigh(e.x, e.y);
+        if (d.burrows) {
+          if (!e.burrowed && reach <= range - 1) { e.burrowed = true; e.burrowT = 1; e.unburrowT = 0; this.playAnim(e, 'burrow'); }
+          else if (e.burrowed) {
+            e.burrowT -= dt;
+            // Its prey dead or gone and nothing else in reach: come up after a moment and move on.
+            if (reach > range + (high ? 1 : 0)) {
+              const near = targets.find(o => dist(e.x, e.y, o.x, o.y) - o.radius - e.radius <= d.range + (high ? 1 : 0));
+              if (near) { e.target = near; e.unburrowT = 0; }
+              else { e.unburrowT += dt; if (e.unburrowT > 1.5) e.burrowed = false; }
+            } else e.unburrowT = 0;
+          }
+        }
         const canAttack = reach <= range + (high ? 1 : 0) && !(d.burrows && (!e.burrowed || e.burrowT > 0)) && !(e.route && e.route.length && e.highRoute);
         if (canAttack) {
           e.attacking = true;
