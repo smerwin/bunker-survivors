@@ -467,7 +467,7 @@ private:
 	void UpdateTumor(const TSharedPtr<FBSEnemy>& E, float Dt);
 	bool QueenCreep(FBSEnemy& E, float Dt);
 	void UpdateCreeper(const TSharedPtr<FBSEnemy>& E, float Dt);
-	bool WaveAlive() const;                   // zerg still to beat this wave (creep tumors linger and do not count)
+	bool WaveAlive() const;                   // zerg still to beat this wave (not creep tumors or flyers sieging out of reach)
 	void BuildCreepMesh();                    // the creep overlay: a terrain-hugging translucent grid (M_Creep)
 	void UpdateCreepMesh();
 	TArray<FVector> CreepV, CreepN; TArray<FVector2D> CreepUv; TArray<FLinearColor> CreepCol; TArray<float> CreepShade;

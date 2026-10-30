@@ -2672,9 +2672,14 @@ int32 ABSGame::TumorCount() const
 	return N;
 }
 
+// Flyers sieging from beyond the bunker's marines do not count either: they stay where they are and carry on into
+// the next wave.
 bool ABSGame::WaveAlive() const
 {
-	for (const TSharedPtr<FBSEnemy>& E : Enemies) if (!E->Def->bTumor && !E->Def->bCreeper) return true;
+	const float Reach = BSDefs::FindInfantry(TEXT("marine"))->Range + BSDefs::BunkerRangeBonus + BSDefs::BunkerHalfSize + (Up.bHiSec ? BSDefs::HiSecRange : 0.f)
+		+ (Up.bRails ? BSDefs::RailsRange : 0.f) + (Mode == EBSMode::Arena ? 1.f : 0.f);
+	for (const TSharedPtr<FBSEnemy>& E : Enemies)
+		if (!E->Def->bTumor && !E->Def->bCreeper && !(E->Def->bFlying && E->bAttacking && FMath::Sqrt(Dist2(0, 0, E->X, E->Y)) - E->Radius > Reach)) return true;
 	return false;
 }
 
@@ -3385,9 +3390,7 @@ void ABSGame::UpdateEnemies(float Dt)
 		const float Reach = Dd - T.Radius - E.Radius;
 		// A brood queen with no prey about (only the bunker or buildings) presses in under the guns to find some.
 		const bool bPrey = D->Spell != TEXT("broodling") || BroodPriority(T.Kind) > 0;
-		// Flyers still about well after the wave's last spawn close in under the guns rather than siege from afar.
-		const bool bPressIn = D->bFlying && SpawnQueue.Num() == 0 && LingerT > BSDefs::ShopPressIn;
-		const float Range = FMath::Min(bPrey ? D->Range : 4.f, bPressIn ? 4.f : TNumericLimits<float>::Max()) + (T.Kind == FBSTarget::Bunker ? 0.2f : 0);
+		const float Range = (bPrey ? D->Range : 4.f) + (T.Kind == FBSTarget::Bunker ? 0.2f : 0);
 		const bool bSlowed = E.SlowUntil > Time;
 		if (D->bSuicide && Reach <= Range)
 		{

@@ -124,10 +124,10 @@ namespace BSDefs
 	// The shop. Every cleared wave pauses the fight and offers ShopOffers random cards, bought with banked minerals;
 	// troops, tanks, SCVs, turrets and repairs stay in the armoury throughout. A reroll costs RerollCost, RerollStep more
 	// each time in the same visit. ShopLinger: seconds after a wave's last spawn before the shop opens anyway (stragglers
-	// wait, frozen, while you shop); flyers still aloft ShopPressIn seconds after it close in. Clear bonus for a wave wiped out: ClearBonusA + ClearBonusB x wave. Research cards
+	// wait, frozen, while you shop). Clear bonus for a wave wiped out: ClearBonusA + ClearBonusB x wave. Research cards
 	// weigh ShopResearchWeight times their rarity, and every offer starts with one while there is research left.
 	constexpr int32 ShopOffers = 4, RerollCost = 25, RerollStep = 25, ClearBonusA = 25, ClearBonusB = 10;
-	constexpr float ShopLinger = 40, ShopPressIn = 10, ShopResearchWeight = 2;
+	constexpr float ShopLinger = 40, ShopResearchWeight = 2;
 	// Between runs: vespene per wave cleared, Milestone more every tenth, x GasArena in the arena.
 	constexpr float GasPerWave = 1, GasMilestone = 5, GasArena = 1.5f;
 
