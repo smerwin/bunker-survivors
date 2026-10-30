@@ -1646,7 +1646,12 @@ window.BS = window.BS || {};
       }
     }
     // Zerg still to beat this wave (creep tumors linger and do not hold up the next one).
-    waveAlive() { return this.enemies.some(e => !e.def.tumor && !e.def.creeper); }
+    // Zerg still to beat this wave. Creep tumors linger and do not count, nor do flyers sieging from beyond the bunker's
+    // marines: they stay where they are and carry on into the next wave.
+    waveAlive() {
+      const reach = BS.INFANTRY.marine.range + T().bunker.rangeBonus + T().bunker.halfSize + (this.up.hisec ? T().hiSecRange : 0) + (this.up.rails ? T().railsRange : 0) + (this.hard ? 1 : 0);
+      return this.enemies.some(e => !e.def.tumor && !e.def.creeper && !(e.def.flying && e.attacking && Math.hypot(e.x, e.y) - e.radius > reach));
+    }
     // Defiler (alternating dark swarm and plague) and viper (abduct) spells.
     castSpell(e, t) {
       const d = e.def;
@@ -2000,9 +2005,7 @@ window.BS = window.BS || {};
         const dx = t.x - e.x, dy = t.y - e.y, dd = Math.hypot(dx, dy);
         // A brood queen with no prey about (only the bunker or buildings) presses in under the guns to find some.
         const prey = d.spell !== 'broodling' || BROOD_PRIORITY[t.kind];
-        // Flyers still about well after the wave's last spawn close in under the guns rather than siege from afar.
-        const pressIn = d.flying && !this.spawnQueue.length && this.lingerT > BS.SHOP.pressIn;
-        const reach = dd - t.radius - e.radius, range = Math.min(prey ? d.range : 4, pressIn ? 4 : Infinity) + (t.kind === 'bunker' ? 0.2 : 0), slowed = e.slowUntil > this.time;
+        const reach = dd - t.radius - e.radius, range = (prey ? d.range : 4) + (t.kind === 'bunker' ? 0.2 : 0), slowed = e.slowUntil > this.time;
         if (d.suicide && reach <= range) {
           if (d.antiAir) { this.damageDefender(t, d.dmg); this.fx.play('mutaliskImpact', e.x, e.y, e.z, e.yaw, 1.6); BS.audio.play('scourgeHit', { vol: 0.6, gap: 0.1 }); }
           else this.banelingBlast(e, false);
