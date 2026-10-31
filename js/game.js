@@ -299,7 +299,7 @@ window.BS = window.BS || {};
           // Stimmed: the whole squad charges the nearest zerg until it is in range, no bounding, no falling back.
           let th = null, best = 1e9;
           for (const e of this.enemies) {
-            if (e.hp <= 0 || !pred(e) || dist(0, 0, e.x, e.y) > 24) continue;
+            if (e.hp <= 0 || e.def.untouchable || !pred(e) || dist(0, 0, e.x, e.y) > 24) continue;
             const dd = dist(m.x, m.y, e.x, e.y);
             if (dd < best) { best = dd; th = e; }
           }
@@ -309,7 +309,7 @@ window.BS = window.BS || {};
           // Advance on the nearest zerg that is attacking our position from beyond our reach.
           let th = null, best = 1e9;
           for (const e of this.enemies) {
-            if (e.hp <= 0 || !e.attacking || !pred(e) || dist(0, 0, e.x, e.y) > 14) continue;
+            if (e.hp <= 0 || e.def.untouchable || !e.attacking || !pred(e) || dist(0, 0, e.x, e.y) > 14) continue;
             const dd = dist(m.x, m.y, e.x, e.y);
             if (dd < best) { best = dd; th = e; }
           }
@@ -1119,7 +1119,7 @@ window.BS = window.BS || {};
       if (this.minerals < Y.cost) return this.toast('Not enough minerals');
       // A battlecruiser in orbit fires on the densest cluster of zerg.
       let pickE = null, best = 0;
-      for (const e of this.enemies) { if (e.hp <= 0) continue; const n = this.enemiesInRange(e.x, e.y, Y.radius).length; if (n > best) { best = n; pickE = e; } }
+      for (const e of this.enemies) { if (e.hp <= 0 || e.def.untouchable) continue; const n = this.enemiesInRange(e.x, e.y, Y.radius).length; if (n > best) { best = n; pickE = e; } }
       if (!pickE) return this.toast('No targets');
       this.minerals -= Y.cost; this.ab.yamatoCd = Y.cooldown;
       const p = { kind: 'yamato', friendly: true, fx: pickE.x * 0.5, fy: pickE.y - 16, fz: 14, tx: pickE.x, ty: pickE.y, tz: 0.6, t: 0, dur: 0.55, dmg: Y.dmg, target: pickE };
@@ -1225,15 +1225,16 @@ window.BS = window.BS || {};
     }
 
     // ---- The finale: the swarm's last push before the Hyperion arrives -----------------------------------
-    // Kerrigan leads a leviathan and a maxed-out wave in person, while drop pods slam down all round the base.
+    // Kerrigan comes for us in person with a leviathan and a maxed-out wave, while drop pods slam down all round the base.
+    // Nothing we have can touch her: the only way out is to hold on until the Hyperion picks us up.
     startFinale() {
       const F = BS.FINALE;
-      this.finale = { t: this.time, won: false };
+      this.finale = { t: this.time };
       this.spawnQueue.push({ t: 2, type: 'leviathan', ang: 0 }, { t: 5, type: 'kerrigan', ang: 0 });
       this.spawnQueue.sort((a, b) => a.t - b.t);
       this.dropPods(F.pods, F.podStart, F.podEvery);
       this.waveBanner = { text: 'WAVE ' + this.wave + '  //  THE QUEEN OF BLADES', t: this.time };
-      this.toast('Kerrigan leads the swarm in person!');
+      this.toast('Kerrigan is coming! Nothing can stop her: hold on for the Hyperion!');
       BS.audio.play('finaleRoar', { vol: 1 });
       this.shake = 1;
     }
@@ -1354,18 +1355,12 @@ window.BS = window.BS || {};
       BS.audio.play('finaleRoar', { vol: 0.7, gap: 2 });
       this.floater(e.x, e.y, e.z + 2, 'MUTALISKS', '#c08cff');
     }
-    // A boss is down; both down (with none still to come) wins the finale. The game carries on.
+    // A leviathan is down (Kerrigan never is).
     bossDown(e) {
       if (e.blast) { this.fx.stop(e.blast.fx); e.blast = null; }
       this.toast(e.def.name + ' is down!');
       this.floater(e.x, e.y, e.z + 3, e.def.name.toUpperCase() + ' DOWN', '#ffd34d');
       this.shake = 1;
-      const f = this.finale;
-      if (!f || f.won || this.enemies.some(o => o.def.boss && o.hp > 0) || this.spawnQueue.some(s => BS.ZERG[s.type].boss)) return;
-      f.won = true; f.wonAt = this.time;
-      this.score += BS.FINALE.victory;
-      this.waveBanner = { text: 'VICTORY  //  THE QUEEN OF BLADES HAS FALLEN', t: this.time };
-      this.toast('Victory! The swarm fights on without her');
     }
     bosses() { return this.enemies.filter(e => e.def.boss && e.hp > 0); }
     maxAlive() {
@@ -1816,12 +1811,12 @@ window.BS = window.BS || {};
     }
 
     // ---- Combat helpers --------------------------------------------------------------------------------
-    // Zerg within range of (x, y), nearest first. In a crowd it looks only in the nearby cells of this tick's separation
+    // Zerg within range of (x, y), nearest first (never Kerrigan: nothing we have can touch her, so nothing aims at her). In a crowd it looks only in the nearby cells of this tick's separation
     // hash (with half a metre of slack for zerg that moved since it was built).
     enemiesInRange(x, y, range, pred) {
       const out = [], G = this.egrid, span = G ? Math.ceil((range + G.maxR + 0.5) / SEP_CELL) : 0;
       const test = e => {
-        if (e.hp <= 0 || (pred && !pred(e))) return;
+        if (e.hp <= 0 || e.def.untouchable || (pred && !pred(e))) return;
         const d = dist(x, y, e.x, e.y) - e.radius;
         if (d <= range) out.push([d, e]);
       };
@@ -1838,7 +1833,7 @@ window.BS = window.BS || {};
     }
     // splash: blast and flame damage, which dark swarm does not stop (as in Brood War).
     hurtEnemy(e, dmg, splash) {
-      if (!e || e.hp <= 0) return;
+      if (!e || e.hp <= 0 || e.def.untouchable) return;
       if (!splash && !e.def.flying && this.swarms.length && this.swarms.some(s => dist(s.x, s.y, e.x, e.y) < s.r)) dmg *= 0.25;
       e.hp -= Math.max(0.5, dmg - e.def.armor);
       e.flash = 1;
@@ -2121,7 +2116,7 @@ window.BS = window.BS || {};
           break;
         }
         case 'glaive': p.bounces = d.bounces; p.hit = []; p.impact = 'mutaliskImpact'; this.projectileModel(p, 'projMutalisk', 'mutaliskMissile'); break;
-        case 'guardian': p.arc = 2; p.impact = 'guardianImpact'; this.projectileModel(p, 'projGuardian', 'guardianMissile', 1.6); if (p.model) p.model.setScale(2.4); break;
+        case 'guardian': p.arc = 2; p.dur /= 1.5; p.impact = 'guardianImpact'; this.projectileModel(p, 'projGuardian', 'guardianMissile', 1.1); if (p.model) p.model.setScale(1.6); break;
         case 'spores': p.impact = 'acidSpores'; this.projectileModel(p, null, 'devourerMissile'); break;
         case 'brood': p.arc = 3; p.model = this.r.spawn('broodling', p.fx, p.fy, p.fz, 0).setScale(0.6).setTeam(3); p.model.play(/^stand/i, true); break;
         case 'bile': p.arc = 2.5; p.impact = 'roachImpact'; p.impactScale = 2.2; this.projectileModel(p, 'projLeviathan', 'guardianMissile', 1.6); break;
@@ -2456,7 +2451,7 @@ window.BS = window.BS || {};
 
     focusAt(wx, wy) {
       let best = null, bd = 4;
-      for (const e of this.enemies) { const d = dist(wx, wy, e.x, e.y) - e.radius; if (d < bd) { bd = d; best = e; } }
+      for (const e of this.enemies) { if (e.def.untouchable) continue; const d = dist(wx, wy, e.x, e.y) - e.radius; if (d < bd) { bd = d; best = e; } }
       if (best) { this.focus = best; this.focusUntil = this.time + 4; return true; }
       return false;
     }
@@ -2468,8 +2463,8 @@ window.BS = window.BS || {};
     startEvac() {
       const E = BS.EVAC;
       this.evac = { t: this.time };
-      this.waveBanner = { text: 'THE HYPERION HAS ARRIVED  //  HOLD ON', t: this.time };
-      this.toast('Hyperion inbound: hold the bunker!');
+      this.waveBanner = { text: 'THE HYPERION HAS ARRIVED  //  GET ABOARD', t: this.time };
+      this.toast(this.bosses().some(e => e.def.untouchable) ? 'Hyperion inbound: hold her off a few seconds more!' : 'Hyperion inbound: hold the bunker!');
       this.shake = 0.5;
       const h = this.r.spawn('battlecruiser', E.from[0], E.from[1], E.from[2], Math.PI / 2).setTeam(1).setScale(E.scale);
       h.play(/^stand$/i, true);

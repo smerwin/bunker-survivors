@@ -250,9 +250,10 @@ window.BS = window.BS || {};
         const y = sq.bottom + 12 + i * 30, f = Math.max(0, e.hp / e.maxHp);
         c.fillStyle = 'rgba(10,14,20,0.82)'; c.fillRect(x - 6, y - 4, w + 12, 26);
         c.textAlign = 'left'; c.fillStyle = '#e8f1fb'; c.fillText(e.def.name.toUpperCase(), x, y + 7);
-        c.textAlign = 'right'; c.fillStyle = '#c08cff'; c.fillText(Math.ceil(e.hp) + ' / ' + e.maxHp, x + w, y + 7);
+        const run = e.def.untouchable;           // Kerrigan: no health to whittle down, only the Hyperion's countdown
+        c.textAlign = 'right'; c.fillStyle = run ? '#ff6a5a' : '#c08cff'; c.fillText(run ? 'UNSTOPPABLE  //  RUN' : Math.ceil(e.hp) + ' / ' + e.maxHp, x + w, y + 7);
         c.fillStyle = 'rgba(0,0,0,0.6)'; c.fillRect(x, y + 12, w, 6);
-        c.fillStyle = f < 0.25 ? '#ff6a5a' : '#bd6bff'; c.fillRect(x, y + 12, w * f, 6);
+        c.fillStyle = run || f < 0.25 ? '#ff6a5a' : '#bd6bff'; c.fillRect(x, y + 12, w * f, 6);
       });
       c.textAlign = 'center';
     }

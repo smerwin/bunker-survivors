@@ -287,9 +287,10 @@ window.BS = window.BS || {};
     creeptumor: { name: 'Creep Tumor', model: 'creeptumor', death: 'creeptumorDeath', hp: 50, armor: 0, dmg: 0, cd: 1, range: 0, speed: 0, radius: 0.5, tumor: true, bounty: 3, budget: 0, unlock: 999, weight: 0, hitFrac: 0, height: 0.6 },
     overlordCreep: { name: 'Overlord', model: 'overlordCreep', death: 'overlordCreepDeath', hp: 200, armor: 0, dmg: 0, cd: 1, range: 0, speed: 1.4, radius: 1.0, armored: true, flying: true, fly: 4.8, creeper: true, bounty: 20, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2 },
     // The finale (see Game.startFinale): bosses keep their own hit points (no late-wave toughening) and always spawn,
-    // whatever the alive cap. Kerrigan casts Leaping Strike and Apocalypse; the leviathan bombards (bombard = splash
-    // radius) and spawns mutalisks. See BS.FINALE.
-    kerrigan: { name: 'Kerrigan', model: 'kerrigan', death: 'kerriganDeath', scale: 1.3, hp: 6000, armor: 3, dmg: 45, cd: 0.7, range: 1.2, speed: 3.4, radius: 0.9, armored: true, boss: 'kerrigan', bounty: 2500, budget: 0, unlock: 999, weight: 0, hitFrac: 0.4, attackSeq: /^attack/i, soundDeath: 'kerriganDeath', height: 2.4, deathHold: 6, impactFx: 'ultraliskImpact' },
+    // whatever the alive cap. Kerrigan casts Leaping Strike and Apocalypse and is untouchable (nothing aims at her or hurts
+    // her: you hold on until the Hyperion comes) and makes for the bunker; the leviathan bombards (bombard = splash radius) and spawns mutalisks.
+    // See BS.FINALE.
+    kerrigan: { name: 'Kerrigan', model: 'kerrigan', death: 'kerriganDeath', scale: 1.3, hp: 6000, armor: 3, dmg: 45, cd: 0.7, range: 1.2, speed: 3.4, radius: 0.9, armored: true, boss: 'kerrigan', untouchable: true, prefer: 'bunker', bounty: 2500, budget: 0, unlock: 999, weight: 0, hitFrac: 0.4, attackSeq: /^attack/i, soundDeath: 'kerriganDeath', height: 2.4, deathHold: 6, impactFx: 'ultraliskImpact' },
     leviathan: { name: 'Leviathan', model: 'leviathan', death: 'leviathanDeath', scale: 1.6, hp: 6000, armor: 1, dmg: 40, cd: 2.4, range: 6, speed: 1.6, radius: 3.0, armored: true, flying: true, fly: 7.5, boss: 'leviathan', bombard: 2.4, bounty: 2500, budget: 0, unlock: 999, weight: 0, hitFrac: 0.45, projectile: 'bile', soundAttack: 'guardianFire', soundDeath: 'finaleRoar', height: 4, deathHold: 6 },
   };
 
@@ -308,13 +309,12 @@ window.BS = window.BS || {};
   // The run lasts EVAC.at seconds of fighting (the clock stops while you shop), then the Hyperion evacuates everyone left:
   // the run is won (+score). She arrives `arrive` seconds before and comes down over the bunker from `from` to `hover`
   // while the fight goes on. finale: the first wave to start after that many seconds is the finale (BS.FINALE).
-  BS.EVAC = { at: 1800, finale: 1560, arrive: 10, from: [0, -40, 14], hover: [0, 2.5, 6.5], scale: 1.2, score: 25000 };
+  BS.EVAC = { at: 1800, finale: 1680, arrive: 10, from: [0, -40, 14], hover: [0, 2.5, 6.5], scale: 1.2, score: 50000 };
 
-  // The finale, the swarm's last push: Kerrigan and a leviathan lead it, and from then until the evac every wave's budget
+  // The finale, the swarm's last push two minutes before the evac: Kerrigan, who cannot be stopped, and a leviathan lead it, and from then until the evac every wave's budget
   // is x budget, with every late-game strain in it, tech or not. Drop pods
   // land all round the base, behind the lines too (podMinR..podMaxR from the bunker): podLand is when the pod hits the
   // ground (its Birth sequence), crushing what it lands on (podDmg within podRadius), then it lets out podCargo zerg.
-  // victory: score for killing both bosses.
   // The difficulty curve over a 30-minute run (about 40 waves). Early waves ramp up steadily; past their knees the budget grows
   // (perWave[0] x + perWave[1] x^2 more, x waves past the knee) and the zergling swarm linearly (+swarmPerWave a wave, up
   // to swarmMax), so a maxed-out player meets a steady climb (new strains, creep, drops, milestone assaults) rather than
@@ -345,8 +345,7 @@ window.BS = window.BS || {};
     podZerg: ['hydralisk', 'hydralisk', 'roach', 'roach', 'lurker'],        // every other pod brings an ultralisk too
     leap: { cd: 8, min: 3, max: 9, dur: 0.7, dmg: 90, radius: 1.8 },        // Leaping Strike onto a defender out of reach
     apocalypse: { cd: 13, range: 9, delay: 1.2, dmg: 70, radius: 2 },       // a psionic blast on the thickest knot of defenders
-    brood: { cd: 15, count: 3 },                                            // the leviathan spawns mutalisks
-    victory: 50000 };
+    brood: { cd: 15, count: 3 } };                                          // the leviathan spawns mutalisks
 
   // Bunker occupants.
   BS.INFANTRY = {
