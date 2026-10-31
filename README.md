@@ -204,6 +204,8 @@ alone would give.
 | Maelstrom Rounds | common, endless | Siege tanks +5 damage, goliaths, thors and the Odin +2, a level. Once Vehicle Weapons is maxed. |
 | Neosteel Fortified Armor | common, endless | Bunker +150 HP a level. Once Building Armor is maxed. |
 | Starport | common, from wave 16 | Puts the viking wing in the armoury. |
+| Wraith Squadron | common | Puts the wraith squadron in the armoury (needs the Starport). |
+| Science Facility | rare | Puts the science vessel in the armoury (needs the Starport). |
 | Siege Optics | epic | Siege tanks +2 range. Unlocked by buying Vehicle Weapons 3 times. |
 | Factory | epic | Puts goliaths in the armoury (needs Vehicle Weapons 2). Unlocked by buying Vehicle Weapons 5 times. |
 | Ghost Academy | epic | Puts the tactical nuke in the armoury (needs Infantry Weapons 3). Unlocked by buying Infantry Weapons 10 times. |
@@ -223,6 +225,8 @@ minerals for the first level (450 for the armor), 125 more for each one after.
 | Goliath (250, up to 4) | Walkers at the bunker's shoulders: autocannons against ground, missiles against air. |
 | Tactical Nuke (400) | A ghost calls a nuke on the densest pack clear of the bunker. 45 s to reload. |
 | Viking Wing (300) | Four fighters patrol overhead for 20 s, hunting air. |
+| Wraith Squadron (350) | Three wraiths sweep the lane for 20 s: burst lasers on ground zerg, missiles at air. 40 s to rearm. |
+| Science Vessel (400) | On station over the lane for 30 s: Irradiate on the densest pack (damage over time to everything around its target), and a Defensive Matrix (soaks 250 damage for 12 s) on the most battered of the bunker, tanks and mechs. 50 s to refit. |
 | Thor (600, up to 2) | Heavy walkers firing long-range from behind the bunker. |
 | Battlecruiser (1500) | Parks nose-south over the fork of the lane. As in StarCraft II, its laser batteries fire rapid amber bolts along six hardpoints (8 against ground, 5 against air), taking scourge (then devourers) first, a little beyond their usual range; missile pods fire at air only, and the Yamato charges at the bow for two seconds before it fires. |
 | Odin (2500) | Heavy artillery from behind the bunker. |

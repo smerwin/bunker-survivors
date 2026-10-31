@@ -170,6 +170,16 @@ namespace BSDefs
 	// Four viking fighters patrol overhead hunting air.
 	constexpr float VikingDmg = 10, VikingCd = 1.4f, VikingRange = 9, VikingHover = 20, VikingFly = 4.2f, VikingSpeed = 9, VikingCooldown = 35;
 	constexpr int32 VikingShots = 2, VikingCost = 300, VikingCount = 4;
+	// Three wraiths sweep the lane for a while: burst lasers at ground zerg (GDmg every GCd), Gemini missiles at air.
+	constexpr float WraithHp = 120, WraithGDmg = 9, WraithGCd = 0.75f, WraithADmg = 10, WraithACd = 1.5f, WraithRange = 7, WraithHover = 20, WraithFly = 3.4f, WraithSpeed = 9, WraithCooldown = 40;
+	constexpr int32 WraithCost = 350, WraithCount = 3, WraithAShots = 2;
+	// A science vessel on station for VesselStay seconds, casting from VesselRange: Irradiate on the densest pack (dps to
+	// the target and everything within radius, for its duration), Defensive Matrix on the most battered of the bunker,
+	// tanks and mechs (absorbs MatrixHp damage for MatrixDur s).
+	constexpr float VesselHp = 200, VesselArmor = 1, VesselCooldown = 50, VesselStay = 30, VesselFly = 5.2f, VesselSpeed = 4, VesselScale = 1.f, VesselRange = 11;
+	constexpr int32 VesselCost = 400;
+	constexpr float IrradiateCd = 7, IrradiateDur = 6, IrradiateDps = 18, IrradiateRadius = 1.8f;
+	constexpr float MatrixCd = 10, MatrixHp = 250, MatrixDur = 12;
 	// Yamato strike: a Battlecruiser fires on the densest cluster.
 	constexpr float YamatoDmg = 240, YamatoSplash = 120, YamatoRadius = 3.f, YamatoCooldown = 40;
 	constexpr int32 YamatoCost = 300;

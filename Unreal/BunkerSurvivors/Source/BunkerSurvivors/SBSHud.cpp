@@ -717,7 +717,8 @@ static const TArray<FBSArmItem>& ArmItems()
 			const FString Id = Tc.Id, Ic = Tc.Icon;
 			FBSArmItem I; I.Id = Id; I.Name = Tc.Name; I.bTech = true;
 			I.Short = Id == TEXT("goliath") ? TEXT("Walker: autocannons, AA missiles") : Id == TEXT("nuke") ? TEXT("Ghost-called nuke on the densest pack")
-				: Id == TEXT("vikings") ? TEXT("Fighter wing hunts air") : Id == TEXT("thor") ? TEXT("Heavy walker holds the lane")
+				: Id == TEXT("vikings") ? TEXT("Fighter wing hunts air") : Id == TEXT("wraiths") ? TEXT("Lasers on the swarm, missiles at air")
+				: Id == TEXT("vessel") ? TEXT("Irradiate and Defensive Matrix") : Id == TEXT("thor") ? TEXT("Heavy walker holds the lane")
 				: Id == TEXT("bc") ? TEXT("Hovers overhead: lasers, missiles, Yamato") : TEXT("The Odin");
 			I.Icon = [Ic](ABSGame*) { return Ic; };
 			I.Cost = [Id](ABSGame* G) { int32 C = 0; FString T; G->TechReady(Id, C, T); return C; };
@@ -1524,6 +1525,8 @@ int32 SBSHud::PaintWorld(const FGeometry& G, FSlateWindowElementList& Out, int32
 		if (Gm->Bc.IsValid()) { D::Disc(Out, L + 9, G, ToRadar(Gm->Bc->X, Gm->Bc->Y), 6.f, C::Cyan, 12); D::Disc(Out, L + 10, G, ToRadar(Gm->Bc->X, Gm->Bc->Y), 3.f, C::Green, 10); }
 		for (const TSharedPtr<FBSBanshee>& V : Gm->VikingWing) D::Disc(Out, L + 9, G, ToRadar(V->X, V->Y), 2.2f, C::Cyan, 8);
 		for (const TSharedPtr<FBSBanshee>& V : Gm->Banshees) D::Disc(Out, L + 9, G, ToRadar(V->X, V->Y), 2.2f, C::Cyan, 8);
+		for (const TSharedPtr<FBSBanshee>& V : Gm->Wraiths) D::Disc(Out, L + 9, G, ToRadar(V->X, V->Y), 2.2f, C::Cyan, 8);
+		if (Gm->Vessel.IsValid()) D::Disc(Out, L + 9, G, ToRadar(Gm->Vessel->X, Gm->Vessel->Y), 4.f, C::Cyan, 10);
 	}
 	if (bRadar) D::Disc(Out, L + 9, G, Rc, 3, C::Green, 10);
 

@@ -1471,7 +1471,7 @@ bool ABSGame::CardReq(const FBSCardDef& C) const
 	if (R == TEXT("stim")) return Up.bStim;
 	if (R == TEXT("hisec")) return Up.bHiSec;
 	if (R == TEXT("medivac")) return Up.bMedivac;
-	if (R == TEXT("bc")) return TechUnlocked.Contains(TEXT("bc"));
+	if (R == TEXT("bc") || R == TEXT("vikings")) return TechUnlocked.Contains(R);
 	int32 i = R.Len();
 	while (i > 0 && FChar::IsDigit(R[i - 1])) i--;
 	const FString Key = R.Left(i);
@@ -1561,6 +1561,8 @@ bool ABSGame::TechReady(const FString& Id, int32& OutCost, FString& OutTag) cons
 {
 	if (Id == TEXT("nuke")) { OutCost = BSDefs::NukeCost; OutTag = FString::Printf(TEXT("%ds"), FMath::CeilToInt(NukeCd)); return NukeCd <= 0; }
 	if (Id == TEXT("vikings")) { OutCost = BSDefs::VikingCost; OutTag = FString::Printf(TEXT("%ds"), FMath::CeilToInt(VikingCd)); return VikingCd <= 0; }
+	if (Id == TEXT("wraiths")) { OutCost = BSDefs::WraithCost; OutTag = FString::Printf(TEXT("%ds"), FMath::CeilToInt(WraithCd)); return WraithCd <= 0; }
+	if (Id == TEXT("vessel")) { OutCost = BSDefs::VesselCost; OutTag = FString::Printf(TEXT("%ds"), FMath::CeilToInt(VesselCd)); return VesselCd <= 0 && !Vessel; }
 	OutTag = TEXT("MAX");
 	if (Id == TEXT("bc")) { OutCost = BSDefs::BcCost; return !Bc.IsValid(); }
 	const FBSMechDef* D = BSDefs::FindMech(Id);
@@ -1573,6 +1575,8 @@ bool ABSGame::BuyTech(const FString& Id)
 	if (!TechUnlocked.Contains(Id)) return false;
 	if (Id == TEXT("nuke")) return LaunchNuke();
 	if (Id == TEXT("vikings")) return CallVikings();
+	if (Id == TEXT("wraiths")) return CallWraiths();
+	if (Id == TEXT("vessel")) return CallVessel();
 	if (Id == TEXT("bc")) return CallBattlecruiser();
 	return AddMech(Id);
 }
@@ -2016,6 +2020,234 @@ void ABSGame::UpdateVikings(float Dt)
 			if (V.Y <= HomeY) { ReleaseModel(V.Actor); VikingWing.RemoveAt(i); continue; }
 		}
 		if (V.Actor) V.Actor->SetSim(V.X, V.Y, V.Z, V.Yaw);
+	}
+}
+
+// Wraith squadron: three wraiths sweep figures-of-eight over the lane, burst lasers on ground zerg, Gemini missiles at air.
+bool ABSGame::CallWraiths()
+{
+	if (WraithCd > 0) { Toast(TEXT("Wraiths are rearming")); return false; }
+	if (Minerals < BSDefs::WraithCost) { Toast(TEXT("Not enough minerals")); return false; }
+	Minerals -= BSDefs::WraithCost; WraithCd = BSDefs::WraithCooldown;
+	for (int32 i = 0; i < BSDefs::WraithCount; i++)
+	{
+		const FVector2D Post = StrikePosts[(i + 1) % StrikePosts.Num()];
+		FBSBanshee W; W.Post = FVector2D(Post.X * 1.3f, Post.Y + 4); W.X = Post.X * 0.6f; W.Y = (Mode == EBSMode::Lane ? -18.f : -34.f) - i * 1.2f;
+		W.Z = BSDefs::WraithFly + 1.5f; W.Yaw = PI / 2; W.Cd = 0.3f + i * 0.2f; W.Cd2 = 0.5f + i * 0.2f;
+		W.Actor = AcquireModel(TEXT("wraith"));
+		if (W.Actor) { W.Actor->SetTeamColor(TerranColor); W.Actor->Play(WalkNames, true); }
+		W.Hp = W.MaxHp = BSDefs::WraithHp;
+		Wraiths.Add(MakeShared<FBSBanshee>(W));
+	}
+	Toast(TEXT("Wraith squadron inbound"));
+	return true;
+}
+
+void ABSGame::UpdateWraiths(float Dt)
+{
+	const float HomeY = Mode == EBSMode::Lane ? -20.f : -36.f;
+	auto Any = [](const FBSEnemy& E) { return E.Alive(); };
+	for (int32 i = Wraiths.Num() - 1; i >= 0; i--)
+	{
+		FBSBanshee& W = *Wraiths[i];
+		W.T += Dt;
+		if (W.State == FBSBanshee::In)
+		{
+			const FVector D = FVector(W.Post.X, W.Post.Y, BSDefs::WraithFly) - FVector(W.X, W.Y, W.Z);
+			if (D.Size() > 0.2f) { const FVector Mv = D.GetSafeNormal() * FMath::Min(D.Size(), BSDefs::WraithSpeed * Dt); W.X += Mv.X; W.Y += Mv.Y; W.Z += Mv.Z; W.Yaw = FMath::Atan2(D.Y, D.X); }
+			else { W.State = FBSBanshee::Hover; W.T = 0; }
+		}
+		else if (W.State == FBSBanshee::Hover)
+		{
+			// A wide figure-of-eight round the post, banking into the turns; it turns to face whatever it shoots.
+			const float Nx = W.Post.X + FMath::Sin(W.T * 0.9f + i * 2) * 2.6f, Ny = W.Post.Y + FMath::Sin(W.T * 1.8f + i * 2) * 1.3f;
+			const float Heading = FMath::Atan2(Ny - W.Y, Nx - W.X);
+			W.X = Nx; W.Y = Ny; W.Z = BSDefs::WraithFly + 0.25f * FMath::Sin(W.T * 2 + i);
+			TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(W.X, W.Y, BSDefs::WraithRange, Any);
+			TSharedPtr<FBSEnemy> GroundE, AirE;
+			for (const TSharedPtr<FBSEnemy>& E : L) { if (E->Def->bFlying) { if (!AirE) AirE = E; } else if (!GroundE) GroundE = E; }
+			const TSharedPtr<FBSEnemy> Aim = GroundE ? GroundE : AirE;
+			W.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(W.Yaw, Aim ? FMath::Atan2(Aim->Y - W.Y, Aim->X - W.X) : Heading), -4 * Dt, 4 * Dt);
+			const float Rate = W.AcidUntil > Time ? 0.7f : 1.f;
+			W.Cd -= Dt * Rate; W.Cd2 -= Dt * Rate;
+			if (W.Cd <= 0 && GroundE)
+			{
+				W.Cd = BSDefs::WraithGCd;
+				const FVector At(W.X + FMath::Cos(W.Yaw) * 0.6f, W.Y + FMath::Sin(W.Yaw) * 0.6f, W.Z - 0.3f), Hit(GroundE->X, GroundE->Y, GroundE->Z + GroundE->Def->Height * 0.5f);
+				AddFx(EBSFxKind::Tracer, At, Hit, 0.12f, 0.07f, FLinearColor(1.f, 0.28f, 0.2f), 22);
+				PlayFx(TEXT("laserImpact"), Hit, FMath::Atan2(At.Y - Hit.Y, At.X - Hit.X), 1.1f);
+				PlaySound(TEXT("laserHit"), 0.25f, 0.12f);
+				HurtEnemy(GroundE, BSDefs::WraithGDmg);
+			}
+			else if (W.Cd <= 0) W.Cd = 0.1f;
+			if (W.Cd2 <= 0 && AirE)
+			{
+				W.Cd2 = BSDefs::WraithACd;
+				for (int32 k = 0; k < BSDefs::WraithAShots; k++)
+				{
+					const float Off = k ? 0.35f : -0.35f;
+					FBSProjectile P; P.Kind = EBSProjKind::Missile; P.bFriendly = true;
+					P.From = FVector(W.X - FMath::Sin(W.Yaw) * Off, W.Y + FMath::Cos(W.Yaw) * Off, W.Z - 0.2f); P.To = FVector(AirE->X, AirE->Y, AirE->Z);
+					P.T = -k * 0.1f; P.Dur = 0.4f; P.Dmg = BSDefs::WraithADmg; P.TargetEnemy = AirE; P.ImpactFx = TEXT("wraithImpact");
+					AddProjectileModel(P, nullptr, TEXT("wraithMissile"));
+					if (!P.Trail) AddProjectileVisual(P, FLinearColor(1, 0.8f, 0.5f), 0.15f);
+					Projectiles.Add(P);
+				}
+				PlaySound(TEXT("vikingFire"), 0.35f, 0.2f);
+			}
+			else if (W.Cd2 <= 0) W.Cd2 = 0.1f;
+			if (W.T > BSDefs::WraithHover) { W.State = FBSBanshee::Out; W.T = 0; }
+		}
+		else
+		{
+			W.Y -= BSDefs::WraithSpeed * Dt; W.Z += 2 * Dt;
+			W.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(W.Yaw, -PI / 2), -3 * Dt, 3 * Dt);
+			if (W.Y <= HomeY) { ReleaseModel(W.Actor); Wraiths.RemoveAt(i); continue; }
+		}
+		if (W.Actor) W.Actor->SetSim(W.X, W.Y, W.Z, W.Yaw);
+	}
+}
+
+// Science vessel: flies in over the lane and stays on station a while, casting Irradiate on the densest pack of zerg
+// and Defensive Matrix on the most battered of the bunker, tanks and mechs. Its spells outlast it.
+bool ABSGame::CallVessel()
+{
+	if (Vessel) { Toast(TEXT("Science vessel already on station")); return false; }
+	if (VesselCd > 0) { Toast(TEXT("Science vessel is refitting")); return false; }
+	if (Minerals < BSDefs::VesselCost) { Toast(TEXT("Not enough minerals")); return false; }
+	Minerals -= BSDefs::VesselCost; VesselCd = BSDefs::VesselCooldown;
+	const bool bLane = Mode == EBSMode::Lane;
+	FBSBanshee V; V.Home = FVector2D(0, bLane ? -18.f : -32.f); V.Post = FVector2D(0, bLane ? 5.f : 3.f);
+	V.X = V.Home.X; V.Y = V.Home.Y; V.Z = BSDefs::VesselFly + 1.5f; V.Yaw = PI / 2; V.Cd = 1; V.Cd2 = 0.5f;
+	V.Hp = V.MaxHp = BSDefs::VesselHp;
+	V.Actor = AcquireModel(TEXT("sciencevessel"));
+	if (V.Actor) { V.Actor->SetTeamColor(TerranColor); V.Actor->SetScale(BSDefs::VesselScale); V.Actor->Play(StandNames, true); }
+	Vessel = MakeShared<FBSBanshee>(V);
+	Toast(TEXT("Science vessel inbound"));
+	return true;
+}
+
+void ABSGame::UpdateVessel(float Dt)
+{
+	UpdateIrradiate(Dt);
+	UpdateMatrices();
+	if (!Vessel) return;
+	FBSBanshee& V = *Vessel;
+	V.T += Dt;
+	const FVector2D Goal = V.State == FBSBanshee::Out ? V.Home : V.Post;
+	const float Gz = V.State == FBSBanshee::Out ? BSDefs::VesselFly + 3 : BSDefs::VesselFly;
+	const FVector D = FVector(Goal.X, Goal.Y, Gz) - FVector(V.X, V.Y, V.Z);
+	const float Dd = D.Size();
+	if (Dd > 0.05f) { const FVector Mv = D / Dd * FMath::Min(Dd, (V.State == FBSBanshee::Hover ? 1.2f : BSDefs::VesselSpeed) * Dt); V.X += Mv.X; V.Y += Mv.Y; V.Z += Mv.Z; }
+	if (V.State == FBSBanshee::In && Dd < 0.3f) { V.State = FBSBanshee::Hover; V.T = 0; }
+	else if (V.State == FBSBanshee::Hover)
+	{
+		if (V.T > BSDefs::VesselStay) { V.State = FBSBanshee::Out; V.T = 0; Toast(TEXT("Science vessel withdrawing")); }
+		V.Cd -= Dt; V.Cd2 -= Dt;
+		if (V.Cd <= 0) V.Cd = CastIrradiate(V) ? BSDefs::IrradiateCd : 0.5f;
+		if (V.Cd2 <= 0) V.Cd2 = CastMatrix(V) ? BSDefs::MatrixCd : 0.5f;
+		if (V.CastUntil > Time) V.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(V.Yaw, V.Aim), -3 * Dt, 3 * Dt);
+		else if (V.CastUntil > 0) { V.CastUntil = 0; if (V.Actor) V.Actor->Play(StandNames, true); }
+	}
+	else if (V.State == FBSBanshee::Out && Dd < 0.5f) { ReleaseModel(V.Actor); Vessel.Reset(); return; }
+	if (V.State != FBSBanshee::Hover) V.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(V.Yaw, FMath::Atan2(D.Y, D.X)), -2 * Dt, 2 * Dt);
+	if (V.Actor) V.Actor->SetSim(V.X, V.Y, V.Z + 0.15f * FMath::Sin(Time * 1.3f), V.Yaw);
+}
+
+void ABSGame::VesselCast(FBSBanshee& V, float X, float Y)
+{
+	V.Aim = FMath::Atan2(Y - V.Y, X - V.X); V.CastUntil = Time + 1.2f;
+	if (V.Actor) V.Actor->Play(TEXT("spell"), false);
+	V.Post.X = FMath::Clamp(X * 0.6f, -5.f, 5.f);                      // drift over toward the fight
+}
+
+// Irradiate the zerg with the most others around it (none already irradiated, never Kerrigan).
+bool ABSGame::CastIrradiate(FBSBanshee& V)
+{
+	auto Any = [](const FBSEnemy& E) { return E.Alive(); };
+	TSharedPtr<FBSEnemy> Pick; int32 Bn = 0;
+	for (const TSharedPtr<FBSEnemy>& E : EnemiesInRange(V.X, V.Y, BSDefs::VesselRange, Any))
+	{
+		if (E->IrrActor || E->IrrUntil > Time || E->Def->bTumor) continue;
+		const int32 N = EnemiesInRange(E->X, E->Y, BSDefs::IrradiateRadius, Any).Num() + (E->MaxHp > 300 ? 2 : 0);
+		if (N > Bn) { Bn = N; Pick = E; }
+	}
+	if (!Pick || Bn < 2) return false;
+	Pick->IrrUntil = Time + BSDefs::IrradiateDur;
+	Pick->IrrActor = AcquireModel(TEXT("irradiate"));
+	if (Pick->IrrActor) { Pick->IrrActor->SetTeamColor(TerranColor); Pick->IrrActor->SetScale(FMath::Max(0.6f, Pick->Radius * 1.4f)); Pick->IrrActor->Play(StandNames, true); }
+	Irradiated.Add(Pick);
+	VesselCast(V, Pick->X, Pick->Y);
+	AddFx(EBSFxKind::Tracer, FVector(V.X, V.Y, V.Z - 0.6f), FVector(Pick->X, Pick->Y, Pick->Z + Pick->Def->Height * 0.5f), 0.5f, 0.07f, FLinearColor(0.45f, 1.f, 0.3f), 22);
+	PlaySound(TEXT("irradiate"), 0.5f);
+	Floater(Pick->X, Pick->Y, Pick->Z + 2, TEXT("IRRADIATE"), FLinearColor(0.55f, 1.f, 0.42f));
+	return true;
+}
+
+// Irradiate: the target and every zerg within radius of it lose IrradiateDps hit points a second (armour does not help).
+void ABSGame::UpdateIrradiate(float Dt)
+{
+	auto Any = [](const FBSEnemy& E) { return E.Alive(); };
+	for (int32 i = Irradiated.Num() - 1; i >= 0; i--)
+	{
+		const TSharedPtr<FBSEnemy> E = Irradiated[i];
+		if (!E->Alive() || Time > E->IrrUntil) { ReleaseModel(E->IrrActor); E->IrrActor = nullptr; E->IrrUntil = 0; Irradiated.RemoveAt(i); continue; }
+		if (E->IrrActor) E->IrrActor->SetSim(E->X, E->Y, E->Z + E->Def->Height * 0.4f, 0);
+		for (const TSharedPtr<FBSEnemy>& O : EnemiesInRange(E->X, E->Y, BSDefs::IrradiateRadius, Any))
+		{
+			O->Hp -= BSDefs::IrradiateDps * Dt;
+			if (O->Hp <= 0) KillEnemy(O, false);
+		}
+	}
+}
+
+// The Defensive Matrix on a defender, if it is one that can carry one.
+FBSShield* ABSGame::ShieldOf(const FBSTarget& T)
+{
+	if (T.Kind == FBSTarget::Bunker) return &Bunker.Shield;
+	if (T.Kind == FBSTarget::Tank) { auto P = T.TankRef.Pin(); return P ? &P->Shield : nullptr; }
+	if (T.Kind == FBSTarget::Mech) { auto P = T.MechRef.Pin(); return P ? &P->Shield : nullptr; }
+	return nullptr;
+}
+
+// Defensive Matrix on whichever of the bunker, tanks and mechs has lost the most (and has no matrix on it yet).
+bool ABSGame::CastMatrix(FBSBanshee& V)
+{
+	const FBSTarget* Pick = nullptr; float BestF = 0.85f;
+	for (const FBSTarget& T : Targets)
+	{
+		if (T.Kind != FBSTarget::Bunker && T.Kind != FBSTarget::Tank && T.Kind != FBSTarget::Mech) continue;
+		const FBSShield* Sh = ShieldOf(T);
+		if (!Sh || Sh->Hp > 0) continue;
+		float Hp = Bunker.Hp, Max = Bunker.MaxHp;
+		if (T.Kind == FBSTarget::Tank) { auto P = T.TankRef.Pin(); Hp = P->Hp; Max = P->MaxHp; }
+		else if (T.Kind == FBSTarget::Mech) { auto P = T.MechRef.Pin(); Hp = P->Hp; Max = P->MaxHp; }
+		const float F = Hp / FMath::Max(1.f, Max);
+		if (F < BestF) { BestF = F; Pick = &T; }
+	}
+	if (!Pick) return false;
+	FBSShield* Sh = ShieldOf(*Pick);
+	Sh->Hp = BSDefs::MatrixHp; Sh->Until = Time + BSDefs::MatrixDur;
+	FBSMatrix M; M.T = *Pick;
+	M.Actor = AcquireModel(TEXT("defensiveMatrix"));
+	const float Gz = BSTerrain::Height(Pick->X, Pick->Y);
+	if (M.Actor) { M.Actor->SetTeamColor(TerranColor); M.Actor->SetScale(FMath::Max(0.3f, Pick->Radius * 0.3f)); M.Actor->SetSim(Pick->X, Pick->Y, Gz, 0); M.Actor->Play(StandNames, true); }
+	Matrices.Add(M);
+	VesselCast(V, Pick->X, Pick->Y);
+	AddFx(EBSFxKind::Tracer, FVector(V.X, V.Y, V.Z - 0.6f), FVector(Pick->X, Pick->Y, Gz + 1), 0.5f, 0.07f, FLinearColor(0.4f, 0.9f, 1.f), 22);
+	Floater(Pick->X, Pick->Y, 3, TEXT("DEFENSIVE MATRIX"), FLinearColor(0.5f, 0.88f, 1.f));
+	return true;
+}
+
+// The shell follows what it guards and fades when it has soaked its hit points (see DamageDefender) or timed out.
+void ABSGame::UpdateMatrices()
+{
+	for (int32 i = Matrices.Num() - 1; i >= 0; i--)
+	{
+		FBSMatrix& M = Matrices[i];
+		FBSShield* Sh = M.T.IsValid(Bunker) ? ShieldOf(M.T) : nullptr;
+		if (!Sh || Sh->Hp <= 0 || Time > Sh->Until) { if (Sh) Sh->Hp = 0; ReleaseModel(M.Actor); Matrices.RemoveAt(i); continue; }
+		if (M.Actor && M.T.Kind == FBSTarget::Mech) if (auto P = M.T.MechRef.Pin()) M.Actor->SetSim(P->X, P->Y, BSTerrain::Height(P->X, P->Y), 0);
 	}
 }
 
@@ -2960,9 +3192,20 @@ void ABSGame::BuildAirTargets()
 	for (const TSharedPtr<FBSBanshee>& V : VikingWing)
 		if (!V->bDead && V->State != FBSBanshee::In)
 		{
-			FBSTarget T; T.Kind = FBSTarget::Air; T.AirRef = V; T.bViking = true; T.X = V->X; T.Y = V->Y; T.Z = V->Z; T.Radius = 0.6f; T.bArmored = true;
+			FBSTarget T; T.Kind = FBSTarget::Air; T.AirRef = V; T.AirType = FBSTarget::Viking; T.X = V->X; T.Y = V->Y; T.Z = V->Z; T.Radius = 0.6f; T.bArmored = true;
 			AirTargets.Add(T);
 		}
+	for (const TSharedPtr<FBSBanshee>& W : Wraiths)
+		if (!W->bDead && W->State != FBSBanshee::In)
+		{
+			FBSTarget T; T.Kind = FBSTarget::Air; T.AirRef = W; T.AirType = FBSTarget::Wraith; T.X = W->X; T.Y = W->Y; T.Z = W->Z; T.Radius = 0.6f; T.bLight = true;
+			AirTargets.Add(T);
+		}
+	if (Vessel && !Vessel->bDead && Vessel->State == FBSBanshee::Hover)
+	{
+		FBSTarget T; T.Kind = FBSTarget::Air; T.AirRef = Vessel; T.AirType = FBSTarget::Vessel; T.X = Vessel->X; T.Y = Vessel->Y; T.Z = Vessel->Z; T.Radius = 1.2f; T.bArmored = true;
+		AirTargets.Add(T);
+	}
 	for (const TSharedPtr<FBSBanshee>& B : Banshees)
 		if (!B->bDead)
 		{
@@ -2988,9 +3231,12 @@ void ABSGame::KillAir(const FBSTarget& T)
 	TSharedPtr<FBSBanshee> A = T.AirRef.Pin();
 	A->bDead = true;
 	ReleaseModel(A->Actor); A->Actor = nullptr;
-	Corpse(T.bViking ? TEXT("vikingDeath") : TEXT("bansheeDeath"), A->X, A->Y, A->Z, A->Yaw, 5, 1, true);
+	const TCHAR* Death = T.AirType == FBSTarget::Viking ? TEXT("vikingDeath") : T.AirType == FBSTarget::Wraith ? TEXT("wraithDeath") : T.AirType == FBSTarget::Vessel ? TEXT("sciencevesselDeath") : TEXT("bansheeDeath");
+	Corpse(Death, A->X, A->Y, A->Z, A->Yaw, 5, T.AirType == FBSTarget::Vessel ? BSDefs::VesselScale : 1.f, true);
 	PlaySound(BSSounds::Explosion, 0.6f);
-	if (T.bViking) { VikingWing.Remove(A); Toast(TEXT("Viking down")); }
+	if (T.AirType == FBSTarget::Viking) { VikingWing.Remove(A); Toast(TEXT("Viking down")); }
+	else if (T.AirType == FBSTarget::Wraith) { Wraiths.Remove(A); Toast(TEXT("Wraith down")); }
+	else if (T.AirType == FBSTarget::Vessel) { Vessel.Reset(); Toast(TEXT("Science vessel lost")); }
 	else { Banshees.Remove(A); Toast(TEXT("Banshee down")); }
 }
 
@@ -3060,6 +3306,8 @@ void ABSGame::BuildTargets()
 void ABSGame::DamageDefender(const FBSTarget& T, float Dmg)
 {
 	if (!T.IsValid(Bunker)) return;
+	// A science vessel's Defensive Matrix soaks it first.
+	if (FBSShield* Sh = ShieldOf(T)) if (Sh->Hp > 0) { const float A = FMath::Min(Sh->Hp, Dmg); Sh->Hp -= A; Dmg -= A; if (Dmg <= 0) return; }
 	if (T.Kind == FBSTarget::Bunker)
 	{
 		const float Real = FMath::Max(0.5f, Dmg - Bunker.Armor);
@@ -3123,7 +3371,7 @@ void ABSGame::DamageDefender(const FBSTarget& T, float Dmg)
 	else if (T.Kind == FBSTarget::Air)
 	{
 		TSharedPtr<FBSBanshee> A = T.AirRef.Pin();
-		A->Hp -= FMath::Max(0.5f, Dmg); A->Flash = 1;
+		A->Hp -= FMath::Max(0.5f, Dmg - (T.AirType == FBSTarget::Vessel ? BSDefs::VesselArmor : 0.f)); A->Flash = 1;
 		if (A->Hp <= 0 && !A->bDead) KillAir(T);
 	}
 	else if (T.Kind == FBSTarget::Structure)
@@ -3251,7 +3499,7 @@ void ABSGame::Step(float Dt)
 	Score += Dt * 0.5f;
 	Shake = FMath::Max(0.f, Shake - Dt * 2);
 	Ab.StimCd = FMath::Max(0.f, Ab.StimCd - Dt); Ab.StrikeCd = FMath::Max(0.f, Ab.StrikeCd - Dt); Ab.RepairCd = FMath::Max(0.f, Ab.RepairCd - Dt); Ab.YamatoCd = FMath::Max(0.f, Ab.YamatoCd - Dt);
-	NukeCd = FMath::Max(0.f, NukeCd - Dt); VikingCd = FMath::Max(0.f, VikingCd - Dt);
+	NukeCd = FMath::Max(0.f, NukeCd - Dt); VikingCd = FMath::Max(0.f, VikingCd - Dt); WraithCd = FMath::Max(0.f, WraithCd - Dt); VesselCd = FMath::Max(0.f, VesselCd - Dt);
 
 	WaveTimer -= Dt;
 	if (Wave == 0) { if (WaveTimer <= 0) StartWave(); }
@@ -3290,6 +3538,8 @@ void ABSGame::Step(float Dt)
 	UpdateMechs(Dt);
 	UpdateBc(Dt);
 	UpdateVikings(Dt);
+	UpdateWraiths(Dt);
+	UpdateVessel(Dt);
 	UpdateNukes(Dt);
 	UpdatePods(Dt);
 	UpdateProjectiles(Dt);

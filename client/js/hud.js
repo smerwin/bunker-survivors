@@ -320,7 +320,8 @@ window.BS = window.BS || {};
       c.fillStyle = '#5fe3ff';
       const diamond = (wx, wy, s) => { const [x, y] = plot(wx, wy); c.beginPath(); c.moveTo(x, y - s); c.lineTo(x + s, y); c.lineTo(x, y + s); c.lineTo(x - s, y); c.closePath(); c.fill(); };
       if (g.bc) diamond(g.bc.x, g.bc.y, 6);
-      for (const v of g.vikingWing.concat(g.banshees)) diamond(v.x, v.y, 2.5);
+      for (const v of g.vikingWing.concat(g.banshees, g.wraiths)) diamond(v.x, v.y, 2.5);
+      if (g.vessel) diamond(g.vessel.x, g.vessel.y, 4);
       for (const e of g.enemies) {
         const [x, y] = plot(e.x, e.y);
         if (Math.hypot(x - R, y - R) > R - 3) continue;

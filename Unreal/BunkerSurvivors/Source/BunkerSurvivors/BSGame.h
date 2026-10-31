@@ -21,9 +21,13 @@ enum class EBSMode : uint8 { Lane, Arena };
 
 struct FBSInfantryUnit { const FBSInfantryDef* Def = nullptr; float Hp = 0, MaxHp = 0, Cd = 0; };
 
+// A science vessel's Defensive Matrix on a defender: soaks Hp damage until Until (see ABSGame::CastMatrix).
+struct FBSShield { float Hp = 0, Until = 0; };
+
 struct FBSBunker
 {
 	float Hp = BSDefs::BunkerHp, MaxHp = BSDefs::BunkerHp, Armor = BSDefs::BunkerArmor;
+	FBSShield Shield;
 	int32 Slots = BSDefs::BunkerSlots;
 	TArray<FBSInfantryUnit> Units;
 	ABSModelActor* Actor = nullptr;
@@ -35,6 +39,7 @@ struct FBSTank
 {
 	enum EState : uint8 { Incoming, Unloading, Leaving, Ready } State = Incoming;
 	float X = 0, Y = 0, Hp = BSDefs::TankHp, MaxHp = BSDefs::TankHp, Armor = BSDefs::TankArmor, Cd = 0, T = 0, MedT = 0, Flash = 0, PlagueUntil = 0;
+	FBSShield Shield;
 	ABSModelActor* Actor = nullptr;
 	ABSModelActor* Medivac = nullptr;
 	FVector Med;
@@ -61,6 +66,7 @@ struct FBSMech
 	const FBSMechDef* Def = nullptr;
 	FVector2D Slot = FVector2D::ZeroVector;
 	float X = 0, Y = 0, Yaw = PI / 2, Aim = PI / 2, Hp = 0, MaxHp = 0, CdG = 0.5f, CdA = 0.5f, Flash = 0, PlagueUntil = 0;
+	FBSShield Shield;
 	bool bReady = false, bDead = false;
 	FString Anim;
 	ABSModelActor* Actor = nullptr;
@@ -109,12 +115,14 @@ struct FBSStructure
 	ABSModelActor* Actor = nullptr;
 };
 
-// Air strike banshee or viking: flies in to a post, fights from there, then leaves (or is shot down).
+// Air strike banshee, viking, wraith or science vessel: flies in to a post, fights from there, then leaves (or is shot
+// down). Wraiths keep a second cooldown (Cd: lasers, Cd2: missiles); the vessel casts (Cd: Irradiate, Cd2: Defensive
+// Matrix) facing Aim until CastUntil, and goes Home when it leaves.
 struct FBSBanshee
 {
 	enum EState : uint8 { In, Hover, Out } State = In;
-	FVector2D Post = FVector2D::ZeroVector;
-	float X = 0, Y = 0, Z = 0, Yaw = 0, Cd = 0, T = 0, StandAt = 0;
+	FVector2D Post = FVector2D::ZeroVector, Home = FVector2D::ZeroVector;
+	float X = 0, Y = 0, Z = 0, Yaw = 0, Cd = 0, Cd2 = 0, T = 0, StandAt = 0, CastUntil = 0, Aim = 0;
 	float Hp = BSDefs::BansheeHp, MaxHp = BSDefs::BansheeHp, AcidUntil = 0, Flash = 0;
 	bool bDead = false;
 	ABSModelActor* Actor = nullptr;
@@ -130,7 +138,7 @@ struct FBSTarget
 	TWeakPtr<FBSMech> MechRef;
 	TWeakPtr<FBSBattlecruiser> BcRef;        // Terran air, hunted by scourge and devourers
 	TWeakPtr<FBSBanshee> AirRef;
-	bool bViking = false;
+	enum EAir : uint8 { Banshee, Viking, Wraith, Vessel } AirType = Banshee;
 	float X = 0, Y = 0, Radius = 0, Z = -1;   // Z: height of an air target (-1 = on the ground)
 	bool bStructure = false, bArmored = false, bLight = false;
 	bool IsValid(const FBSBunker& B) const
@@ -150,6 +158,9 @@ struct FBSTarget
 	}
 	bool Same(const FBSTarget& O) const { return Kind == O.Kind && TankRef == O.TankRef && ScvRef == O.ScvRef && TrooperRef == O.TrooperRef && StructureRef == O.StructureRef && MechRef == O.MechRef && BcRef == O.BcRef && AirRef == O.AirRef; }
 };
+
+// A Defensive Matrix shell on screen, over the defender it guards.
+struct FBSMatrix { FBSTarget T; ABSModelActor* Actor = nullptr; };
 
 struct FBSEnemy
 {
@@ -178,6 +189,8 @@ struct FBSEnemy
 	FVector2D LeapFrom = FVector2D::ZeroVector, LeapTo = FVector2D::ZeroVector, Blast = FVector2D::ZeroVector;
 	int32 BlastFx = 0;
 	int32 DripFx = 0;                 // creep overlord: its Generate Creep drip
+	float IrrUntil = 0;               // under a science vessel's Irradiate until then (its haze: IrrActor)
+	ABSModelActor* IrrActor = nullptr;
 	bool Alive() const { return Hp > 0; }
 };
 
@@ -304,10 +317,13 @@ public:
 	float StrikeCooldown() const { return BSDefs::BansheeCooldown * (1 - 0.25f * CardLevel(TEXT("rotors"))); }
 	// High-tech reinforcements: shop cards put these in the armoury (see BSDefs::Tech).
 	TSet<FString> TechUnlocked;
-	float NukeCd = 0, VikingCd = 0;
+	float NukeCd = 0, VikingCd = 0, WraithCd = 0, VesselCd = 0;
 	TArray<TSharedPtr<FBSMech>> Mechs;
 	TSharedPtr<FBSBattlecruiser> Bc;
-	TArray<TSharedPtr<FBSBanshee>> VikingWing;
+	TArray<TSharedPtr<FBSBanshee>> VikingWing, Wraiths;
+	TSharedPtr<FBSBanshee> Vessel;
+	TArray<TSharedPtr<FBSEnemy>> Irradiated;
+	TArray<FBSMatrix> Matrices;
 	int32 TechCount(const FString& Kind) const { int32 N = 0; for (auto& M : Mechs) N += M->Def->Key == Kind; return N; }
 	// For the armoury: Cost, and whether it can be bought now; Tag is "MAX" or the seconds left when it cannot.
 	bool TechReady(const FString& Id, int32& OutCost, FString& OutTag) const;
@@ -426,6 +442,16 @@ private:
 	void BcAlerts();
 	bool CallVikings();
 	void UpdateVikings(float Dt);
+	bool CallWraiths();
+	void UpdateWraiths(float Dt);
+	bool CallVessel();
+	void UpdateVessel(float Dt);
+	void VesselCast(FBSBanshee& V, float X, float Y);
+	bool CastIrradiate(FBSBanshee& V);
+	void UpdateIrradiate(float Dt);
+	bool CastMatrix(FBSBanshee& V);
+	void UpdateMatrices();
+	FBSShield* ShieldOf(const FBSTarget& T);
 	bool LaunchNuke();
 	void UpdateNukes(float Dt);
 	TArray<FBSNuke> Nukes;
@@ -461,7 +487,7 @@ private:
 		const int32 ByWave = Wave >= BSDefs::TierFrom ? (Wave - BSDefs::TierFrom) / BSDefs::TierEvery + 1 : 0;
 		return FMath::Min(BSDefs::Tech().Num(), FMath::Max(TechUnlocked.Num(), ByWave));
 	}
-	bool AirPresence() const { return Bc.IsValid() || VikingWing.Num() || Banshees.Num(); }
+	bool AirPresence() const { return Bc.IsValid() || VikingWing.Num() || Banshees.Num() || Wraiths.Num() || Vessel.IsValid(); }
 	void Despawn(const TSharedPtr<FBSEnemy>& E);
 	void UpdateOverlord(const TSharedPtr<FBSEnemy>& E, float Dt);
 	void UpdateNydus(const TSharedPtr<FBSEnemy>& E, float Dt);
