@@ -89,6 +89,11 @@ window.BS = window.BS || {};
     battlecruiserDeath: U + 'terran/battlecruiserdeath/battlecruiserdeath_00.m3',
     bansheeDeath: U + 'terran/bansheedeath/bansheedeath.m3',
     vikingDeath: U + 'terran/vikingfighterdeath/vikingfighterdeath_00.m3',
+    // Late-game Starport support: a wraith squadron and a science vessel.
+    wraith: U + 'terran/wraith/wraith.m3',
+    wraithDeath: U + 'terran/wraithdeath/wraithdeath.m3',
+    sciencevessel: U + 'terran/sciencevessel/sciencevessel.m3',
+    sciencevesselDeath: U + 'terran/sciencevesseldeath/sciencevesseldeath.m3',
     // The finale: the Queen of Blades (her own model carries her Death sequence), a leviathan, zerg drop pods.
     kerrigan: U + 'zerg/kerriganinfested/kerriganinfested.m3',
     kerriganDeath: U + 'zerg/kerriganinfested/kerriganinfested.m3',
@@ -124,6 +129,8 @@ window.BS = window.BS || {};
   projSam: E + 'terran/missileturretmissile/missileturretmissile.m3',
   projGuardian: E + 'zerg/primalguardianmissile/primalguardianmissile.m3',  // the Brood War acid glob: a big yellow goo ball
   projLeviathan: E + 'zerg/leviathanmissile/leviathanmissile.m3',
+  // Science vessel spells, worn by their target: Irradiate's green haze and the Defensive Matrix shell.
+  irradiate: E + 'terran/irradiate/irradiate.m3', defensiveMatrix: E + 'terran/defensivematrixshield/defensivematrixshield.m3',
   };
 
   // SC2 particle effects, replayed by both builds: [m3, optional sequence filter, loops, 'mask' to cut particles out by
@@ -151,6 +158,7 @@ window.BS = window.BS || {};
   nukeFalling: [E + 'terran/nukefalling/nukefalling.m3', null, true], nuke: [E + 'terran/nuke/nuke.m3'],
   // The wraith's laser hit (its beam is an M3 ribbon, which neither build reads, so the games draw the beam themselves).
   laserImpact: [E + 'terran/wraithlasermissileimpact/wraithlasermissileimpact.m3'],
+  wraithMissile: [E + 'terran/wraithmissile/wraithmissile.m3', '^stand', true], wraithImpact: [E + 'terran/wraithmissileimpact/wraithmissileimpact.m3'],
   samMissile: [E + 'terran/missileturretmissile/missileturretmissile.m3', null, true], samImpact: [E + 'terran/missileturretmissileimpact/missileturretmissileimpact.m3'],
   // Late-game zerg.
   guardianMissile: [E + 'zerg/primalguardianmissile/primalguardianmissile.m3', null, true], guardianImpact: [E + 'zerg/primalguardianmissileimpact/primalguardianmissileimpact.m3'],
@@ -204,6 +212,7 @@ window.BS = window.BS || {};
     bcYamato: [S + 'terran/battlecruiser/battlecruiser_yamatoattacklaunch0.wav'],
     bcYamatoCharge: [S + 'terran/battlecruiser/battlecruiser_yamatoattackcharge0.wav'],
     laserHit: [0, 1, 2, 3, 4].map(i => S + 'terran/wraith/wraith_groundattackimpact' + i + '.wav'),
+    irradiate: [0, 1, 2, 3].map(i => S + 'terran/sciencevessel/sciencevessel_irradiateimpact' + i + '.wav'),
     thorFire: [0, 1, 2].map(i => S + 'terran/thor/thor_attacklaunch' + i + '.wav'),
     thorHit: [0, 1, 2].map(i => S + 'terran/thor/thor_attackimpact' + i + '.wav'),
     goliathFire: [0, 1, 2].map(i => S + 'terran/goliath/goliath_groundattacklaunch' + i + '.wav'),
@@ -391,6 +400,13 @@ window.BS = window.BS || {};
     nuke: { cost: 400, cooldown: 45, dmg: 300, radius: 7, delay: 3, minDist: 9 },
     // Four viking fighters patrol overhead hunting air for a while.
     vikings: { hp: 135, cost: 300, cooldown: 35, count: 4, dmg: 10, shots: 2, cd: 1.4, range: 9, hover: 20, fly: 4.2, speed: 9 },
+    // Three wraiths sweep the lane for a while: burst lasers at ground zerg (gDmg every gCd), Gemini missiles at air.
+    wraiths: { hp: 120, cost: 350, cooldown: 40, count: 3, gDmg: 9, gCd: 0.75, aDmg: 10, aShots: 2, aCd: 1.5, range: 7, hover: 20, fly: 3.4, speed: 9 },
+    // A science vessel on station for `stay` seconds, casting from `range`: Irradiate on the densest pack (dps to the
+    // target and everything within radius, for dur s), Defensive Matrix on the most battered of the bunker, tanks and
+    // mechs (absorbs hp damage for dur s).
+    vessel: { hp: 200, armor: 1, cost: 400, cooldown: 50, stay: 30, fly: 5.2, speed: 4, scale: 1, range: 11,
+      irradiate: { cd: 7, dur: 6, dps: 18, radius: 1.8 }, matrix: { cd: 10, hp: 250, dur: 12 } },
     yamato: { dmg: 240, splash: 120, radius: 3, cost: 300, cooldown: 40 },
     stim: { duration: 11, cooldown: 13 },
     repair: { cost: 75, cooldown: 20, amount: 150 },
@@ -414,6 +430,8 @@ window.BS = window.BS || {};
     { id: 'goliath', name: 'Goliath', icon: 'btn-unit-terran-goliath', banner: 'GOLIATHS' },
     { id: 'nuke', name: 'Tactical Nuke', icon: 'btn-ability-terran-nuclearstrike', banner: 'TACTICAL NUKE' },
     { id: 'vikings', name: 'Viking Wing', icon: 'btn-unit-terran-vikingfighter', banner: 'VIKING WING' },
+    { id: 'wraiths', name: 'Wraith Squadron', icon: 'btn-unit-terran-wraith', banner: 'WRAITH SQUADRON' },
+    { id: 'vessel', name: 'Science Vessel', icon: 'btn-unit-terran-sciencevessel', banner: 'SCIENCE VESSEL' },
     { id: 'thor', name: 'Thor', icon: 'btn-unit-terran-thor', banner: 'THOR' },
     { id: 'bc', name: 'Battlecruiser', icon: 'btn-unit-terran-battlecruiser', banner: 'BATTLECRUISER ON STATION' },
     { id: 'odin', name: 'Odin', icon: 'btn-unit-terran-odin', banner: 'THE ODIN' },
@@ -463,6 +481,8 @@ window.BS = window.BS || {};
     { id: 'maelstrom', name: 'Maelstrom Rounds', icon: 'btn-techupgrade-terran-maelstromrounds', rarity: 'common', max: 99, cost: 500, grow: 125, req: 'vehicle10', desc: 'Tanks +5 damage, mechs +2' },
     { id: 'fortified', name: 'Neosteel Fortified Armor', icon: 'btn-upgrade-mengsk-engineeringbay-neosteelfortifiedarmor', rarity: 'common', max: 99, cost: 450, grow: 125, req: 'plating8', desc: 'Bunker +150 HP' },
     { id: 'vikings', tech: 'vikings', name: 'Starport', icon: 'btn-building-terran-starport', rarity: 'common', cost: 250, req: 'wave16', desc: 'Viking wing in the armoury' },
+    { id: 'wraiths', tech: 'wraiths', name: 'Wraith Squadron', icon: 'btn-unit-terran-wraith', rarity: 'common', cost: 300, req: 'vikings', desc: 'Wraiths in the armoury: lasers and missiles' },
+    { id: 'vessel', tech: 'vessel', name: 'Science Facility', icon: 'btn-building-terran-sciencefacility', rarity: 'rare', cost: 400, req: 'vikings', desc: 'Science vessel in the armoury: Irradiate, Defensive Matrix' },
     { id: 'siegerange', name: 'Siege Optics', icon: 'btn-upgrade-swann-vehiclerangeincrease', rarity: 'epic', cost: 300, req: 'tank', desc: 'Siege tanks +2 range', unlock: { buys: ['vehicle', 3] } },
     { id: 'goliath', tech: 'goliath', name: 'Factory', icon: 'btn-building-terran-factory', rarity: 'epic', cost: 300, req: 'vehicle2', desc: 'Goliaths in the armoury', unlock: { buys: ['vehicle', 5] } },
     { id: 'nuke', tech: 'nuke', name: 'Ghost Academy', icon: 'btn-building-terran-ghostacademy', rarity: 'epic', cost: 350, req: 'weapons3', desc: 'Tactical nukes in the armoury', unlock: { buys: ['weapons', 10] } },

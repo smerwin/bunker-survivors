@@ -50,9 +50,10 @@ window.BS = window.BS || {};
       this.tanks = []; this.scvs = []; this.banshees = []; this.squad = []; this.structures = []; this.squadDeaths = []; this.boundTeam = 0; this.boundT = 0; this.nextTeam = 0;
       this.up = { stim: 0, weapons: 0, vehicle: 0, neosteel: 0, plating: 0, hisec: 0, medivac: 0, rails: 0 };
       this.ab = { stimUntil: 0, stimCd: 0, strikeCd: 0, repairCd: 0, yamatoCd: 0 };
-      this.techUnlocked = {}; this.techCd = { nuke: 0, vikings: 0 };
+      this.techUnlocked = {}; this.techCd = { nuke: 0, vikings: 0, wraiths: 0, vessel: 0 };
       this.swarms = []; this.abductions = []; this.airTgs = [];      // late-game zerg: dark swarm clouds, viper pulls
       this.mechs = []; this.bc = null; this.vikingWing = []; this.nukes = [];
+      this.wraiths = []; this.vessel = null; this.irradiated = []; this.matrices = [];   // Starport support (and the vessel's spells)
       this.pods = []; this.finale = null;                          // the last push: zerg drop pods, the boss fight
       this.evac = null; this.won = false;                          // the Hyperion's arrival (BS.EVAC)
       this.station = null;
@@ -639,7 +640,7 @@ window.BS = window.BS || {};
       if (!r) return true;
       if (r === 'tank') return this.tanks.length > 0;
       if (r === 'stim' || r === 'hisec' || r === 'medivac') return this.up[r] > 0;
-      if (r === 'bc') return !!this.techUnlocked.bc;
+      if (r === 'bc' || BS.TECH.some(t => t.id === r)) return !!this.techUnlocked[r];
       const m = /^(\w+?)(\d+)$/.exec(r);
       if (m[1] === 'wave') return this.wave >= +m[2];
       return this.up[m[1]] >= +m[2];
@@ -708,7 +709,7 @@ window.BS = window.BS || {};
     // For the armoury: '' (buyable), 'max' (all out) or 'wait' (cooling down), plus the price.
     techCount(kind) { return this.mechs.filter(m => m.kind === kind).length; }
     techState(id) {
-      if (id === 'nuke' || id === 'vikings') return { state: this.techCd[id] > 0 ? 'wait' : '', cost: T()[id].cost, wait: this.techCd[id] };
+      if (id === 'nuke' || id === 'vikings' || id === 'wraiths' || id === 'vessel') return { state: this.techCd[id] > 0 ? 'wait' : '', cost: T()[id].cost, wait: this.techCd[id] };
       if (id === 'bc') return { state: this.bc ? 'max' : '', cost: T().bc.cost };
       return { state: this.techCount(id) >= T()[id].max ? 'max' : '', cost: T()[id].cost };
     }
@@ -716,6 +717,8 @@ window.BS = window.BS || {};
       if (!this.techUnlocked[id]) return false;
       if (id === 'nuke') return this.launchNuke();
       if (id === 'vikings') return this.callVikings();
+      if (id === 'wraiths') return this.callWraiths();
+      if (id === 'vessel') return this.callVessel();
       if (id === 'bc') return this.callBattlecruiser();
       return this.addMech(id);
     }
@@ -1033,6 +1036,174 @@ window.BS = window.BS || {};
           if (v.y <= homeY) { v.handle.release(); this.vikingWing.splice(i, 1); continue; }
         }
         v.handle.setPos(v.x, v.y, v.z).setYaw(v.yaw);
+      }
+    }
+
+    // Wraith squadron: three wraiths sweep figures-of-eight over the lane, burst lasers on ground zerg, Gemini missiles at air.
+    callWraiths() {
+      const D = T().wraiths;
+      if (this.techCd.wraiths > 0) return this.toast('Wraiths are rearming');
+      if (this.minerals < D.cost) return this.toast('Not enough minerals');
+      this.minerals -= D.cost; this.techCd.wraiths = D.cooldown;
+      for (let i = 0; i < D.count; i++) {
+        const post = this.strikePosts[(i + 1) % this.strikePosts.length];
+        const w = { post: [post[0] * 1.3, post[1] + 4], x: post[0] * 0.6, y: (this.mode === 'lane' ? -18 : -34) - i * 1.2, z: D.fly + 1.5, yaw: Math.PI / 2,
+          gCd: 0.3 + i * 0.2, aCd: 0.5 + i * 0.2, state: 'in', t: 0, hp: D.hp, maxHp: D.hp, armor: 0, flash: 0 };
+        w.handle = this.r.spawn('wraith', w.x, w.y, w.z, w.yaw).setTeam(1);
+        w.handle.play(/^walk$|^stand$/i, true);
+        this.wraiths.push(w);
+      }
+      this.toast('Wraith squadron inbound');
+      return true;
+    }
+    updateWraiths(dt) {
+      const D = T().wraiths, homeY = this.mode === 'lane' ? -20 : -36;
+      for (let i = this.wraiths.length - 1; i >= 0; i--) {
+        const w = this.wraiths[i];
+        w.t += dt;
+        if (w.state === 'in') {
+          const dx = w.post[0] - w.x, dy = w.post[1] - w.y, dz = D.fly - w.z, dd = Math.hypot(dx, dy, dz);
+          if (dd > 0.2) { const s = Math.min(dd, D.speed * dt) / dd; w.x += dx * s; w.y += dy * s; w.z += dz * s; w.yaw = Math.atan2(dy, dx); }
+          else { w.state = 'patrol'; w.t = 0; }
+        } else if (w.state === 'patrol') {
+          // A wide figure-of-eight round the post, banking into the turns; it turns to face whatever it shoots.
+          const nx = w.post[0] + Math.sin(w.t * 0.9 + i * 2) * 2.6, ny = w.post[1] + Math.sin(w.t * 1.8 + i * 2) * 1.3;
+          const heading = Math.atan2(ny - w.y, nx - w.x);
+          w.x = nx; w.y = ny; w.z = D.fly + 0.25 * Math.sin(w.t * 2 + i);
+          const near = this.enemiesInRange(w.x, w.y, D.range), ground = near.find(e => !e.def.flying), air = near.find(e => e.def.flying);
+          const aim = ground || air;
+          w.yaw += clamp(angDelta(w.yaw, aim ? Math.atan2(aim.y - w.y, aim.x - w.x) : heading), -4 * dt, 4 * dt);
+          const rate = w.acidUntil > this.time ? 0.7 : 1;
+          w.gCd -= dt * rate; w.aCd -= dt * rate;
+          if (w.gCd <= 0 && ground) {
+            w.gCd = D.gCd;
+            const at = [w.x + Math.cos(w.yaw) * 0.6, w.y + Math.sin(w.yaw) * 0.6, w.z - 0.3], hit = [ground.x, ground.y, ground.z + ground.def.height * 0.5];
+            this.fx.beam(at, hit, 0.12, [1, 0.28, 0.2], 0.07);
+            this.fx.play('laserImpact', hit[0], hit[1], hit[2], Math.atan2(at[1] - hit[1], at[0] - hit[0]), 1.1);
+            BS.audio.play('laserHit', { vol: 0.25, gap: 0.12 });
+            this.hurtEnemy(ground, D.gDmg);
+          } else if (w.gCd <= 0) w.gCd = 0.1;
+          if (w.aCd <= 0 && air) {
+            w.aCd = D.aCd;
+            for (let k = 0; k < D.aShots; k++) {
+              const off = k ? 0.35 : -0.35;
+              const p = { kind: 'missile', friendly: true, fx: w.x - Math.sin(w.yaw) * off, fy: w.y + Math.cos(w.yaw) * off, fz: w.z - 0.2, tx: air.x, ty: air.y, tz: air.z,
+                t: -k * 0.1, dur: 0.4, dmg: D.aDmg, target: air, impact: 'wraithImpact' };
+              this.projectileModel(p, null, 'wraithMissile');
+              this.projectiles.push(p);
+            }
+            BS.audio.play('vikingFire', { vol: 0.35, gap: 0.2 });
+          } else if (w.aCd <= 0) w.aCd = 0.1;
+          if (w.t > D.hover) { w.state = 'out'; w.t = 0; }
+        } else {
+          w.y -= D.speed * dt; w.z += 2 * dt;
+          w.yaw += clamp(angDelta(w.yaw, -Math.PI / 2), -3 * dt, 3 * dt);
+          if (w.y <= homeY) { w.handle.release(); this.wraiths.splice(i, 1); continue; }
+        }
+        w.handle.setPos(w.x, w.y, w.z).setYaw(w.yaw);
+      }
+    }
+
+    // Science vessel: flies in over the lane and stays on station a while, casting Irradiate on the densest pack of zerg
+    // and Defensive Matrix on the most battered of the bunker, tanks and mechs. Its spells outlast it.
+    callVessel() {
+      const D = T().vessel;
+      if (this.vessel) return this.toast('Science vessel already on station');
+      if (this.techCd.vessel > 0) return this.toast('Science vessel is refitting');
+      if (this.minerals < D.cost) return this.toast('Not enough minerals');
+      this.minerals -= D.cost; this.techCd.vessel = D.cooldown;
+      const lane = this.mode === 'lane';
+      const v = { home: [0, lane ? -18 : -32], post: [0, lane ? 5 : 3], x: 0, y: lane ? -18 : -32, z: D.fly + 1.5, yaw: Math.PI / 2, state: 'in', t: 0,
+        irrCd: 1, matCd: 0.5, castUntil: 0, hp: D.hp, maxHp: D.hp, armor: D.armor, flash: 0 };
+      v.handle = this.r.spawn('sciencevessel', v.x, v.y, v.z, v.yaw).setTeam(1).setScale(D.scale);
+      v.handle.play(/^stand$/i, true);
+      this.vessel = v;
+      this.toast('Science vessel inbound');
+      return true;
+    }
+    updateVessel(dt) {
+      this.updateIrradiate(dt);
+      this.updateMatrices();
+      const v = this.vessel, D = T().vessel;
+      if (!v) return;
+      v.t += dt;
+      const goal = v.state === 'out' ? v.home : v.post, gz = v.state === 'out' ? D.fly + 3 : D.fly;
+      const dx = goal[0] - v.x, dy = goal[1] - v.y, dz = gz - v.z, dd = Math.hypot(dx, dy, dz);
+      if (dd > 0.05) { const s = Math.min(dd, (v.state === 'station' ? 1.2 : D.speed) * dt) / dd; v.x += dx * s; v.y += dy * s; v.z += dz * s; }
+      if (v.state === 'in' && dd < 0.3) { v.state = 'station'; v.t = 0; }
+      else if (v.state === 'station') {
+        if (v.t > D.stay) { v.state = 'out'; v.t = 0; this.toast('Science vessel withdrawing'); }
+        v.irrCd -= dt; v.matCd -= dt;
+        if (v.irrCd <= 0) v.irrCd = this.castIrradiate(v) ? D.irradiate.cd : 0.5;
+        if (v.matCd <= 0) v.matCd = this.castMatrix(v) ? D.matrix.cd : 0.5;
+        if (v.castUntil > this.time) v.yaw += clamp(angDelta(v.yaw, v.aim), -3 * dt, 3 * dt);
+        else if (v.castUntil && v.castUntil <= this.time) { v.castUntil = 0; v.handle.play(/^stand$/i, true); }
+      } else if (v.state === 'out' && dd < 0.5) { v.handle.release(); this.vessel = null; return; }
+      if (v.state !== 'station') v.yaw += clamp(angDelta(v.yaw, Math.atan2(dy, dx)), -2 * dt, 2 * dt);
+      v.handle.setPos(v.x, v.y, v.z + 0.15 * Math.sin(this.time * 1.3)).setYaw(v.yaw);
+    }
+    vesselCast(v, x, y) {
+      v.aim = Math.atan2(y - v.y, x - v.x); v.castUntil = this.time + 1.2;
+      v.handle.play(/^spell$/i, false);
+      v.post = [clamp(x * 0.6, -5, 5), v.post[1]];                     // drift over toward the fight
+    }
+    // Irradiate the zerg with the most others around it (none already irradiated, never Kerrigan).
+    castIrradiate(v) {
+      const I = T().vessel.irradiate, D = T().vessel;
+      let best = null, bn = 0;
+      for (const e of this.enemiesInRange(v.x, v.y, D.range)) {
+        if (e.irradiated || e.def.tumor) continue;
+        const n = this.enemiesInRange(e.x, e.y, I.radius).length + (e.maxHp > 300 ? 2 : 0);
+        if (n > bn) { bn = n; best = e; }
+      }
+      if (!best || bn < 2) return false;
+      best.irradiated = { until: this.time + I.dur, h: this.r.spawn('irradiate', best.x, best.y, best.z, 0).setTeam(1).setScale(Math.max(0.6, best.radius * 1.4)) };
+      best.irradiated.h.play(/^stand$/i, true);
+      this.irradiated.push(best);
+      this.vesselCast(v, best.x, best.y);
+      this.fx.beam([v.x, v.y, v.z - 0.6], [best.x, best.y, best.z + best.def.height * 0.5], 0.5, [0.45, 1, 0.3], 0.07);
+      BS.audio.play('irradiate', { vol: 0.5 });
+      this.floater(best.x, best.y, best.z + 2, 'IRRADIATE', '#8cff6a');
+      return true;
+    }
+    // Irradiate: the target and every zerg within radius of it lose dps hit points a second (armour does not help).
+    updateIrradiate(dt) {
+      const I = T().vessel.irradiate;
+      for (let i = this.irradiated.length - 1; i >= 0; i--) {
+        const e = this.irradiated[i], r = e.irradiated;
+        if (e.hp <= 0 || this.time > r.until) { r.h.release(); e.irradiated = null; this.irradiated.splice(i, 1); continue; }
+        r.h.setPos(e.x, e.y, e.z + e.def.height * 0.4);
+        for (const o of this.enemiesInRange(e.x, e.y, I.radius)) {
+          o.hp -= I.dps * dt;
+          if (o.hp <= 0) this.killEnemy(o, false);
+        }
+      }
+    }
+    // Defensive Matrix on whichever of the bunker, tanks and mechs has lost the most (and has no matrix on it yet).
+    castMatrix(v) {
+      const M = T().vessel.matrix;
+      const list = [{ o: this.bunker, x: 0, y: 0, r: T().bunker.halfSize }];
+      for (const t of this.tanks) if (t.state === 'ready' && !t.dead) list.push({ o: t, x: t.x, y: t.y, r: t.radius });
+      for (const m of this.mechs) if (!m.dead) list.push({ o: m, x: m.x, y: m.y, r: m.radius });
+      let best = null;
+      for (const c of list) if (!c.o.dead && !(c.o.matrix > 0) && c.o.hp < c.o.maxHp * 0.85 && (!best || c.o.hp / c.o.maxHp < best.o.hp / best.o.maxHp)) best = c;
+      if (!best) return false;
+      const o = best.o;
+      o.matrix = M.hp; o.matrixUntil = this.time + M.dur;
+      o.matrixH = this.r.spawn('defensiveMatrix', best.x, best.y, BS.Terrain.height(best.x, best.y), 0).setTeam(1).setScale(Math.max(0.3, best.r * 0.3));
+      o.matrixH.play(/^stand$/i, true);
+      this.matrices.push(o);
+      this.vesselCast(v, best.x, best.y);
+      this.fx.beam([v.x, v.y, v.z - 0.6], [best.x, best.y, BS.Terrain.height(best.x, best.y) + 1], 0.5, [0.4, 0.9, 1], 0.07);
+      this.floater(best.x, best.y, 3, 'DEFENSIVE MATRIX', '#7fe0ff');
+      return true;
+    }
+    // The shell follows what it guards and fades when it has soaked its hit points (see damageDefender) or timed out.
+    updateMatrices() {
+      for (let i = this.matrices.length - 1; i >= 0; i--) {
+        const o = this.matrices[i];
+        if (o.dead || !(o.matrix > 0) || this.time > o.matrixUntil) { o.matrix = 0; o.matrixH.release(); o.matrixH = null; this.matrices.splice(i, 1); continue; }
+        if (o !== this.bunker) o.matrixH.setPos(o.x, o.y, BS.Terrain.height(o.x, o.y));
       }
     }
 
@@ -1437,7 +1608,7 @@ window.BS = window.BS || {};
       const W = BS.WAVES, byWave = Math.max(0, Math.floor((this.wave - W.tierFrom) / W.tierEvery) + (this.wave >= W.tierFrom ? 1 : 0));
       return Math.min(BS.TECH.length, Math.max(Object.keys(this.techUnlocked).length, byWave));
     }
-    airPresence() { return !!this.bc || this.vikingWing.length > 0 || this.banshees.length > 0; }
+    airPresence() { return !!this.bc || this.vikingWing.length > 0 || this.banshees.length > 0 || this.wraiths.length > 0 || !!this.vessel; }
     // Gone without a kill (an overlord flying off, a nydus worm burrowing away).
     despawn(e) {
       e.hp = 0; this.stopDrip(e);
@@ -1721,15 +1892,21 @@ window.BS = window.BS || {};
       if (b && b.state === 'station' && !b.dead) list.push({ kind: 'bc', obj: b, x: b.x, y: b.y, z: b.sz, radius: 2.4, armored: true });
       for (const v of this.vikingWing) if (!v.dead && v.state !== 'in') list.push({ kind: 'viking', obj: v, x: v.x, y: v.y, z: v.z, radius: 0.6, armored: true });
       for (const s of this.banshees) if (!s.dead) list.push({ kind: 'banshee', obj: s, x: s.x, y: s.y, z: s.z, radius: 0.6, light: true });
+      for (const w of this.wraiths) if (!w.dead && w.state !== 'in') list.push({ kind: 'wraith', obj: w, x: w.x, y: w.y, z: w.z, radius: 0.6, light: true });
+      const v = this.vessel;
+      if (v && !v.dead && v.state === 'station') list.push({ kind: 'vessel', obj: v, x: v.x, y: v.y, z: v.z, radius: 1.2, armored: true });
       return list;
     }
     killAir(o, kind) {
       o.dead = true;
       o.handle.release();
-      this.corpse(kind === 'bc' ? 'battlecruiserDeath' : kind === 'viking' ? 'vikingDeath' : 'bansheeDeath', o.x, o.y, kind === 'bc' ? o.sz : o.z, o.yaw, 5, kind === 'bc' ? 0.75 : 1, true);
+      const death = { bc: 'battlecruiserDeath', viking: 'vikingDeath', wraith: 'wraithDeath', vessel: 'sciencevesselDeath' }[kind] || 'bansheeDeath';
+      this.corpse(death, o.x, o.y, kind === 'bc' ? o.sz : o.z, o.yaw, 5, kind === 'bc' ? 0.75 : kind === 'vessel' ? T().vessel.scale : 1, true);
       BS.audio.play('explosion', { vol: kind === 'bc' ? 1 : 0.6 });
       if (kind === 'bc') { this.bc = null; this.shake = 1; this.toast('Battlecruiser lost!'); }
       else if (kind === 'viking') { this.vikingWing.splice(this.vikingWing.indexOf(o), 1); this.toast('Viking down'); }
+      else if (kind === 'wraith') { this.wraiths.splice(this.wraiths.indexOf(o), 1); this.toast('Wraith down'); }
+      else if (kind === 'vessel') { this.vessel = null; this.toast('Science vessel lost'); }
       else { this.banshees.splice(this.banshees.indexOf(o), 1); this.toast('Banshee down'); }
     }
     playAnim(e, kind) {
@@ -1762,6 +1939,7 @@ window.BS = window.BS || {};
     damageDefender(tg, dmg) {
       if (!this.valid(tg) || !(dmg >= 0)) return;       // a bad damage value (NaN) must never make something unkillable
       const o = tg.obj;
+      if (o.matrix > 0) { const a = Math.min(o.matrix, dmg); o.matrix -= a; dmg -= a; if (dmg <= 0) return; }   // a science vessel's Defensive Matrix soaks it first
       if (tg.kind === 'bunker') {
         const real = Math.max(0.5, dmg - this.bunker.armor);
         o.hp -= real; o.flash = 1;
@@ -1783,7 +1961,7 @@ window.BS = window.BS || {};
       } else if (tg.kind === 'mech') {
         o.hp -= Math.max(0.5, dmg - o.armor); o.flash = 1;
         if (o.hp <= 0 && !o.dead) this.killMech(o);
-      } else if (tg.kind === 'bc' || tg.kind === 'viking' || tg.kind === 'banshee') {
+      } else if (tg.kind === 'bc' || tg.kind === 'viking' || tg.kind === 'banshee' || tg.kind === 'wraith' || tg.kind === 'vessel') {
         o.hp -= Math.max(0.5, dmg - (o.armor || 0)); o.flash = 1;
         if (o.hp <= 0 && !o.dead) this.killAir(o, tg.kind);
       } else if (tg.kind === 'structure') {
@@ -1910,7 +2088,7 @@ window.BS = window.BS || {};
       this.score += dt * 0.5;
       this.shake = Math.max(0, this.shake - dt * 2);
       for (const k of ['stimCd', 'strikeCd', 'repairCd', 'yamatoCd']) this.ab[k] = Math.max(0, this.ab[k] - dt);
-      for (const k of ['nuke', 'vikings']) this.techCd[k] = Math.max(0, this.techCd[k] - dt);
+      for (const k of ['nuke', 'vikings', 'wraiths', 'vessel']) this.techCd[k] = Math.max(0, this.techCd[k] - dt);
       this.waveTimer -= dt;
       if (!this.wave) { if (this.waveTimer <= 0) this.startWave(); }
       else if (!this.spawnQueue.length) {
@@ -1943,6 +2121,8 @@ window.BS = window.BS || {};
       this.updateMechs(dt);
       this.updateBc(dt);
       this.updateVikings(dt);
+      this.updateWraiths(dt);
+      this.updateVessel(dt);
       this.updateNukes(dt);
       this.updatePods(dt);
       this.updateProjectiles(dt);
