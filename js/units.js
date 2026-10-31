@@ -126,7 +126,8 @@ window.BS = window.BS || {};
   projLeviathan: E + 'zerg/leviathanmissile/leviathanmissile.m3',
   };
 
-  // SC2 particle effects, replayed by both builds: [m3, optional sequence filter, loops].
+  // SC2 particle effects, replayed by both builds: [m3, optional sequence filter, loops, 'mask' to cut particles out by
+  // their material's alpha mask (see server/m3fx.js)].
   const FX = {
   marineLaunch: [E + 'terran/marineweaponlaunch/marineweaponlaunch.m3'], marineImpact: [E + 'terran/marineweaponimpact/marineweaponimpact.m3'],
   firebatLaunch: [E + 'terran/firebatlaunch/firebatlaunch.m3', '^birth'], marauderLaunch: [E + 'terran/maraudermissilelaunch/maraudermissilelaunch.m3'],
@@ -162,6 +163,8 @@ window.BS = window.BS || {};
   // The finale: Kerrigan's Leaping Strike and Apocalypse, the drop pods' streak down and burst.
   psionicShift: [E + 'zerg/psionicshift/psionicshift.m3', '^birth'], leapImpact: [E + 'zerg/leapingstrikeimpact/leapingstrikeimpact.m3'],
   apocalypseChannel: [E + 'zerg/kerriganapocalypsechannel/kerriganapocalypsechannel.m3', '^stand', true], apocalypse: [E + 'zerg/kerriganapocalypseexplosion/kerriganapocalypseexplosion.m3'],
+  // A creep overlord's Generate Creep: globs of creep dribbling from its belly (looped while it hangs there).
+  creepDrip: [E + 'zerg/creepdriplaunch/creepdriplaunch.m3', '^stand$', true, 'mask'],
   podFall: [E + 'zerg/zergdroppod/zergdroppod.m3', '^birth'], podImpact: [E + 'zerg/kerrigandroppodexplosion/kerrigandroppodexplosion.m3'],
   };
   // Every death model also carries its blood/acid burst: the plain "Death" one (the numbered sequences are SC2's
@@ -245,6 +248,10 @@ window.BS = window.BS || {};
     podImpact: [0, 1, 2, 3].map(i => S + 'zerg_droppod_explode' + i + '.wav'),
   };
 
+  // Strains and skins (BS.ZERG variants) only mix in once the plain strain has had the field to itself: after waves past
+  // its unlock wave, primal ones primalAfter.
+  BS.VARIANTS = { after: 3, primalAfter: 10 };
+
   // Zerg attackers. hp/armor/damage/cooldown/range/speed are SC2 values; bounty and budget are ours.
   // hitFrac: fraction of the attack cooldown at which the damage lands (synced with the animation).
   // variants: strain/skin models mixed in for variety; impactFx: SC2 effect where a melee blow lands.
@@ -302,7 +309,7 @@ window.BS = window.BS || {};
     cell: 1, update: 0.25, on: 0.35, grow: 0.6, decay: 0.012, speed: 1.3, fromWave: 8,
     tumor: { radius: 4.5, growth: 0.45, spread: 12, hop: [3, 4.5], base: 4, perWave: 3, max: 30, minBunker: 6, gap: 2 },
     queen: { every: 9, first: [3, 6] },
-    overlord: { radius: 3.2, life: 50, drift: 0.3, minDist: 6 },
+    overlord: { radius: 3.2, life: 50, drift: 0.3, minDist: 6, drip: 1.0 },    // drip: how far under its middle the creep falls from
     burn: { radius: 1.6, regrow: 5, tumorDmg: 10 },
   };
 
@@ -455,7 +462,7 @@ window.BS = window.BS || {};
     { id: 'capacitors', name: 'Ultra-Capacitors', icon: 'btn-research-terran-ultracapacitors', rarity: 'common', max: 99, cost: 500, grow: 125, req: 'weapons10', desc: 'Infantry +1 damage' },
     { id: 'maelstrom', name: 'Maelstrom Rounds', icon: 'btn-techupgrade-terran-maelstromrounds', rarity: 'common', max: 99, cost: 500, grow: 125, req: 'vehicle10', desc: 'Tanks +5 damage, mechs +2' },
     { id: 'fortified', name: 'Neosteel Fortified Armor', icon: 'btn-upgrade-mengsk-engineeringbay-neosteelfortifiedarmor', rarity: 'common', max: 99, cost: 450, grow: 125, req: 'plating8', desc: 'Bunker +150 HP' },
-    { id: 'vikings', tech: 'vikings', name: 'Starport', icon: 'btn-building-terran-starport', rarity: 'rare', cost: 250, desc: 'Viking wing in the armoury', unlock: { best: 12 } },
+    { id: 'vikings', tech: 'vikings', name: 'Starport', icon: 'btn-building-terran-starport', rarity: 'common', cost: 250, req: 'wave16', desc: 'Viking wing in the armoury' },
     { id: 'siegerange', name: 'Siege Optics', icon: 'btn-upgrade-swann-vehiclerangeincrease', rarity: 'epic', cost: 300, req: 'tank', desc: 'Siege tanks +2 range', unlock: { buys: ['vehicle', 3] } },
     { id: 'goliath', tech: 'goliath', name: 'Factory', icon: 'btn-building-terran-factory', rarity: 'epic', cost: 300, req: 'vehicle2', desc: 'Goliaths in the armoury', unlock: { buys: ['vehicle', 5] } },
     { id: 'nuke', tech: 'nuke', name: 'Ghost Academy', icon: 'btn-building-terran-ghostacademy', rarity: 'epic', cost: 350, req: 'weapons3', desc: 'Tactical nukes in the armoury', unlock: { buys: ['weapons', 10] } },
