@@ -321,12 +321,15 @@ window.BS = window.BS || {};
   // a wall of zerglings. len: wave length in seconds, len[0] at wave 1 to len[1] by lenBy. hp: zerg hit points x
   // (1 + hp x waves past hpFrom).
   // alive/aliveHard: how many zerg may be on the field at once, rising from [0] at wave aliveFrom to [1] by aliveBy (phones
-  // scale it down); the rest wait their turn.
+  // scale it down); the rest wait their turn. bountyFrom/bountyFall: past wave bountyFrom a kill pays 1 / (1 + bountyFall
+  // x waves past it) of its bounty (a third by wave 40; bosses pay in full), so a strong army stops snowballing minerals
+  // and has to make every rebuy count.
   // tierFrom/tierEvery: the swarm evolves on its own as well as answering your tech: from tierFrom, every tierEvery waves
   // count as one more tech card for the late-game strains (see Game.lateTier). milestones: a named assault every three
   // waves from 28 (around 17 minutes in), on top of the budget: extra zerg, drop pods or nydus breaches. A run that
   // clears fast meets more of them before the finale.
   BS.WAVES = { alive: [160, 220], aliveHard: [200, 250], aliveFrom: 20, aliveBy: 40, len: [30, 30], lenBy: 12, knee: 16, perWave: [16, 0.4], swarmKnee: 12, swarmPerWave: 5, swarmMax: 360, hp: 0.02, hpFrom: 10,
+    bountyFrom: 28, bountyFall: 0.15,
     tierFrom: 20, tierEvery: 5,
     milestones: {
       28: { name: 'ULTRALISK STAMPEDE', toast: 'Ultralisks stampeding down the lane!', zerg: { ultralisk: 6 } },

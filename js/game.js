@@ -1847,7 +1847,7 @@ window.BS = window.BS || {};
     killEnemy(e, suicide) {
       const d = e.def;
       e.hp = 0;
-      this.kills++; this.minerals += d.bounty * (1 + 0.15 * this.cardLevel('bounty')); this.score += d.bounty * 2;
+      this.kills++; this.minerals += this.bounty(d); this.score += d.bounty * 2;
       if (d.soundDeath) BS.audio.play(d.soundDeath, { vol: 0.5 });
       if (d.suicide && !suicide && !d.antiAir) this.banelingBlast(e, true);      // a shot-down baneling still bursts (scourge do not)
       const i = this.enemies.indexOf(e); if (i >= 0) this.enemies.splice(i, 1);
@@ -1856,6 +1856,12 @@ window.BS = window.BS || {};
       else this.fx.play('nydusBirth', e.x, e.y, BS.Terrain.height(e.x, e.y), 0, 1.6);
       if (this.focus === e) this.focus = null;
       if (d.boss) this.bossDown(e);
+    }
+    // Minerals for a kill: the zerg's bounty, plus Bounty Contracts, less as the swarm grows (BS.WAVES.bountyFall; bosses
+    // pay in full).
+    bounty(d) {
+      const W = BS.WAVES, fall = d.boss ? 1 : 1 / (1 + W.bountyFall * Math.max(0, this.wave - W.bountyFrom));
+      return d.bounty * (1 + 0.15 * this.cardLevel('bounty')) * fall;
     }
     banelingBlast(e, fromDeath) {
       const d = e.def;
