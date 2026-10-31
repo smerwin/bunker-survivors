@@ -30,6 +30,14 @@ namespace
 	FVector W(const FVector& Sim) { return BSSpace::ToWorld(Sim.X, Sim.Y, Sim.Z); }
 	const TArray<FString> WalkNames = { TEXT("walk"), TEXT("walk 01"), TEXT("fly") };
 	const TArray<FString> StandNames = { TEXT("stand"), TEXT("stand 01") };
+	// Where a soldier's weapon fires from mid-attack (its Ref_Weapon bone): metres forward, to its left, and up.
+	FVector RifleMuzzle(const FString& Key, float X, float Y, float Z, float Yaw)
+	{
+		const FVector M = Key == TEXT("firebat") ? FVector(0.82f, -0.27f, 0.67f) : Key == TEXT("marauder") ? FVector(0.51f, -0.36f, 0.7f)
+			: Key == TEXT("infested") ? FVector(0.35f, -0.22f, 0.47f) : FVector(0.44f, -0.05f, 0.46f);
+		const float C = FMath::Cos(Yaw), S = FMath::Sin(Yaw);
+		return FVector(X + C * M.X - S * M.Y, Y + S * M.X + C * M.Y, Z + M.Z);
+	}
 	// Extra yaw applied to the sieged tank's turret bone on top of its aim (SC2's model rests it in line with the hull).
 	constexpr float TankTurretOffsetDeg = 0.f;
 	// Brood queens: who Spawn Broodling goes for first (higher first; the bunker and buildings are never targets), and
@@ -873,7 +881,7 @@ void ABSGame::UpdateSquad(float Dt)
 			{
 				M.Cd += D->Cd;
 				M.Yaw = FMath::Atan2(Target->Y - M.Y, Target->X - M.X);
-				FireInfantry(D, FVector(M.X + FMath::Cos(M.Yaw) * 0.45f, M.Y + FMath::Sin(M.Yaw) * 0.45f, BSTerrain::Height(M.X, M.Y) + 0.85f), Target, M.Fwd.bOn);
+				FireInfantry(D, RifleMuzzle(D->Key, M.X, M.Y, BSTerrain::Height(M.X, M.Y), M.Yaw), Target, M.Fwd.bOn);
 				const float Len = M.Actor ? M.Actor->Play(TEXT("attack"), false, bStim ? 2.1f : 1.4f) : 0.f;
 				M.Anim = TEXT("attack"); M.StandAt = Time + FMath::Min(D->Cd / (bStim ? 1.5f : 1.f), Len > 0 ? Len : 0.5f);
 			}
@@ -2428,9 +2436,13 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 		Pool = Vw >= 0 ? FMath::Min(Pool, 1 + Vw / FMath::Max(1, D->VariantStep)) : 0;
 		Share = FMath::Min(0.45f, 0.04f * (Vw + 1));
 	}
-	if (Pool && FMath::FRand() < Share)
+	// Either way the plain strain comes first: other strains join VariantsAfter waves after it unlocks, primal ones later.
+	TArray<const FString*> Open;
+	for (int32 i = 0; i < Pool; i++)
+		if (Wave - D->Unlock >= (D->Variants[i].Contains(TEXT("Primal")) ? BSDefs::VariantsPrimalAfter : BSDefs::VariantsAfter)) Open.Add(&D->Variants[i]);
+	if (Open.Num() && FMath::FRand() < Share)
 	{
-		const FString& V = D->Variants[FMath::RandRange(0, Pool - 1)];
+		const FString& V = *Open[FMath::RandRange(0, Open.Num() - 1)];
 		const FBSModel* VM = Assets->Model(V);
 		if (VM && VM->Find(WalkNames) && (D->AttackAnims.Num() == 0 || VM->Find(D->AttackAnims)))
 		{
@@ -2468,9 +2480,11 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 }
 
 // Gone without a kill (an overlord flying off, a nydus worm burrowing away).
+void ABSGame::StopDrip(FBSEnemy& E) { if (E.DripFx) { StopFx(E.DripFx); E.DripFx = 0; } }
+
 void ABSGame::Despawn(const TSharedPtr<FBSEnemy>& E)
 {
-	E->Hp = 0;
+	E->Hp = 0; StopDrip(*E);
 	Enemies.Remove(E);
 	ReleaseModel(E->Actor); E->Actor = nullptr;
 	if (Focus.Pin() == E) Focus.Reset();
@@ -2755,7 +2769,9 @@ void ABSGame::UpdateCreeper(const TSharedPtr<FBSEnemy>& EP, float Dt)
 	{
 		const float R = (float)E.Hover.Size();
 		if (R > BSCreep::OverlordMinDist) E.Hover *= FMath::Max(BSCreep::OverlordMinDist, R - BSCreep::OverlordDrift * Dt) / R;
-		if (E.T > BSCreep::OverlordLife) { E.State = CreeperOut; PlayEnemyAnim(E, TEXT("walk")); }
+		if (E.T > BSCreep::OverlordLife) { E.State = CreeperOut; PlayEnemyAnim(E, TEXT("walk")); StopDrip(E); }
+		else if (E.DripFx) MoveFx(E.DripFx, FVector(E.X, E.Y, E.Z - BSCreep::OverlordDrip), E.Yaw);
+		else E.DripFx = PlayFx(TEXT("creepDrip"), FVector(E.X, E.Y, E.Z - BSCreep::OverlordDrip), E.Yaw, 1.3f);   // no effect yet: try again
 	}
 	const FVector2D G = E.State == CreeperOut ? E.Exit : E.Hover;
 	const float Dx = G.X - E.X, Dy = G.Y - E.Y, Dd = FMath::Sqrt(Dx * Dx + Dy * Dy);
@@ -2763,6 +2779,7 @@ void ABSGame::UpdateCreeper(const TSharedPtr<FBSEnemy>& EP, float Dt)
 	{
 		E.State = CreeperWork; E.T = 0; E.Anim = TEXT("work");
 		if (E.Actor) E.Actor->Play(TEXT("stand work"), true);
+		E.DripFx = PlayFx(TEXT("creepDrip"), FVector(E.X, E.Y, E.Z - BSCreep::OverlordDrip), E.Yaw, 1.3f);
 		PlaySound(TEXT("generateCreep"), 0.6f);
 		Toast(TEXT("Overlord generating creep"));
 	}
@@ -3131,7 +3148,7 @@ void ABSGame::HurtEnemy(const TSharedPtr<FBSEnemy>& E, float Dmg, bool bSplash)
 void ABSGame::KillEnemy(const TSharedPtr<FBSEnemy>& E, bool bSuicide)
 {
 	const FBSZergDef* D = E->Def;
-	E->Hp = 0;
+	E->Hp = 0; StopDrip(*E);
 	// The kill pays its bounty, plus Bounty Contracts, less as the swarm grows (BountyFall; bosses pay in full).
 	const float Fall = !D->Boss.IsEmpty() ? 1.f : 1.f / (1 + BSDefs::BountyFall * FMath::Max(0, Wave - BSDefs::BountyFrom));
 	Kills++; Minerals += D->Bounty * (1 + 0.15f * CardLevel(TEXT("bounty"))) * Fall; Score += D->Bounty * 2;
@@ -3467,7 +3484,7 @@ void ABSGame::UpdateEnemies(float Dt)
 					{
 						// Infested marines: a rifle burst from the muzzle with the same SC2 muzzle mesh and launch sparks as our marines.
 						const float Aim = FMath::Atan2(T.Y - E.Y, T.X - E.X);
-						P.From = FVector(E.X + FMath::Cos(Aim) * 0.45f, E.Y + FMath::Sin(Aim) * 0.45f, E.Z + D->Height * 0.7f);
+						P.From = RifleMuzzle(TEXT("infested"), E.X, E.Y, E.Z, Aim);
 						P.Kind = EBSProjKind::Bullet; P.ImpactFx = TEXT("marineImpact");
 						bool bFx = true;
 						for (int32 r = 0; r < 3; r++) { bFx = PlayFx(TEXT("marineLaunch"), P.From, Aim, 1.4f, r * 0.08f) != 0 && bFx; MuzzleMesh(P.From, Aim, r * 0.08f); }

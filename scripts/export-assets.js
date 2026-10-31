@@ -13,7 +13,7 @@ const { loadGameData } = require('../server/gamedata');
 const { convertM3 } = require('../server/m3gltf');
 const { extractFxVariants } = require('../server/m3fx');
 const { ensureStructures } = require('../server/m3struct');
-const { ddsToPng } = require('../server/dds');
+const { ddsToPng, maskedParts, maskedPng } = require('../server/dds');
 const adpcm = require('../server/adpcm');
 
 const root = path.join(__dirname, '..');
@@ -101,9 +101,9 @@ async function main() {
   // Particle effects: JSON per effect plus every texture they use (PNG, flipbooks intact).
   manifest.fx = {}; manifest.fxTextures = {};
   const fxTextures = new Set();
-  for (const [key, [m3, seq, loop]] of Object.entries(FX)) {
+  for (const [key, [m3, seq, loop, mask]] of Object.entries(FX)) {
     try {
-      const fx = extractFxVariants(sc2, m3, seq);
+      const fx = extractFxVariants(sc2, m3, seq, { mask: mask === 'mask' });
       if (!fx.variants.length) { manifest.failures.push({ key, m3, reason: 'no emitting sequence' }); console.log('  skip  fx ' + key); continue; }
       fx.loop = !!loop;
       fx.textures.forEach(t => fxTextures.add(t));
@@ -117,11 +117,11 @@ async function main() {
     }
   }
   for (const t of fxTextures) {
-    const buf = sc2.read(t);
-    if (!buf) { manifest.failures.push({ key: t, reason: 'fx texture not found' }); continue; }
+    const parts = maskedParts(t), bufs = (parts ? [parts.diffuse, parts.mask] : [t]).map(p => sc2.read(p));
+    if (bufs.some(b => !b)) { manifest.failures.push({ key: t, reason: 'fx texture not found' }); continue; }
     try {
       const name = 'FX_' + path.basename(t, path.extname(t));
-      write(path.join('FX', 'Textures', name + '.png'), ddsToPng(buf));
+      write(path.join('FX', 'Textures', name + '.png'), parts ? maskedPng(bufs[0], bufs[1], parts.cols, parts.rows) : ddsToPng(bufs[0]));
       manifest.fxTextures[t] = name;
     } catch (e) { manifest.failures.push({ key: t, reason: 'fx texture: ' + e.message }); }
   }

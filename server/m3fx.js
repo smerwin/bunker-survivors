@@ -126,7 +126,9 @@ function collapse(vals) {
 }
 
 // All usable sequence variants of an effect (ones that actually emit something), for random variety at runtime.
-function extractFxVariants(sc2, m3Path, seqFilter) {
+// opts.mask: cut each particle's texture out by its material's alpha mask (as a baked "diffuse+mask" texture, see
+// dds.maskedPng) where the mask shares the diffuse layer's UVs.
+function extractFxVariants(sc2, m3Path, seqFilter, opts) {
   layout = layout || new M3Layout();
   const f = new M3File(layout, sc2.read(m3Path));
   const names = f.deref(f.model.sequences).map(s => f.str(s.name));
@@ -134,18 +136,18 @@ function extractFxVariants(sc2, m3Path, seqFilter) {
   const variants = [], textures = new Set();
   for (const n of names) {
     if (re && !re.test(n)) continue;
-    const fx = extractFx(sc2, m3Path, n);
+    const fx = extractFx(sc2, m3Path, n, opts);
     const emits = fx.emitters.some(e => e.bursts.length || (typeof e.rate === 'number' ? e.rate > 0 : e.rate.v.some(x => x > 0)));
     if (!emits) continue;
     fx.textures.forEach(t => textures.add(t));
     variants.push({ sequence: fx.sequence, duration: fx.duration, emitters: fx.emitters });
   }
   // An exact filter ("^death$") that finds nothing that emits falls back to the looser one ("^death").
-  if (!variants.length && seqFilter && seqFilter.endsWith('$')) return extractFxVariants(sc2, m3Path, seqFilter.slice(0, -1));
+  if (!variants.length && seqFilter && seqFilter.endsWith('$')) return extractFxVariants(sc2, m3Path, seqFilter.slice(0, -1), opts);
   return { source: m3Path, variants, textures: [...textures] };
 }
 
-function extractFx(sc2, m3Path, seqName) {
+function extractFx(sc2, m3Path, seqName, opts) {
   layout = layout || new M3Layout();
   const buf = sc2.read(m3Path);
   if (!buf) throw new Error('not found: ' + m3Path);
@@ -170,6 +172,17 @@ function extractFx(sc2, m3Path, seqName) {
         const L = f.deref(mat[ln])[0];
         const img = L ? f.str(L.imagePath) : '';
         if (img) { tex = img.toLowerCase().replace(/\\/g, '/'); layerCols = L.flipBookColumns; layerRows = L.flipBookRows; flipUv = L.uvSource === 6; break; }
+      }
+    }
+    if (tex && opts && opts.mask) {
+      const A = f.deref(mat.alphaMaskLayer)[0], am = A ? f.str(A.imagePath).toLowerCase().replace(/\\/g, '/') : '';
+      const name = am.slice(am.lastIndexOf('/') + 1);
+      if (am && A.uvSource === 0 && !flipUv) tex = tex.replace(/\.dds$/, '') + '+' + name;
+      else if (am && A.uvSource === 6 && !flipUv) {
+        // A flipbook mask over a plain diffuse: bake the diffuse into every cell, then play the frames off the mask.
+        const c = p.numberOfColumns || A.flipBookColumns || 1, r = p.numberOfRows || A.flipBookRows || 1;
+        tex = tex.replace(/\.dds$/, '') + '+' + name.replace(/\.dds$/, '') + '@' + c + 'x' + r + '.dds';
+        flipUv = true; layerCols = c; layerRows = r;
       }
     }
     if (tex) textures.add(tex);

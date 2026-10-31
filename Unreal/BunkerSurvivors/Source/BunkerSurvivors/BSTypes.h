@@ -54,6 +54,7 @@ namespace BSCreep
 	constexpr int32 TumorBase = 4, TumorPerWave = 3, TumorMax = 30;
 	constexpr float QueenEvery = 9, QueenFirst0 = 3, QueenFirst1 = 6;
 	constexpr float OverlordRadius = 3.2f, OverlordLife = 50, OverlordDrift = 0.3f, OverlordMinDist = 6;
+	constexpr float OverlordDrip = 1.0f;   // how far under the overlord's middle its creep drips from
 	constexpr float BurnRadius = 1.6f, BurnRegrow = 5, BurnTumorDmg = 10;
 }
 
@@ -200,6 +201,9 @@ namespace BSDefs
 	// Past wave BountyFrom a kill pays 1 / (1 + BountyFall x waves past it) of its bounty (a third by wave 40; bosses pay
 	// in full), so a strong army stops snowballing minerals and has to make every rebuy count.
 	constexpr int32 BountyFrom = 28; constexpr float BountyFall = 0.15f;
+	// Strains and skins (FBSZergDef::Variants) only mix in once the plain strain has had the field to itself: VariantsAfter
+	// waves past its unlock wave, primal ones VariantsPrimalAfter (BS.VARIANTS).
+	constexpr int32 VariantsAfter = 3, VariantsPrimalAfter = 10;
 	// The run lasts EvacAt seconds of fighting (the clock stops while you shop), then the Hyperion evacuates everyone left:
 	// the run is won (+EvacScore). She arrives EvacArrive seconds before and comes down over the bunker from EvacFrom to
 	// EvacHover (metres) while the fight goes on (BS.EVAC).

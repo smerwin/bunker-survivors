@@ -177,6 +177,7 @@ struct FBSEnemy
 	float LeapCd = 0, ApocCd = 0, BroodCd = 0, LeapT = -1, BlastAt = -1;
 	FVector2D LeapFrom = FVector2D::ZeroVector, LeapTo = FVector2D::ZeroVector, Blast = FVector2D::ZeroVector;
 	int32 BlastFx = 0;
+	int32 DripFx = 0;                 // creep overlord: its Generate Creep drip
 	bool Alive() const { return Hp > 0; }
 };
 
@@ -381,6 +382,7 @@ public:
 	// StarCraft II particle effects (BSFx.cpp). Pos in sim metres, Yaw is the sim facing. Returns a handle (0 if missing).
 	int32 PlayFx(const FString& Key, const FVector& Pos, float Yaw = 0, float Scale = 1, float Delay = 0);
 	void MoveFx(int32 Handle, const FVector& Pos, float Yaw);
+	void StopDrip(FBSEnemy& E);
 	void StopFx(int32 Handle);
 
 private:

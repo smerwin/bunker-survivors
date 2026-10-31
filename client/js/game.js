@@ -20,6 +20,8 @@ window.BS = window.BS || {};
   const BROOD_PRIORITY = { tank: 4, mech: 3, trooper: 2, scv: 1 };
   const BROOD_SPELL_DMG = 120;
   // Mech weapon bones and their rest-pose positions (model space: x right, y up, z forward) for the fallback.
+  // Where a soldier's weapon fires from mid-attack (its Ref_Weapon bone): metres forward, to its left, and up.
+  const RIFLE_MUZZLE = { marine: [0.44, -0.05, 0.46], firebat: [0.82, -0.27, 0.67], marauder: [0.51, -0.36, 0.7], infested: [0.35, -0.22, 0.47] };
   const MECH_MUZZLES = {
     goliath: { g: [['Ref_Weapon', [-0.83, 1.56, 0.87]], ['Ref_Weapon 01', [0.89, 1.56, 0.87]]],
                a: [['Ref_Weapon 02', [-0.82, 2.15, 0.32]], ['Ref_Weapon 05', [0.85, 2.15, 0.32]], ['Ref_Weapon 04', [-0.83, 2.31, 0.29]], ['Ref_Weapon 07', [0.86, 2.31, 0.29]]] },
@@ -347,7 +349,8 @@ window.BS = window.BS || {};
             m.cd += d.cd;
             m.yaw = Math.atan2(target.y - m.y, target.x - m.x);
             const cs = Math.cos(m.yaw), sn = Math.sin(m.yaw);
-            this.fireInfantry(m, m.x + cs * 0.45, m.y + sn * 0.45, BS.Terrain.height(m.x, m.y) + 0.85, target);
+            const [mf, ml, mh] = RIFLE_MUZZLE[m.type];
+            this.fireInfantry(m, m.x + cs * mf - sn * ml, m.y + sn * mf + cs * ml, BS.Terrain.height(m.x, m.y) + mh, target);
             m.anim = 'attack'; m.standAt = this.time + Math.min(m.def.cd / (stim ? 1.5 : 1), m.handle.play(/^attack/i, false, stim ? 2.1 : 1.4) || 0.5);
           } else m.cd = 0.1;
         }
@@ -1386,14 +1389,16 @@ window.BS = window.BS || {};
       } else { const rr = rnd(25, 28); x = Math.cos(ang + rnd(-0.35, 0.35)) * rr; y = Math.sin(ang + rnd(-0.35, 0.35)) * rr; }
       let model = d.model, death = d.death;
       // Strains and skins mixed in. With variantFrom the variety dials up slowly: the first variant joins at that wave,
-      // one more every variantStep waves, and the share of variants grows a little each wave up to the usual 45%.
+      // one more every variantStep waves, and the share of variants grows a little each wave up to the usual 45%. Either
+      // way the plain strain comes first: other strains join BS.VARIANTS.after waves after it unlocks, primal ones later.
       let pool = d.variants, share = 0.45;
       if (pool && d.variantFrom) {
         const vw = this.wave - d.variantFrom;
         pool = vw >= 0 ? pool.slice(0, 1 + Math.floor(vw / d.variantStep)) : null;
         share = Math.min(0.45, 0.04 * (vw + 1));
       }
-      if (pool && Math.random() < share) { const v = pick(pool); model = v; if (BS.EXTRA_MODELS[v + 'Death']) death = v + 'Death'; }
+      if (pool) { const since = this.wave - d.unlock; pool = pool.filter(v => since >= (/Primal/.test(v) ? BS.VARIANTS.primalAfter : BS.VARIANTS.after)); }
+      if (pool && pool.length && Math.random() < share) { const v = pick(pool); model = v; if (BS.EXTRA_MODELS[v + 'Death']) death = v + 'Death'; }
       const z = d.flying ? d.fly : BS.Terrain.height(x, y);
       const e = { type, def: d, x, y, z, yaw: Math.atan2(-y, -x), hp: 0, maxHp: 0, radius: d.radius, life: d.life || 0, cd: rnd(0, d.cd), retarget: 0,
         target: null, hitAt: -1, pendingHit: false, slowUntil: 0, burrowed: false, burrowT: 0, unburrowT: 0, attacking: false, anim: '', flash: 0, sx: 0, sy: 0, model, death };
@@ -1435,7 +1440,7 @@ window.BS = window.BS || {};
     airPresence() { return !!this.bc || this.vikingWing.length > 0 || this.banshees.length > 0; }
     // Gone without a kill (an overlord flying off, a nydus worm burrowing away).
     despawn(e) {
-      e.hp = 0;
+      e.hp = 0; this.stopDrip(e);
       const i = this.enemies.indexOf(e); if (i >= 0) this.enemies.splice(i, 1);
       e.handle.release();
       if (this.focus === e) this.focus = null;
@@ -1627,11 +1632,14 @@ window.BS = window.BS || {};
       if (e.state === 'creep') {
         const r = Math.hypot(e.hover[0], e.hover[1]);
         if (r > C.minDist) { const k = Math.max(C.minDist, r - C.drift * dt) / r; e.hover[0] *= k; e.hover[1] *= k; }
-        if (e.t > C.life) { e.state = 'out'; this.playAnim(e, 'walk'); }
+        if (e.t > C.life) { e.state = 'out'; this.playAnim(e, 'walk'); this.stopDrip(e); }
+        else if (e.drip) this.fx.move(e.drip, e.x, e.y, e.z - C.drip, e.yaw);
+        else e.drip = this.fx.play('creepDrip', e.x, e.y, e.z - C.drip, e.yaw, 1.3);   // the effect was still loading
       }
       const [gx, gy] = e.state === 'out' ? e.exit : e.hover, dx = gx - e.x, dy = gy - e.y, dd = Math.hypot(dx, dy);
       if (e.state === 'in' && dd < 0.5) {
         e.state = 'creep'; e.t = 0; e.anim = 'work'; e.handle.play(/^stand work$/i, true);
+        e.drip = this.fx.play('creepDrip', e.x, e.y, e.z - C.drip, e.yaw, 1.3);
         BS.audio.play('generateCreep', { vol: 0.6 });
         this.toast('Overlord generating creep');
       }
@@ -1642,7 +1650,7 @@ window.BS = window.BS || {};
         if (e.state !== 'creep') e.yaw += clamp(angDelta(e.yaw, Math.atan2(dy, dx)), -2 * dt, 2 * dt);
       }
     }
-    // Zerg still to beat this wave (creep tumors linger and do not hold up the next one).
+    stopDrip(e) { if (e.drip) { this.fx.stop(e.drip); e.drip = null; } }
     // Zerg still to beat this wave. Creep tumors linger and do not count, nor do flyers sieging from beyond the bunker's
     // marines: they stay where they are and carry on into the next wave.
     waveAlive() {
@@ -1841,7 +1849,7 @@ window.BS = window.BS || {};
     }
     killEnemy(e, suicide) {
       const d = e.def;
-      e.hp = 0;
+      e.hp = 0; this.stopDrip(e);
       this.kills++; this.minerals += this.bounty(d); this.score += d.bounty * 2;
       if (d.soundDeath) BS.audio.play(d.soundDeath, { vol: 0.5 });
       if (d.suicide && !suicide && !d.antiAir) this.banelingBlast(e, true);      // a shot-down baneling still bursts (scourge do not)
@@ -2107,8 +2115,8 @@ window.BS = window.BS || {};
         case 'spine': this.projectileModel(p, 'projHydralisk', null); break;
         case 'bullet': {
           // Infested marines: a rifle burst from the muzzle with the same SC2 muzzle mesh and launch sparks as our marines.
-          const aim = Math.atan2(t.y - e.y, t.x - e.x);
-          p.fx = e.x + Math.cos(aim) * 0.45; p.fy = e.y + Math.sin(aim) * 0.45; p.fz = e.z + d.height * 0.7; p.impact = 'marineImpact';
+          const aim = Math.atan2(t.y - e.y, t.x - e.x), [mf, ml, mh] = RIFLE_MUZZLE.infested, ca = Math.cos(aim), sa = Math.sin(aim);
+          p.fx = e.x + ca * mf - sa * ml; p.fy = e.y + sa * mf + ca * ml; p.fz = e.z + mh; p.impact = 'marineImpact';
           for (let r = 0; r < 3; r++) {
             this.fx.play('marineLaunch', p.fx, p.fy, p.fz, aim, 1.4, r * 0.08);
             this.flashes.push({ x: p.fx, y: p.fy, z: p.fz, yaw: aim, delay: r * 0.08, life: 0.09 });

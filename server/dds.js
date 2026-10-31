@@ -67,4 +67,31 @@ function encodePNG({ width, height, data }) {
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
 }
 
-module.exports = { decodeDDS, encodePNG, ddsToPng: (buf) => encodePNG(decodeDDS(buf)) };
+// Particle textures with an alpha mask baked in (see m3fx extractFx opts.mask): "dir/diffuse+mask.dds" names the
+// diffuse texture dir/diffuse.dds cut out by dir/mask.dds, and "dir/diffuse+mask@4x4.dds" the same with a 4 x 4 flipbook
+// mask (the diffuse repeated in every cell). maskedParts returns { diffuse, mask, cols, rows }, or null for a plain
+// texture; maskedPng multiplies the diffuse alpha by the mask's (its alpha, or its brightness if it has none).
+function maskedParts(path) {
+  const m = /^(.*\/)?([^/]+)\+([^/@]+?)(?:@(\d+)x(\d+))?(\.dds)$/.exec(path);
+  if (!m) return null;
+  const dir = m[1] || '';
+  return { diffuse: dir + m[2] + '.dds', mask: dir + m[3] + '.dds', cols: +(m[4] || 1), rows: +(m[5] || 1) };
+}
+function maskedPng(diffuseBuf, maskBuf, cols = 1, rows = 1) {
+  const d = decodeDDS(diffuseBuf), k = decodeDDS(maskBuf), q = k.data;
+  const cells = cols * rows > 1, W = cells ? k.width : d.width, H = cells ? k.height : d.height, out = Buffer.alloc(W * H * 4);
+  const cw = W / cols, ch = H / rows;
+  let flat = true;
+  for (let i = 3; i < q.length && flat; i += 4) flat = q[i] === 255;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = (y * W + x) * 4;
+    const di = (Math.floor((y % ch) / ch * d.height) * d.width + Math.floor((x % cw) / cw * d.width)) * 4;
+    const j = (Math.floor(y * k.height / H) * k.width + Math.floor(x * k.width / W)) * 4;
+    const a = flat ? (q[j] * 0.3 + q[j + 1] * 0.59 + q[j + 2] * 0.11) : q[j + 3];
+    out[i] = d.data[di]; out[i + 1] = d.data[di + 1]; out[i + 2] = d.data[di + 2];
+    out[i + 3] = Math.round(d.data[di + 3] * a / 255);
+  }
+  return encodePNG({ width: W, height: H, data: out });
+}
+
+module.exports = { decodeDDS, encodePNG, ddsToPng: (buf) => encodePNG(decodeDDS(buf)), maskedParts, maskedPng };

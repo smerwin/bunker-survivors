@@ -48,7 +48,7 @@ function assetRoutes(sc2, fxList, cached = (k, make) => make()) {
       const def = fxList[key];
       if (!def) return notFound('no such effect: ' + key);
       const json = cached('fx:' + key, () => {
-        const fx = require('./m3fx').extractFxVariants(sc2, def[0], def[1]);
+        const fx = require('./m3fx').extractFxVariants(sc2, def[0], def[1], { mask: def[3] === 'mask' });
         fx.loop = !!def[2];
         return Buffer.from(JSON.stringify(fx));
       });
@@ -57,6 +57,13 @@ function assetRoutes(sc2, fxList, cached = (k, make) => make()) {
     if (pathname.startsWith('/fxtex/')) {
       // /fxtex/assets/textures/glow_yellow1.png -> that SC2 texture decoded to PNG.
       const rel = decodePath(pathname.slice(7)).replace(/\.png$/i, '.dds');
+      const parts = require('./dds').maskedParts(rel);
+      if (parts) {
+        // A diffuse texture cut out by its alpha mask (see dds.maskedPng).
+        const df = resolve(parts.diffuse), mf = resolve(parts.mask);
+        if (!df || !mf) return notFound('texture not found: ' + rel);
+        return { status: 200, type: 'image/png', body: cached('png:' + rel, () => require('./dds').maskedPng(readCached(df), readCached(mf), parts.cols, parts.rows)), cache: 'public, max-age=86400' };
+      }
       const full = resolve(rel);
       if (!full) return notFound('texture not found: ' + rel);
       return { status: 200, type: 'image/png', body: cached('png:' + full, () => require('./dds').ddsToPng(readCached(full))), cache: 'public, max-age=86400' };
