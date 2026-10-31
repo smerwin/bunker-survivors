@@ -54,6 +54,13 @@ patchFile('parsers/m3/layer.js', [
    "this.fresnelRotationPitch = stream.readFloat32();$1if (version < 26) this.unknown7 = stream.readUint32();",
    "if (version < 26) this.unknown7"],
 ]);
+patchFile('viewer/handlers/m3/model.js', [
+  // The UV-set flags are cumulative (four sets: 0x40000, 0x80000 and 0x100000 all set), so test the highest first.
+  // Tested lowest first, Kerrigan's four sets read as two and her vertices were stretched across the map.
+  [/if \(vertexFlags & 0x40000\) \{(\s*)uvSetCount = 2;(\s*)\}(\s*)else if \(vertexFlags & 0x80000\) \{(\s*)uvSetCount = 3;(\s*)\}(\s*)else if \(vertexFlags & 0x100000\) \{(\s*)uvSetCount = 4;/,
+   '/* UV sets: highest flag first */ if (vertexFlags & 0x100000) {$1uvSetCount = 4;$2}$3else if (vertexFlags & 0x80000) {$4uvSetCount = 3;$5}$6else if (vertexFlags & 0x40000) {$7uvSetCount = 2;',
+   '/* UV sets: highest flag first */'],
+]);
 
 // --- Minified UMD bundle -----------------------------------------------------------------------
 let umd = fs.readFileSync(umdSrc, 'utf8');
@@ -64,6 +71,9 @@ umd = applyAll(umd, [
   ["this.fresnelRotationPitch=e.readFloat32(),this.unknown7=e.readUint32())",
    "this.fresnelRotationPitch=e.readFloat32(),t<26&&(this.unknown7=e.readUint32()))"],
 ], 'viewer.min.js');
+// UV-set count, highest flag first (see the CommonJS patch above).
+umd = umd.replace(/262144&(\w+)\?(\w+)=2:524288&\1\?\2=3:1048576&\1&&\(\2=4\)/, '1048576&$1?$2=4:524288&$1?$2=3:262144&$1&&($2=2)');
+if (!/1048576&\w+\?\w+=4:524288/.test(umd)) console.warn('warning: the UV-set count patch did not apply to the bundle');
 // Unknown tag / version: skip instead of throwing. Variable names differ per build, so use regexes.
 umd = umd.replace(/if\(!(\w+)\)throw new Error\(": Unsupported object version - tag "\+\w+\+" and version "\+\w+\);/,
   (m, v) => `if(!${v}){this.entries=[];return}`);

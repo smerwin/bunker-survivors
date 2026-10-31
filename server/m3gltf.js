@@ -129,7 +129,8 @@ function convertM3(sc2, m3Path, options) {
   const bones = refAll(m.bones).map(b => new M3Bone(b));
 
   let uvSetCount = 1;
-  if (m.vertexFlags & 0x40000) uvSetCount = 2; else if (m.vertexFlags & 0x80000) uvSetCount = 3; else if (m.vertexFlags & 0x100000) uvSetCount = 4;
+  // The UV-set flags are cumulative, so test the highest first (Kerrigan has all four).
+  if (m.vertexFlags & 0x100000) uvSetCount = 4; else if (m.vertexFlags & 0x80000) uvSetCount = 3; else if (m.vertexFlags & 0x40000) uvSetCount = 2;
   const vSize = (7 + uvSetCount) * 4;
   if (vertices.length % vSize !== 0) report.warnings.push('vertex buffer size ' + vertices.length + ' is not a multiple of ' + vSize);
   const dv = new DataView(vertices.buffer, vertices.byteOffset, vertices.byteLength);
