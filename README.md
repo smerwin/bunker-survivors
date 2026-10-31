@@ -135,12 +135,13 @@ is about 40 waves. Early waves ramp up steadily. Past wave 16 the swarm stops si
 stranger: from wave 20 it evolves on its own (one more late-game strain every five waves, on top of whatever your tech
 provokes), more zerg can be on the field at once (160 rising to 220 by wave 40), and every third wave from 28 is a named
 assault: an ultralisk stampede (28), an air armada (31), a lone leviathan (34), drop pods all round the base (37), a
-nydus breach (40), a defiler-led lurker siege (43) and the old brood in force (46). At 26 minutes Kerrigan leads the
-swarm's last push (the clock turns amber), and every wave until the evac is maxed out. Ten seconds before the end the
-Hyperion arrives overhead; the fight goes on until she takes you off. From wave 28 each kill pays less (a third of its
-bounty by wave 40; Kerrigan and the leviathan pay in full), so a strong army no longer snowballs minerals: late on,
-every trooper you lose and rebuy counts. In bot playtests 6 runs in 16 in the lane make the evac, the rest fall between
-12 and 27 minutes; Hyperion perks help.
+nydus breach (40), a defiler-led lurker siege (43) and the old brood in force (46). At 28 minutes Kerrigan comes for
+you in person (the clock turns amber): nothing you have can touch her, so she carves straight for the bunker while the
+swarm's last, maxed-out push hits everything else, and all you can do is hold on. Ten seconds before the end the
+Hyperion arrives overhead and takes you off. From wave 28 each kill pays less (a third of its bounty by wave 40; the
+leviathan pays in full), so a strong army no longer snowballs minerals: late on, every trooper you lose and rebuy
+counts. In bot playtests 5 runs in 16 in the lane make the evac (Kerrigan leaves their bunkers at a third to a half of
+their hit points), the rest fall between 12 and 25 minutes; Hyperion perks help.
 
 **The lane** is a Y-shaped chokepoint: zerg come down from the north and along the north-east and north-west arms.
 Ranged zerg sometimes climb the ramps to the ledges overlooking the bunker, where they get extra reach and a third of
@@ -261,7 +262,7 @@ troopers outside, and they fall back to the bunker.
 | Overlord drop | Flies in from a flank and drops zerglings behind your lines (early, if badly hurt). |
 | Nydus worm | Breaches behind the bunker and disgorges zerg until it is killed or sinks away. |
 | Creep (from wave 8, whatever your tech) | Queens walk with the waves planting creep tumors; each tumor spreads creep and buds one more toward the bunker, and from wave 10 overlords drift in overhead generating creep (shoot them down with anti-air). Zerg on creep move 30% faster, and creep lingers after its tumors die. Firebat flames burn it back and singe tumors. |
-| Kerrigan (26 minutes in) | The finale, the swarm's last push. The Queen of Blades leads a leviathan and a maxed-out wave in person: she leaps onto your lines and blasts the thickest knot of defenders with Apocalypse, the leviathan bombards from the air and spawns mutalisks, and zerg drop pods slam down all round the base. Kill both (boss bars under the squad card) for the victory bonus; every wave after is just as heavy until the Hyperion arrives. Try it with `?clock=26&tech=max` (Unreal: `-BSClock=26 -BSTechMax`), or the evac with `?clock=29.5`. |
+| Kerrigan (28 minutes in) | The finale, the swarm's last push. The Queen of Blades comes for the bunker in person with a leviathan and a maxed-out wave: nothing you have can hurt her, so your guns ignore her while she leaps onto your lines and blasts the thickest knot of defenders with Apocalypse. The leviathan (which can be killed) bombards from the air and spawns mutalisks, and zerg drop pods slam down all round the base. Hold on until the Hyperion takes you off. Try it with `?clock=28&tech=max` (Unreal: `-BSClock=28 -BSTechMax`), or the evac with `?clock=29.5`. |
 
 **Stimpacks** send the soldiers standing outside charging at the nearest zerg until they are in range.
 

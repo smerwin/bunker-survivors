@@ -1381,12 +1381,13 @@ int32 SBSHud::PaintBanner(const FGeometry& G, FSlateWindowElementList& Out, int3
 		{
 			const FBSEnemy& E = *Bosses[i];
 			const float Y = 184 + i * 34, Pct = FMath::Clamp(E.Hp / FMath::Max(1.f, E.MaxHp), 0.f, 1.f);
-			const FString Hp = FString::Printf(TEXT("%d / %d"), FMath::CeilToInt(E.Hp), FMath::RoundToInt(E.MaxHp));
+			const bool bRun = E.Def->bUntouchable;   // Kerrigan: no health to whittle down, only the Hyperion's countdown
+			const FString Hp = bRun ? FString(TEXT("UNSTOPPABLE  //  RUN")) : FString::Printf(TEXT("%d / %d"), FMath::CeilToInt(E.Hp), FMath::RoundToInt(E.MaxHp));
 			D::RFill(Out, L, G, FVector2f(X0 - 8, Y - 4), FVector2f(W + 16, 30), 8, C::A(C::Dark, 0.85f));
 			D::Text(Out, L + 1, G, E.Def->Name.ToUpper(), F, FVector2f(X0, Y), C::Ink);
-			D::Text(Out, L + 1, G, Hp, F, FVector2f(X0 + W - D::Measure(Hp, F).X, Y), C::Violet);
+			D::Text(Out, L + 1, G, Hp, F, FVector2f(X0 + W - D::Measure(Hp, F).X, Y), bRun ? C::Red : C::Violet);
 			D::RFill(Out, L + 1, G, FVector2f(X0, Y + 15), FVector2f(W, 6), 3, C::A(FLinearColor::Black, 0.6f));
-			D::RFill(Out, L + 2, G, FVector2f(X0, Y + 15), FVector2f(FMath::Max(3.f, W * Pct), 6), 3, Pct < 0.25f ? C::Red : C::Violet);
+			D::RFill(Out, L + 2, G, FVector2f(X0, Y + 15), FVector2f(FMath::Max(3.f, W * Pct), 6), 3, bRun || Pct < 0.25f ? C::Red : C::Violet);
 		}
 	}
 	// Wave banner: a glass band whose hairlines draw outward from the centre.

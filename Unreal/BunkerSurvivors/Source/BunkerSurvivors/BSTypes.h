@@ -36,6 +36,8 @@ struct FBSZergDef
 	// Finale bosses: "kerrigan" (Leaping Strike, Apocalypse) or "leviathan" (bombards, spawns mutalisks). Bosses
 	// keep their own hit points (no late-wave toughening) and always spawn, whatever the alive cap.
 	FString Boss;
+	// Kerrigan: nothing aims at her or hurts her (you hold on until the Hyperion comes), and she makes for the bunker.
+	bool bUntouchable = false, bPreferBunker = false;
 	float Bombard = 0;                // leviathan bile: splash radius of each shot
 };
 
@@ -201,19 +203,18 @@ namespace BSDefs
 	// The run lasts EvacAt seconds of fighting (the clock stops while you shop), then the Hyperion evacuates everyone left:
 	// the run is won (+EvacScore). She arrives EvacArrive seconds before and comes down over the bunker from EvacFrom to
 	// EvacHover (metres) while the fight goes on (BS.EVAC).
-	constexpr float EvacAt = 1800, EvacArrive = 10, EvacScale = 1.2f, EvacScore = 25000;
+	constexpr float EvacAt = 1800, EvacArrive = 10, EvacScale = 1.2f, EvacScore = 50000;
 	inline const FVector EvacFrom(0, -40, 14), EvacHover(0, 2.5f, 6.5f);
-	// The finale (ABSGame::StartFinale), the swarm's last push: the first wave to start FinaleAt seconds in. Kerrigan leads
-	// a leviathan, and from then until the evac every wave is maxed out (budget x FinaleBudget, every late-game strain),
+	// The finale (ABSGame::StartFinale), the swarm's last push: the first wave to start FinaleAt seconds in (two minutes
+	// before the evac). Kerrigan, who cannot be stopped, comes for the bunker with a leviathan, and from then until the evac every wave is maxed out (budget x FinaleBudget, every late-game strain),
 	// while zerg drop pods land all round the base. A pod hits the ground PodLand s after it appears (its Birth sequence),
-	// crushing what it lands on, then lets out PodCargo zerg. FinaleVictory: score for killing both bosses.
-	constexpr float FinaleAt = 1560;
+	// crushing what it lands on, then lets out PodCargo zerg.
+	constexpr float FinaleAt = 1680;
 	constexpr int32 FinalePods = 8, PodCargo = 4;   // every other pod brings an ultralisk
 	constexpr float FinaleBudget = 1.5f, PodStart = 6, PodEvery = 2, PodLand = 2.7f, PodDmg = 60, PodRadius = 2, PodMinR = 7, PodMaxR = 13;
 	constexpr float LeapCd = 8, LeapMin = 3, LeapMax = 9, LeapDur = 0.7f, LeapDmg = 90, LeapRadius = 1.8f;           // Leaping Strike onto a defender out of reach
 	constexpr float ApocCd = 13, ApocRange = 9, ApocDelay = 1.2f, ApocDmg = 70, ApocRadius = 2;                      // a psionic blast on the thickest knot of defenders
 	constexpr float BroodCd = 15; constexpr int32 BroodCount = 3;                                                    // the leviathan spawns mutalisks
-	constexpr float FinaleVictory = 50000;
 }
 
 // Sound keys -> exported sound files (S_<key>_<n> in /Game/SC2/Sounds).

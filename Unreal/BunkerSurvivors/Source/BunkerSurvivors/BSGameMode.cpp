@@ -71,7 +71,7 @@ void ABSGameMode::StartGame(EBSMode Mode)
 	FParse::Value(Cmd, TEXT("BSTelemetry="), Game->TelemetryPath);
 	Game->bStarted = true;
 	Game->BeginOpening();
-	// -BSWave=30: jump straight to that wave; -BSClock=26: set the run clock to that many minutes (26: the next wave is the
+	// -BSWave=30: jump straight to that wave; -BSClock=28: set the run clock to that many minutes (28: the next wave is the
 	// Kerrigan finale, 29.5: the Hyperion is on her way); combine with -BSTechMax.
 	float Clock = 0;
 	if (FParse::Value(Cmd, TEXT("BSClock="), Clock) && Clock > 0) Game->Time = Clock * 60;

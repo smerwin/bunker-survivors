@@ -808,7 +808,7 @@ void ABSGame::UpdateSquad(float Dt)
 			const FBSEnemy* Th = nullptr; float Nearest = 1e9f;
 			for (const TSharedPtr<FBSEnemy>& E : Enemies)
 			{
-				if (!E->Alive() || !Pred(*E) || Dist2(0, 0, E->X, E->Y) > 24 * 24) continue;
+				if (!E->Alive() || E->Def->bUntouchable || !Pred(*E) || Dist2(0, 0, E->X, E->Y) > 24 * 24) continue;
 				const float Dd = Dist2(M.X, M.Y, E->X, E->Y);
 				if (Dd < Nearest) { Nearest = Dd; Th = E.Get(); }
 			}
@@ -824,7 +824,7 @@ void ABSGame::UpdateSquad(float Dt)
 			const FBSEnemy* Th = nullptr; float Nearest = 1e9f;
 			for (const TSharedPtr<FBSEnemy>& E : Enemies)
 			{
-				if (!E->Alive() || !E->bAttacking || !Pred(*E) || Dist2(0, 0, E->X, E->Y) > 14 * 14) continue;
+				if (!E->Alive() || E->Def->bUntouchable || !E->bAttacking || !Pred(*E) || Dist2(0, 0, E->X, E->Y) > 14 * 14) continue;
 				const float Dd = Dist2(M.X, M.Y, E->X, E->Y);
 				if (Dd < Nearest) { Nearest = Dd; Th = E.Get(); }
 			}
@@ -1215,7 +1215,7 @@ bool ABSGame::UseYamato()
 	TSharedPtr<FBSEnemy> Pick; int32 PickN = 0;
 	for (const TSharedPtr<FBSEnemy>& En : Enemies)
 	{
-		if (!En->Alive()) continue;
+		if (!En->Alive() || En->Def->bUntouchable) continue;
 		const int32 Cnt = EnemiesInRange(En->X, En->Y, BSDefs::YamatoRadius, Any).Num();
 		if (Cnt > PickN) { PickN = Cnt; Pick = En; }
 	}
@@ -2061,6 +2061,7 @@ bool ABSGame::FocusAt(float SimX, float SimY)
 	TSharedPtr<FBSEnemy> BestE; float BestD = 4;
 	for (const TSharedPtr<FBSEnemy>& E : Enemies)
 	{
+		if (E->Def->bUntouchable) continue;
 		const float D = FMath::Sqrt(Dist2(SimX, SimY, E->X, E->Y)) - E->Radius;
 		if (D < BestD) { BestD = D; BestE = E; }
 	}
@@ -2200,7 +2201,8 @@ void ABSGame::StartWave()
 }
 
 // ---- The finale: the swarm's last push before the Hyperion arrives ---------------------------------------
-// Kerrigan leads a leviathan and a maxed-out wave in person, while drop pods slam down all round the base.
+// Kerrigan comes for us in person with a leviathan and a maxed-out wave, while drop pods slam down all round the base.
+// Nothing we have can touch her: the only way out is to hold on until the Hyperion picks us up.
 void ABSGame::StartFinale()
 {
 	Finale.bOn = true; Finale.T = Time;
@@ -2209,7 +2211,7 @@ void ABSGame::StartFinale()
 	SpawnQueue.Sort([](const FBSSpawn& A, const FBSSpawn& B) { return A.T < B.T; });
 	DropPods(BSDefs::FinalePods, BSDefs::PodStart, BSDefs::PodEvery);
 	WaveBanner = FString::Printf(TEXT("WAVE %d  //  THE QUEEN OF BLADES"), Wave); WaveBannerT = Time; WaveSerial++;
-	Toast(TEXT("Kerrigan leads the swarm in person!"));
+	Toast(TEXT("Kerrigan is coming! Nothing can stop her: hold on for the Hyperion!"));
 	PlaySound(TEXT("finaleRoar"), 1.f);
 	Shake = 1;
 }
@@ -2371,19 +2373,13 @@ void ABSGame::UpdateLeviathan(const TSharedPtr<FBSEnemy>& EP, float Dt)
 	Floater(E.X, E.Y, E.Z + 2, TEXT("MUTALISKS"), FLinearColor(0.75f, 0.55f, 1.f));
 }
 
-// A boss is down; both down (with none still to come) wins the finale. The game carries on.
+// A leviathan is down (Kerrigan never is).
 void ABSGame::BossDown(FBSEnemy& E)
 {
 	if (E.BlastAt >= 0) { StopFx(E.BlastFx); E.BlastFx = 0; E.BlastAt = -1; }
 	Toast(E.Def->Name + TEXT(" is down!"));
 	Floater(E.X, E.Y, E.Z + 3, E.Def->Name.ToUpper() + TEXT(" DOWN"), FLinearColor(1.f, 0.83f, 0.3f));
 	Shake = 1;
-	if (!Finale.bOn || Finale.bWon || Bosses().Num()) return;
-	for (const FBSSpawn& S : SpawnQueue) { const FBSZergDef* D = BSDefs::FindZerg(S.Type); if (D && !D->Boss.IsEmpty()) return; }
-	Finale.bWon = true; Finale.WonAt = Time;
-	Score += BSDefs::FinaleVictory;
-	WaveBanner = TEXT("VICTORY  //  THE QUEEN OF BLADES HAS FALLEN"); WaveBannerT = Time; WaveSerial++;
-	Toast(TEXT("Victory! The swarm fights on without her"));
 }
 
 TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const FVector2D* At)
@@ -3123,7 +3119,7 @@ void ABSGame::DamageDefender(const FBSTarget& T, float Dmg)
 
 void ABSGame::HurtEnemy(const TSharedPtr<FBSEnemy>& E, float Dmg, bool bSplash)
 {
-	if (!E || !E->Alive()) return;
+	if (!E || !E->Alive() || E->Def->bUntouchable) return;
 	// Dark swarm: ground zerg under a cloud take a quarter from shots (blasts and flame still get through).
 	if (!bSplash && !E->Def->bFlying)
 		for (const FBSSwarm& Sw : Swarms) if (Dist2(Sw.X, Sw.Y, E->X, E->Y) < Sw.R * Sw.R) { Dmg *= 0.25f; break; }
@@ -3169,7 +3165,7 @@ TArray<TSharedPtr<FBSEnemy>> ABSGame::EnemiesInRange(float X, float Y, float Ran
 	TArray<TPair<float, TSharedPtr<FBSEnemy>>> Hits;
 	for (const TSharedPtr<FBSEnemy>& E : Enemies)
 	{
-		if (!E->Alive() || !Pred(*E)) continue;
+		if (!E->Alive() || E->Def->bUntouchable || !Pred(*E)) continue;   // never Kerrigan: nothing we have can touch her
 		const float D = FMath::Sqrt(Dist2(X, Y, E->X, E->Y)) - E->Radius;
 		if (D <= Range) Hits.Add({ D, E });
 	}
@@ -3356,8 +3352,8 @@ void ABSGame::UpdateEnemies(float Dt)
 				else if (T.Kind == FBSTarget::Structure) { if (auto P = T.StructureRef.Pin()) bUp = P->bCc; }
 				if (bUp && !D->bFlying && !D->bHops && !D->bAntiAir && BSTerrain::OnHigh(T.X, T.Y) && !BSTerrain::OnHigh(E.X, E.Y)
 					&& FMath::Sqrt(Dist2(E.X, E.Y, T.X, T.Y)) - T.Radius - E.Radius > D->Range) continue;
-				// Guardians single out mechs; brood queens make for tanks, mechs, troopers.
-				const float Dd = FMath::Sqrt(Dist2(E.X, E.Y, T.X, T.Y)) - T.Radius - (D->bPreferMech && T.Kind == FBSTarget::Mech ? 12.f : 0.f)
+				// Guardians single out mechs; Kerrigan makes for the bunker; brood queens make for tanks, mechs, troopers.
+				const float Dd = FMath::Sqrt(Dist2(E.X, E.Y, T.X, T.Y)) - T.Radius - (D->bPreferMech && T.Kind == FBSTarget::Mech ? 12.f : 0.f) - (D->bPreferBunker && T.Kind == FBSTarget::Bunker ? 12.f : 0.f)
 					- (D->Spell == TEXT("broodling") ? 4.f * BroodPriority(T.Kind) : 0.f);
 				if (Dd < Bd) { Bd = Dd; BestT = &T; }
 			}
@@ -3482,7 +3478,7 @@ void ABSGame::UpdateEnemies(float Dt)
 					case EBSProjectile::Bile: P.Kind = EBSProjKind::Bile; P.Arc = 2.5f; P.ImpactFx = TEXT("roachImpact"); P.ImpactScale = 2.2f; AddProjectileModel(P, TEXT("projLeviathan"), TEXT("guardianMissile"), 1.6f); if (!P.Model && !P.Trail) AddProjectileVisual(P, FLinearColor(0.7f, 1, 0.3f), 0.6f); break;
 					case EBSProjectile::Brood: P.Kind = EBSProjKind::Brood; AddProjectileVisual(P, FLinearColor(0.9f, 0.6f, 0.3f), 0.4f); P.Arc = 3; break;
 					case EBSProjectile::Spines: P.Kind = EBSProjKind::Spines; break;
-					case EBSProjectile::Guardian: P.Kind = EBSProjKind::Guardian; P.Arc = 2; P.ImpactFx = TEXT("guardianImpact"); AddProjectileModel(P, TEXT("projGuardian"), TEXT("guardianMissile"), 1.6f); if (P.Model) P.Model->SetScale(2.4f); if (!P.Model && !P.Trail) AddProjectileVisual(P, FLinearColor(0.7f, 1, 0.4f), 0.35f); break;
+					case EBSProjectile::Guardian: P.Kind = EBSProjKind::Guardian; P.Arc = 2; P.Dur /= 1.5f; P.ImpactFx = TEXT("guardianImpact"); AddProjectileModel(P, TEXT("projGuardian"), TEXT("guardianMissile"), 1.1f); if (P.Model) P.Model->SetScale(1.6f); if (!P.Model && !P.Trail) AddProjectileVisual(P, FLinearColor(0.7f, 1, 0.4f), 0.25f); break;
 					case EBSProjectile::Spores: P.Kind = EBSProjKind::Spores; P.ImpactFx = TEXT("acidSpores"); AddProjectileModel(P, nullptr, TEXT("devourerMissile")); if (!P.Trail) AddProjectileVisual(P, FLinearColor(0.6f, 1, 0.2f), 0.3f); break;
 					default: break;
 					}
@@ -4275,8 +4271,8 @@ void ABSGame::AutoShop()
 void ABSGame::StartEvac()
 {
 	Evac.bOn = true; Evac.T = Time; Evac.P = BSDefs::EvacFrom;
-	WaveBanner = TEXT("THE HYPERION HAS ARRIVED  //  HOLD ON"); WaveBannerT = Time; WaveSerial++;
-	Toast(TEXT("Hyperion inbound: hold the bunker!"));
+	WaveBanner = TEXT("THE HYPERION HAS ARRIVED  //  GET ABOARD"); WaveBannerT = Time; WaveSerial++;
+	Toast(Bosses().ContainsByPredicate([](const TSharedPtr<FBSEnemy>& B) { return B->Def->bUntouchable; }) ? TEXT("Hyperion inbound: hold her off a few seconds more!") : TEXT("Hyperion inbound: hold the bunker!"));
 	Shake = 0.5f;
 	Evac.Actor = AcquireModel(TEXT("battlecruiser"));
 	if (Evac.Actor) { Evac.Actor->SetScale(BSDefs::EvacScale); Evac.Actor->SetTeamColor(TerranColor); Evac.Actor->SetSim(Evac.P.X, Evac.P.Y, Evac.P.Z, PI / 2); Evac.Actor->Play(StandNames, true); }

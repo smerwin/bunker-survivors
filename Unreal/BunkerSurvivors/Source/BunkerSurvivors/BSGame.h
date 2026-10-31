@@ -313,9 +313,8 @@ public:
 	bool BuyTech(const FString& Id);
 	void GrantAllTech();                  // playtesting (-BSTechMax): every shop card at its top level
 	void SkipToWave(int32 N) { Shop.bOpen = false; Wave = FMath::Max(0, N - 1); StartWave(); }   // playtesting (-BSWave=100): wave N starts now
-	// The finale, the swarm's last push: Kerrigan and a leviathan lead a maxed-out wave; killing both wins it (the game
-	// carries on to the evac).
-	struct FFinale { bool bOn = false, bWon = false; float T = 0, WonAt = -1; } Finale;
+	// The finale, the swarm's last push: Kerrigan (who cannot be stopped) and a leviathan lead a maxed-out wave.
+	struct FFinale { bool bOn = false; float T = 0; } Finale;
 	// The end of the run: the Hyperion comes down over the bunker (BSDefs::EvacAt) and takes everyone off; bWon once she has.
 	struct FEvac { bool bOn = false; float T = 0, Bob = 0; FVector P = FVector::ZeroVector; ABSModelActor* Actor = nullptr; } Evac;
 	bool bWon = false;

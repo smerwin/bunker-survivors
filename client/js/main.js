@@ -109,7 +109,7 @@ window.BS = window.BS || {};
     game.started = true;
     // Playtesting: ?tech=max researches everything (unlocking the high-tech cards) and banks minerals.
     if (new URLSearchParams(location.search).get('tech') === 'max') setTimeout(() => game.grantAllTech(), 1500);
-    // Playtesting: ?wave=30 jumps straight to that wave, ?clock=26 sets the run clock to that many minutes (26: the next
+    // Playtesting: ?wave=30 jumps straight to that wave, ?clock=28 sets the run clock to that many minutes (28: the next
     // wave is the Kerrigan finale, 29.5: the Hyperion is on her way); combine with ?tech=max.
     const q = new URLSearchParams(location.search), jump = parseInt(q.get('wave'), 10), clock = parseFloat(q.get('clock'));
     if (clock > 0) game.time = clock * 60;
