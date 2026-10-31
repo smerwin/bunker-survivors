@@ -137,8 +137,10 @@ provokes), more zerg can be on the field at once (160 rising to 220 by wave 40),
 assault: an ultralisk stampede (28), an air armada (31), a lone leviathan (34), drop pods all round the base (37), a
 nydus breach (40), a defiler-led lurker siege (43) and the old brood in force (46). At 26 minutes Kerrigan leads the
 swarm's last push (the clock turns amber), and every wave until the evac is maxed out. Ten seconds before the end the
-Hyperion arrives overhead; the fight goes on until she takes you off. In bot playtests half the runs in the lane make
-the evac, the rest fall between 12 and 27 minutes; Hyperion perks help.
+Hyperion arrives overhead; the fight goes on until she takes you off. From wave 28 each kill pays less (a third of its
+bounty by wave 40; Kerrigan and the leviathan pay in full), so a strong army no longer snowballs minerals: late on,
+every trooper you lose and rebuy counts. In bot playtests 6 runs in 16 in the lane make the evac, the rest fall between
+12 and 27 minutes; Hyperion perks help.
 
 **The lane** is a Y-shaped chokepoint: zerg come down from the north and along the north-east and north-west arms.
 Ranged zerg sometimes climb the ramps to the ledges overlooking the bunker, where they get extra reach and a third of

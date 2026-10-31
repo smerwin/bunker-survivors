@@ -3136,7 +3136,9 @@ void ABSGame::KillEnemy(const TSharedPtr<FBSEnemy>& E, bool bSuicide)
 {
 	const FBSZergDef* D = E->Def;
 	E->Hp = 0;
-	Kills++; Minerals += D->Bounty * (1 + 0.15f * CardLevel(TEXT("bounty"))); Score += D->Bounty * 2;
+	// The kill pays its bounty, plus Bounty Contracts, less as the swarm grows (BountyFall; bosses pay in full).
+	const float Fall = !D->Boss.IsEmpty() ? 1.f : 1.f / (1 + BSDefs::BountyFall * FMath::Max(0, Wave - BSDefs::BountyFrom));
+	Kills++; Minerals += D->Bounty * (1 + 0.15f * CardLevel(TEXT("bounty"))) * Fall; Score += D->Bounty * 2;
 	if (!D->SoundDeath.IsEmpty()) PlaySound(D->SoundDeath, 0.5f);
 	if (D->bSuicide && !bSuicide && !D->bAntiAir) BanelingBlast(*E, true);      // a shot-down baneling still bursts (scourge do not)
 	Enemies.Remove(E);

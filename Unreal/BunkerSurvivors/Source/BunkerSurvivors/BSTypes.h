@@ -195,6 +195,9 @@ namespace BSDefs
 		{ 46, TEXT("BROOD WAR"), TEXT("The old brood returns in force!"), TEXT("broodqueen:2,guardian:6,defiler:2,ultralisk:4"), 0, 0 },
 	};
 	constexpr int32 WaveLenBy = 12, WaveKnee = 16, SwarmKnee = 12, SwarmMax = 360, WaveHpFrom = 10;
+	// Past wave BountyFrom a kill pays 1 / (1 + BountyFall x waves past it) of its bounty (a third by wave 40; bosses pay
+	// in full), so a strong army stops snowballing minerals and has to make every rebuy count.
+	constexpr int32 BountyFrom = 28; constexpr float BountyFall = 0.15f;
 	// The run lasts EvacAt seconds of fighting (the clock stops while you shop), then the Hyperion evacuates everyone left:
 	// the run is won (+EvacScore). She arrives EvacArrive seconds before and comes down over the bunker from EvacFrom to
 	// EvacHover (metres) while the fight goes on (BS.EVAC).
