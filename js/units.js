@@ -184,6 +184,12 @@ window.BS = window.BS || {};
   apocalypseChannel: [E + 'zerg/kerriganapocalypsechannel/kerriganapocalypsechannel.m3', '^stand', true], apocalypse: [E + 'zerg/kerriganapocalypseexplosion/kerriganapocalypseexplosion.m3'],
   // A creep overlord's Generate Creep: globs of creep dribbling from its belly (looped while it hangs there).
   creepDrip: [E + 'zerg/creepdriplaunch/creepdriplaunch.m3', '^stand$', true, 'mask'],
+  // Kerrigan's HOTS abilities (Game.updateKerrigan).
+  kineticImpact: [E + 'zerg/kineticblastimpact/kineticblastimpact.m3'], crushingGrip: [E + 'zerg/crushinggripdustimpact/crushinggripdustimpact.m3'],
+  immobilizationWave: [E + 'zerg/kerrigan_immobilizationwave/kerrigan_immobilizationwave.m3'],
+  immobilizationImpact: [E + 'zerg/kerrigan_immobilizationwave_impact/kerrigan_immobilizationwave_impact.m3'],
+  mutationImpact: [E + 'zerg/wildmutationimpact/wildmutationimpact.m3'], mutationBuff: [E + 'zerg/wildmutationbuff/wildmutationbuff.m3'],
+  kerriganFury: [E + 'zerg/kerriganfury/kerriganfury.m3'],
   podFall: [E + 'zerg/zergdroppod/zergdroppod.m3', '^birth'], podImpact: [E + 'zerg/kerrigandroppodexplosion/kerrigandroppodexplosion.m3'],
   };
   // Every death model also carries its blood/acid burst: the plain "Death" one (the numbered sequences are SC2's
@@ -270,6 +276,10 @@ window.BS = window.BS || {};
     finaleRoar: [S + 'zerg/leviathan/leviathan_roar0.wav'],
     kerriganPsi: [0, 1, 2, 3].map(i => S + 'kerrigan_psionicshift0' + i + '.wav'),
     kerriganLeap: [0, 1].map(i => S + 'spell_leapingstrike_launch_0' + i + '.wav'),
+    kineticBlast: [1, 2, 3].map(i => S + 'spell_kerrigan_kineticblast' + i + '.wav'),
+    kineticHit: [0, 1].map(i => S + 'kerrigan_kineticblast_impact0' + i + '.wav'),
+    crushingGrip: [S + 'kerrigan_crushinggrip_launch.wav'],
+    kerriganChain: [0, 1, 2, 3, 4, 5].map(i => S + 'spell_kerrigan_chain' + i + '.wav'),
     kerriganDeath: [S + 'kerriganinfested_death_wingfoley.wav', S + 'kerriganinfested_death_bodyfall.wav'],
     podDrop: [0, 1, 2].map(i => S + 'zerg/zergdroppod/zergdroppod_drop' + i + '.wav'),
     podImpact: [0, 1, 2, 3].map(i => S + 'zerg_droppod_explode' + i + '.wav'),
@@ -333,7 +343,7 @@ window.BS = window.BS || {};
     // whatever the alive cap. Kerrigan casts Leaping Strike and Apocalypse and is untouchable (nothing aims at her or hurts
     // her: you hold on until the Hyperion comes) and makes for the bunker; the leviathan bombards (bombard = splash radius) and spawns mutalisks.
     // See BS.FINALE.
-    kerrigan: { name: 'Kerrigan', model: 'kerrigan', death: 'kerriganDeath', scale: 1.3, hp: 6000, armor: 3, dmg: 45, cd: 0.7, range: 1.2, speed: 3.4, radius: 0.9, armored: true, boss: 'kerrigan', untouchable: true, prefer: 'bunker', bounty: 2500, budget: 0, unlock: 999, weight: 0, hitFrac: 0.4, attackSeq: /^attack/i, soundDeath: 'kerriganDeath', height: 2.4, deathHold: 6, impactFx: 'ultraliskImpact' },
+    kerrigan: { name: 'Kerrigan', model: 'kerrigan', death: 'kerriganDeath', scale: 1.3, hp: 6000, armor: 3, dmg: 45, cd: 0.7, range: 1.2, speed: 3.4, radius: 0.9, armored: true, cleave: 1.4, boss: 'kerrigan', untouchable: true, prefer: 'bunker', bounty: 2500, budget: 0, unlock: 999, weight: 0, hitFrac: 0.4, attackSeq: /^attack/i, soundDeath: 'kerriganDeath', height: 2.4, deathHold: 6, impactFx: 'ultraliskImpact' },
     leviathan: { name: 'Leviathan', model: 'leviathan', death: 'leviathanDeath', scale: 1.6, hp: 6000, armor: 1, dmg: 40, cd: 2.4, range: 6, speed: 1.6, radius: 3.0, armored: true, flying: true, fly: 7.5, boss: 'leviathan', bombard: 2.4, bounty: 2500, budget: 0, unlock: 999, weight: 0, hitFrac: 0.45, projectile: 'bile', soundAttack: 'guardianFire', soundDeath: 'finaleRoar', height: 4, deathHold: 6 },
   };
 
@@ -405,6 +415,14 @@ window.BS = window.BS || {};
     podZerg: ['hydralisk', 'hydralisk', 'roach', 'roach', 'lurker'],        // every other pod brings an ultralisk too
     leap: { cd: 8, min: 3, max: 9, dur: 0.7, dmg: 90, radius: 1.8 },        // Leaping Strike onto a defender out of reach
     apocalypse: { cd: 13, range: 9, delay: 1.2, dmg: 70, radius: 2 },       // a psionic blast on the thickest knot of defenders
+    // The rest of a maxed-out Heart of the Swarm kit. Her swings use every attack she has and sweep the wings (cleave);
+    // every fury.every-th swing sends her into a Fury (half again the attack speed for fury.dur s). Kinetic Blast hits the
+    // biggest machine in reach, Crushing Grip and the Immobilization Wave crush defenders (never buildings) and pin them (no firing for
+    // stun s), Chain Lightning arcs through troops, Wild Mutation halves the damage the zerg round her take for dur s,
+    // and she spawns banelings.
+    kit: { kinetic: { cd: 9, range: 9, dmg: 160 }, grip: { cd: 14, range: 7, radius: 2.4, dmg: 50, stun: 2.5 },
+      chain: { cd: 8, range: 8, jumps: 5, hop: 4, dmg: 45 }, wave: { cd: 22, radius: 5, min: 4, dmg: 60, stun: 2 },
+      mutation: { cd: 20, radius: 9, min: 4, dur: 8 }, banelings: { cd: 16, count: 6 }, fury: { every: 8, dur: 3 } },
     brood: { cd: 15, count: 3 } };                                          // the leviathan spawns mutalisks
 
   // Bunker occupants.

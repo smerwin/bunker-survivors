@@ -19,6 +19,9 @@ window.BS = window.BS || {};
   // what it does to a tank or mech (troopers and SCVs die outright).
   const BROOD_PRIORITY = { tank: 4, mech: 3, trooper: 2, scv: 1 };
   const BROOD_SPELL_DMG = 120;
+  // Corpses lie for up to CORPSE_HOLD s, sinking away over the last CORPSE_SINK; past CORPSE_CAP of them (scaled down on
+  // phones) the oldest go early.
+  const CORPSE_HOLD = 7, CORPSE_SINK = 1.2, CORPSE_CAP = 120;
   // Mech weapon bones and their rest-pose positions (model space: x right, y up, z forward) for the fallback.
   // Where a soldier's weapon fires from mid-attack (its Ref_Weapon bone): metres forward, to its left, and up.
   const RIFLE_MUZZLE = { marine: [0.44, -0.05, 0.46], firebat: [0.82, -0.27, 0.67], marauder: [0.51, -0.36, 0.7], infested: [0.35, -0.22, 0.47] };
@@ -347,7 +350,7 @@ window.BS = window.BS || {};
         }
         // Holding position: fire at whatever comes into (unboosted) range.
         m.cd -= dt * (stim ? 1.5 : 1);
-        if (m.cd <= 0) {
+        if (m.cd <= 0 && !(m.stunUntil > this.time)) {                     // pinned by Kerrigan: no firing
           let target = null;
           if (this.focus && this.focus.hp > 0 && pred(this.focus) && dist(m.x, m.y, this.focus.x, this.focus.y) - this.focus.radius <= range) target = this.focus;
           if (!target) target = this.enemiesInRange(m.x, m.y, range, pred)[0];
@@ -835,7 +838,7 @@ window.BS = window.BS || {};
         if (!m.fwd && dist(m.x, m.y, m.slot[0], m.slot[1]) > 0.8) { m.state = 'walking'; m.route = null; continue; }   // knocked off its post (a viper)
         const bonus = (this.up.vehicle + (this.cards.maelstrom || 0)) * 2;
         m.cdG -= dt; m.cdA -= dt;
-        for (const air of [false, true]) {
+        for (const air of m.stunUntil > this.time ? [] : [false, true]) {   // pinned by Kerrigan: no firing
           if ((air ? m.cdA : m.cdG) > 0) continue;
           const range = (air ? D.aRange : D.gRange) + (BS.Terrain.onHigh(m.x, m.y) ? 1 : 0), pred = e => !!e.def.flying === air;   // the high ground's reach
           let target = this.focus && this.focus.hp > 0 && pred(this.focus) && dist(m.x, m.y, this.focus.x, this.focus.y) - this.focus.radius <= range ? this.focus : null;
@@ -1624,7 +1627,9 @@ window.BS = window.BS || {};
         return true;
       }
       if (e.castUntil > this.time) return true;
+      if (e.anim === 'spell') e.anim = '';                              // cast over: back to walking or fighting
       const reach = dist(e.x, e.y, t.x, t.y) - t.radius - e.radius;
+      if (this.kerriganKit(e, dt)) return true;
       if (e.apocCd <= 0 && reach <= A.range) {
         // The defender with the most others round it.
         let best = null, bestN = -1;
@@ -1634,8 +1639,8 @@ window.BS = window.BS || {};
           if (n > bestN) { bestN = n; best = tg; }
         }
         if (best) {
-          e.apocCd = A.cd; e.castUntil = this.time + A.delay; e.anim = 'spell'; e.handle.play(/^spell$/i, false);
-          e.yaw = Math.atan2(best.y - e.y, best.x - e.x);
+          e.apocCd = A.cd;
+          this.kerriganCast(e, /^spell a$/i, A.delay, null, best);
           e.blast = { x: best.x, y: best.y, at: this.time + A.delay, fx: this.fx.play('apocalypseChannel', best.x, best.y, BS.Terrain.height(best.x, best.y), 0, 1.2) };
           BS.audio.play('kerriganPsi', { vol: 0.8 });
           this.floater(e.x, e.y, e.z + 3, 'APOCALYPSE', '#c08cff');
@@ -1654,6 +1659,131 @@ window.BS = window.BS || {};
           this.floater(e.x, e.y, e.z + 3, 'LEAPING STRIKE', '#c08cff');
           return true;
         } else e.leapCd = 1;
+      }
+      return false;
+    }
+    // Kerrigan casts: face the target, play that spell's animation over dur s and name it.
+    kerriganCast(e, anim, dur, label, at) {
+      if (at) e.yaw = Math.atan2(at.y - e.y, at.x - e.x);
+      e.castUntil = this.time + dur; e.anim = 'spell';
+      const len = e.handle.play(anim, false);
+      if (len > 0) e.handle.setRate(len / dur);
+      if (label) this.floater(e.x, e.y, e.z + 3, label, '#c08cff');
+    }
+    // Each swing: one of her attacks at random (wings and claws), and every few a Fury.
+    kerriganSwing(e, cd) {
+      const len = e.handle.playRandom(/^attack/i, false);
+      if (len > 0) e.handle.setRate(len / cd);
+      e.anim = 'attack';
+      const Fu = BS.FINALE.kit.fury;
+      if (++e.swings % Fu.every === 0) {
+        e.furyUntil = this.time + Fu.dur;
+        this.fx.play('kerriganFury', e.x, e.y, e.z, e.yaw, 1.3);
+        this.floater(e.x, e.y, e.z + 3, 'FURY', '#ff7ad9');
+      }
+    }
+    // The defender (not a building) in reach of her with the most others round it, if at least min.
+    densestDefender(e, range, radius, min) {
+      let best = null, bn = 0;
+      for (const tg of this.tgs) {
+        if (tg.structure || dist(e.x, e.y, tg.x, tg.y) - tg.radius > range) continue;
+        const n = this.tgs.filter(o => !o.structure && dist(o.x, o.y, tg.x, tg.y) < radius).length;
+        if (n > bn) { bn = n; best = tg; }
+      }
+      return bn >= min ? best : null;
+    }
+    pin(tg, s) { tg.obj.stunUntil = Math.max(tg.obj.stunUntil || 0, this.time + s); }
+    // The rest of her Heart of the Swarm kit (BS.FINALE.kit). Returns true when she casts something.
+    kerriganKit(e, dt) {
+      const K = BS.FINALE.kit, z = BS.Terrain.height(e.x, e.y);
+      for (const k of ['kineticCd', 'gripCd', 'chainCd', 'waveCd', 'mutateCd', 'banesCd']) e[k] -= dt;
+      // Immobilization Wave: everything close round her is struck and frozen.
+      if (e.waveCd <= 0) {
+        const near = this.tgs.filter(tg => dist(e.x, e.y, tg.x, tg.y) - tg.radius <= K.wave.radius);
+        if (near.filter(tg => !tg.structure).length >= K.wave.min) {
+          e.waveCd = K.wave.cd;
+          this.kerriganCast(e, /^spell b$/i, 1.0, 'IMMOBILIZATION WAVE');
+          this.fx.play('immobilizationWave', e.x, e.y, z, 0, 1.4);
+          for (const tg of near) { if (!tg.structure) { this.damageDefender(tg, K.wave.dmg); this.pin(tg, K.wave.stun); this.fx.play('immobilizationImpact', tg.x, tg.y, BS.Terrain.height(tg.x, tg.y), 0); } }
+          BS.audio.play('kerriganPsi', { vol: 0.8 }); this.shake = Math.min(1, this.shake + 0.4);
+          return true;
+        }
+        e.waveCd = 1;
+      }
+      // Crushing Grip on the thickest knot of troops.
+      if (e.gripCd <= 0) {
+        const tg = this.densestDefender(e, K.grip.range, K.grip.radius, 2);
+        if (tg) {
+          e.gripCd = K.grip.cd;
+          this.kerriganCast(e, /^spell d$/i, 0.9, 'CRUSHING GRIP', tg);
+          this.fx.play('crushingGrip', tg.x, tg.y, BS.Terrain.height(tg.x, tg.y), 0, 1.6);
+          for (const o of this.tgs) if (!o.structure && dist(tg.x, tg.y, o.x, o.y) - o.radius <= K.grip.radius) { this.damageDefender(o, K.grip.dmg); this.pin(o, K.grip.stun); }
+          BS.audio.play('crushingGrip', { vol: 0.8 });
+          return true;
+        }
+        e.gripCd = 1;
+      }
+      // Kinetic Blast at the biggest machine in reach.
+      if (e.kineticCd <= 0) {
+        let tg = null;
+        for (const o of this.tgs) if ((o.kind === 'tank' || o.kind === 'mech') && dist(e.x, e.y, o.x, o.y) - o.radius <= K.kinetic.range && (!tg || o.obj.maxHp > tg.obj.maxHp)) tg = o;
+        if (tg) {
+          e.kineticCd = K.kinetic.cd;
+          this.kerriganCast(e, /^spell c$/i, 0.8, 'KINETIC BLAST', tg);
+          const tz = BS.Terrain.height(tg.x, tg.y) + 1;
+          this.fx.beam([e.x, e.y, z + 2], [tg.x, tg.y, tz], 0.35, [0.75, 0.45, 1], 0.14);
+          this.fx.play('kineticImpact', tg.x, tg.y, tz, e.yaw + Math.PI, 1.4);
+          this.damageDefender(tg, K.kinetic.dmg);
+          BS.audio.play('kineticBlast', { vol: 0.8 }); BS.audio.play('kineticHit', { vol: 0.7 });
+          return true;
+        }
+        e.kineticCd = 1;
+      }
+      // Chain Lightning: arcs from troop to troop.
+      if (e.chainCd <= 0) {
+        const pool = this.tgs.filter(o => !o.structure && o.kind !== 'tank' && o.kind !== 'mech');
+        let cur = null, cd = K.chain.range;
+        for (const o of pool) { const dd = dist(e.x, e.y, o.x, o.y); if (dd < cd) { cd = dd; cur = o; } }
+        if (cur) {
+          e.chainCd = K.chain.cd;
+          this.kerriganCast(e, /^spell e$/i, 0.7, 'CHAIN LIGHTNING', cur);
+          let from = [e.x, e.y, z + 2];
+          const hit = new Set();
+          for (let j = 0; j < K.chain.jumps && cur; j++) {
+            hit.add(cur);
+            const to = [cur.x, cur.y, BS.Terrain.height(cur.x, cur.y) + 0.8];
+            this.fx.beam(from, to, 0.3, [0.55, 0.65, 1], 0.06);
+            this.damageDefender(cur, K.chain.dmg);
+            from = to;
+            let next = null, nd = K.chain.hop;
+            for (const o of pool) if (!hit.has(o)) { const dd = dist(cur.x, cur.y, o.x, o.y); if (dd < nd) { nd = dd; next = o; } }
+            cur = next;
+          }
+          BS.audio.play('kerriganChain', { vol: 0.7 });
+          return true;
+        }
+        e.chainCd = 1;
+      }
+      // Wild Mutation: the zerg round her shrug off half of everything.
+      if (e.mutateCd <= 0) {
+        const kin = this.enemies.filter(o => o !== e && o.hp > 0 && dist(e.x, e.y, o.x, o.y) < K.mutation.radius);
+        if (kin.length >= K.mutation.min) {
+          e.mutateCd = K.mutation.cd;
+          this.kerriganCast(e, /^spell$/i, 0.8, 'WILD MUTATION');
+          this.fx.play('mutationImpact', e.x, e.y, z, 0, 1.5);
+          kin.forEach((o, i) => { o.mutatedUntil = this.time + K.mutation.dur; if (i < 12) this.fx.play('mutationBuff', o.x, o.y, o.z, 0); });
+          BS.audio.play('finaleRoar', { vol: 0.5, gap: 2 });
+          return true;
+        }
+        e.mutateCd = 1;
+      }
+      // Spawn Banelings round her.
+      if (e.banesCd <= 0) {
+        e.banesCd = K.banelings.cd;
+        this.kerriganCast(e, /^spell f$/i, 0.9, 'SPAWN BANELINGS');
+        for (let i = 0; i < K.banelings.count; i++) { const a = i / K.banelings.count * Math.PI * 2; this.spawnEnemy('baneling', 0, [e.x + Math.cos(a) * 1.4, e.y + Math.sin(a) * 1.4]); }
+        this.fx.play('broodSpellImpact', e.x, e.y, z, 0, 1.2);
+        return true;
       }
       return false;
     }
@@ -1720,7 +1850,7 @@ window.BS = window.BS || {};
         e.route = BS.Terrain.route(x, y, high); e.highRoute = high;
       }
       e.hp = e.maxHp = d.boss ? d.hp : d.hp * (1 + BS.WAVES.hp * (this.hard ? 1.25 : 1) * Math.max(0, this.wave - BS.WAVES.hpFrom));   // late waves get tougher
-      if (d.boss) { e.leapCd = 3; e.apocCd = 6; e.broodCd = 8; }
+      if (d.boss) { e.leapCd = 3; e.apocCd = 6; e.broodCd = 8; e.swings = 0; Object.assign(e, { kineticCd: 4, gripCd: 6, chainCd: 3, waveCd: 10, mutateCd: 8, banesCd: 12 }); }
       e.handle = this.r.spawn(model, x, y, z, e.yaw).setTeam(3);
       if (d.scale) e.handle.setScale(d.scale);
       this.playAnim(e, 'walk');
@@ -1990,7 +2120,7 @@ window.BS = window.BS || {};
           if (dd < near) { near = dd; nearE = e; }
           if (dd < td && Math.hypot(e.x, e.y) < D.hunt) { td = dd; tg = e; }
         }
-        if (tg && r.cd <= 0 && td - tg.radius <= D.range) { this.reaperFire(r, tg); r.cd = D.cd; r.kite = this.time + 0.7; }
+        if (tg && r.cd <= 0 && td - tg.radius <= D.range && !(r.stunUntil > this.time)) { this.reaperFire(r, tg); r.cd = D.cd; r.kite = this.time + 0.7; }
         if (r.kd <= 0) r.kd = this.throwKD8(r) ? D.kd8.cd : 0.5;
         let gx = r.home[0], gy = r.home[1];
         const hurt = r.hp < r.maxHp * D.fallBack;
@@ -2097,8 +2227,8 @@ window.BS = window.BS || {};
         }
         g.cd -= dt; g.snipeCd -= dt;
         const z = BS.Terrain.height(g.x, g.y), range = D.range + (BS.Terrain.onHigh(g.x, g.y) ? 1 : 0);
-        let busy = false;
-        if (g.channel) {
+        let busy = g.stunUntil > this.time;
+        if (g.channel && !busy) {
           const e = g.channel.target;
           if (e.hp <= 0 || dist(g.x, g.y, e.x, e.y) > S.range + 2) g.channel = null;
           else if (this.time >= g.channel.until) {
@@ -2307,12 +2437,13 @@ window.BS = window.BS || {};
         const sp = e.slowUntil > this.time ? d.speed * 0.5 : d.speed;
         h.play(/^walk$|^walk 01$|^fly/i, true, clamp(sp / 2.8, 0.6, 2.2));
       } else if (kind === 'attack') {
+        if (d.boss === 'kerrigan') return;                                   // every swing picks its own (kerriganSwing)
         const len = h.play(d.attackSeq || /^attack/i, true, 1);
         if (len > 0) h.setRate(len / this.enemyCd(e));
-      } else if (kind === 'stand') h.play(/^stand$/i, true);
+      } else if (kind === 'stand') h.play(/^stand$/i, true, 1);
       else if (kind === 'burrow') h.play(/^burrow$/i, false);
     }
-    enemyCd(e) { return e.def.cd / (this.hard ? 1.05 : 1); }
+    enemyCd(e) { return e.def.cd / (this.hard ? 1.05 : 1) / (e.furyUntil > this.time ? 1.5 : 1); }
 
     // ---- Targets -------------------------------------------------------------------------------------
     targets() {
@@ -2392,8 +2523,10 @@ window.BS = window.BS || {};
       const h = this.r.spawn(key, x, y, z, yaw, { corpse: true }).setTeam(terran ? 1 : 3);
       if (scale) h.setScale(scale);
       const c = { h, t: 0, x, y, z, yaw, sink: !/^bunker/.test(key), hold: hold || 3.5 };
-      const len = h.playDeath(false);
-      c.hold = c.sink ? clamp(Math.min(len || 3, 4), 2.5, 4) : Math.max(hold, Math.min(len || 8, 8));
+      const len = h.model ? h.playDeath(false) : (h.playDeath(false), 0);   // still attaching its model: length unknown
+      // SC2's death sequences run up to ten seconds: the body falls, then lies there. Hold it most of that, then sink
+      // it away over the last CORPSE_SINK s (a collapsed body is barely ankle-high, so any sooner and it just vanishes).
+      c.hold = c.sink ? clamp(len || CORPSE_HOLD, 3, CORPSE_HOLD) : Math.max(hold, Math.min(len || 8, 8));
       if (z > 0.5) c.hold = Math.max(c.hold, 2);
       // Baneling chunks fade out in SC2 through visibility tracks the viewer does not apply; drop them after the burst.
       if (/^baneling/.test(key)) { c.hold = 0.45; c.sink = false; }
@@ -2426,6 +2559,7 @@ window.BS = window.BS || {};
     hurtEnemy(e, dmg, splash) {
       if (!e || e.hp <= 0 || e.def.untouchable) return;
       if (!splash && !e.def.flying && this.swarms.length && this.swarms.some(s => dist(s.x, s.y, e.x, e.y) < s.r)) dmg *= 0.25;
+      if (e.mutatedUntil > this.time) dmg *= 0.5;                          // Kerrigan's Wild Mutation
       e.hp -= Math.max(0.5, dmg - e.def.armor);
       e.flash = 1;
       if (e.hp <= 0) this.killEnemy(e, false);
@@ -2651,6 +2785,7 @@ window.BS = window.BS || {};
           if (e.cd <= 0) {
             const cd = this.enemyCd(e);
             e.cd += cd; e.hitAt = this.time + cd * d.hitFrac; e.hitTarget = t;
+            if (d.boss === 'kerrigan') this.kerriganSwing(e, cd);
             if (d.soundAttack) BS.audio.play(d.soundAttack, { vol: 0.35, gap: 0.15 });
             if (d.spell) this.castSpell(e, t);
             else if (d.projectile) this.enemyShot(e, t, cd);
@@ -2827,6 +2962,7 @@ window.BS = window.BS || {};
         } else {
           if (t.medivac) { t.mt += dt; t.my -= 10 * dt; t.mz += 2 * dt; t.medivac.setPos(t.mx, t.my, t.mz); if (t.mt > 3) { t.medivac.release(); t.medivac = null; } }
           t.cd -= dt;
+          if (t.stunUntil > this.time) continue;                            // pinned by Kerrigan
           if (t.cd > 0) continue;
           const range = D.range + (this.up.hisec ? T().hiSecRange : 0) + 2 * this.cardLevel('siegerange');
           const pred = e => !e.def.flying && dist(t.x, t.y, e.x, e.y) > D.minRange;
@@ -3015,7 +3151,14 @@ window.BS = window.BS || {};
         const c = this.corpses[i];
         c.t += dt;
         if (c.t > c.hold) { c.h.release(); this.corpses.splice(i, 1); continue; }
-        if (c.sink) { const k = clamp((c.t / c.hold - 0.45) / 0.55, 0, 1); c.h.setPos(c.x, c.y, c.z - 0.9 * k * k); }
+        if (c.sink) { const k = clamp(1 - (c.hold - c.t) / CORPSE_SINK, 0, 1); c.h.setPos(c.x, c.y, c.z - 0.9 * k * k); }
+      }
+      // Big waves leave a field of bodies: past the cap, the oldest start their sink now.
+      const cap = Math.round(CORPSE_CAP * (BS.perfScale || 1));
+      for (let i = 0, n = this.corpses.length - cap; n > 0 && i < this.corpses.length; i++) {
+        const c = this.corpses[i];
+        if (c.sink && c.hold - c.t > CORPSE_SINK) c.hold = c.t + CORPSE_SINK;
+        n--;                                                     // already on its way out counts too
       }
       for (let i = this.flashes.length - 1; i >= 0; i--) {
         const f = this.flashes[i];
