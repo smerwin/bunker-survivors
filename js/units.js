@@ -405,7 +405,8 @@ window.BS = window.BS || {};
     // A science vessel on station for `stay` seconds, casting from `range`: Irradiate on the densest pack (dps to the
     // target and everything within radius, for dur s), Defensive Matrix on the most battered of the bunker, tanks and
     // mechs (absorbs hp damage for dur s).
-    vessel: { hp: 200, armor: 1, cost: 400, cooldown: 50, stay: 30, fly: 5.2, speed: 4, scale: 1, range: 11,
+    // Fired upon, the vessel pulls back behind the bunker and returns once it has gone calm seconds unhit.
+    vessel: { hp: 200, armor: 1, cost: 400, cooldown: 50, stay: 30, fly: 5.2, speed: 4, scale: 1, range: 11, retreat: { y: -5, speed: 6, calm: 3 },
       irradiate: { cd: 7, dur: 6, dps: 18, radius: 1.8 }, matrix: { cd: 10, hp: 250, dur: 12 } },
     yamato: { dmg: 240, splash: 120, radius: 3, cost: 300, cooldown: 40 },
     stim: { duration: 11, cooldown: 13 },

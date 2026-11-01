@@ -729,6 +729,54 @@ window.BS = window.BS || {};
       for (const c of BS.CARDS) if (!c.grow) for (let guard = 0; guard < 20 && this.cardLevel(c) < this.cardMax(c); guard++) if (this.applyCard(c) === false) break;
       this.minerals += 20000;
     }
+    // ---- Checkpoints ----------------------------------------------------------------------------------------
+    // Browsers throw away a page left in the background long enough (and phones lose the WebGL context), which would
+    // end the run. main.js keeps the last snapshot, taken whenever the shop is open, and restore() rebuilds the run
+    // from it: the same wave, minerals, cards, research, troops, tanks, turrets, mechs and battlecruiser, back in the
+    // shop. Only what was on the field at that moment survives: the zerg, creep and forward base start over.
+    snapshot() {
+      if (!this.shop || this.over) return null;
+      const alive = l => l.filter(o => !o.dead);
+      return { v: 1, mode: this.mode, savedAt: Date.now(),
+        time: this.time, wave: this.wave, wavesCleared: this.wavesCleared, minerals: this.minerals, income: this.income, kills: this.kills, score: this.score,
+        cards: this.cards, up: this.up, techUnlocked: this.techUnlocked, techCd: this.techCd, ab: this.ab, shop: this.shop,
+        bunker: { hp: this.bunker.hp, maxHp: this.bunker.maxHp, armor: this.bunker.armor, slots: this.bunker.slots, units: this.bunker.units.map(u => [u.type, u.hp]) },
+        squad: alive(this.squad).map(m => [m.type, m.hp]).concat(this.walkers.map(w => [w.type, this.trooperHp(w.type)])),
+        tanks: alive(this.tanks).map(t => t.hp), scvs: alive(this.scvs).length,
+        structures: alive(this.structures).filter(s => s.kind !== 'cc').map(s => [s.kind, s.hp]),
+        mechs: alive(this.mechs).map(m => [m.kind, m.hp]), bc: this.bc && !this.bc.dead ? this.bc.hp : 0 };
+    }
+    restore(s) {
+      Object.assign(this, { time: s.time, wave: s.wave, wavesCleared: s.wavesCleared, kills: s.kills, score: s.score, income: s.income,
+        cards: s.cards, up: s.up, techUnlocked: s.techUnlocked, techCd: s.techCd, ab: s.ab });
+      Object.assign(this.bunker, { hp: s.bunker.hp, maxHp: s.bunker.maxHp, armor: s.bunker.armor, slots: s.bunker.slots });
+      for (const [type, hp] of s.bunker.units) this.bunker.units.push({ type, def: BS.INFANTRY[type], hp, maxHp: this.trooperHp(type), cd: Math.random() * 0.3 });
+      if (this.bunker.units.length) this.bunker.handle.play(/^stand work/i, true);
+      for (const [type, hp] of s.squad) { const sp = this.freeSquadSpot(); if (sp) this.joinSquad(type, hp, sp[0], sp[1]); }
+      // Everything else is bought back for free and flown or walked in, fast-forwarded to its post.
+      this.minerals = 1e7;
+      for (let i = 1; i < s.scvs; i++) this.addScv(true);
+      s.tanks.forEach(() => this.dropTank());
+      for (const [kind] of s.structures) this.buildStructure(kind);
+      for (const [kind] of s.mechs) this.addMech(kind);
+      if (s.bc) this.callBattlecruiser();
+      this.tgs = this.targets(); this.airTgs = [];
+      const play = BS.audio.play; BS.audio.play = () => {};
+      for (let i = 0; i < 25 * 60; i++) {
+        for (const st of this.structures) if (st.state === 'building') st.t = 1e3;
+        this.updateTanks(this.step); this.updateScvs(this.step); this.updateSquad(this.step); this.updateStructures(this.step);
+        this.updateMechs(this.step); this.updateBc(this.step); this.updateReinforcements(this.step);
+      }
+      BS.audio.play = play;
+      s.tanks.forEach((hp, i) => { if (this.tanks[i]) this.tanks[i].hp = hp; });
+      s.structures.forEach(([, hp], i) => { if (this.structures[i]) this.structures[i].hp = hp; });
+      s.mechs.forEach(([, hp], i) => { if (this.mechs[i]) this.mechs[i].hp = hp; });
+      if (this.bc) this.bc.hp = s.bc;
+      this.minerals = s.minerals; this.shake = 0; this.toasts = [];
+      this.shop = s.shop;
+      this.waveBanner = { text: 'RUN RESUMED  //  WAVE ' + this.wave + ' CLEARED', t: this.time };
+      this.started = true;
+    }
     // Test helper (?wave=100): wave n starts right away.
     skipToWave(n) { this.shop = null; this.wave = Math.max(0, n - 1); this.startWave(); }
 
@@ -1127,11 +1175,16 @@ window.BS = window.BS || {};
       const v = this.vessel, D = T().vessel;
       if (!v) return;
       v.t += dt;
-      const goal = v.state === 'out' ? v.home : v.post, gz = v.state === 'out' ? D.fly + 3 : D.fly;
+      const Rt = D.retreat, goal = v.state === 'out' ? v.home : v.state === 'retreat' ? [v.post[0] * 0.5, Rt.y] : v.post, gz = v.state === 'out' ? D.fly + 3 : D.fly;
       const dx = goal[0] - v.x, dy = goal[1] - v.y, dz = gz - v.z, dd = Math.hypot(dx, dy, dz);
-      if (dd > 0.05) { const s = Math.min(dd, (v.state === 'station' ? 1.2 : D.speed) * dt) / dd; v.x += dx * s; v.y += dy * s; v.z += dz * s; }
-      if (v.state === 'in' && dd < 0.3) { v.state = 'station'; v.t = 0; }
-      else if (v.state === 'station') {
+      const sp = v.state === 'station' ? 1.2 : v.state === 'retreat' ? Rt.speed : D.speed;
+      if (dd > 0.05) { const s = Math.min(dd, sp * dt) / dd; v.x += dx * s; v.y += dy * s; v.z += dz * s; }
+      // The stay clock runs from first arrival on station, through any retreats.
+      if (v.state === 'in' && dd < 0.3) { v.state = 'station'; if (!v.arrived) { v.arrived = true; v.t = 0; } }
+      else if (v.state === 'retreat') {
+        if (v.t > D.stay) { v.state = 'out'; this.toast('Science vessel withdrawing'); }
+        else if (dd < 0.5 && this.time - v.hitAt > Rt.calm) { v.state = 'in'; this.toast('Science vessel returning'); }
+      } else if (v.state === 'station') {
         if (v.t > D.stay) { v.state = 'out'; v.t = 0; this.toast('Science vessel withdrawing'); }
         v.irrCd -= dt; v.matCd -= dt;
         if (v.irrCd <= 0) v.irrCd = this.castIrradiate(v) ? D.irradiate.cd : 0.5;
@@ -1139,7 +1192,8 @@ window.BS = window.BS || {};
         if (v.castUntil > this.time) v.yaw += clamp(angDelta(v.yaw, v.aim), -3 * dt, 3 * dt);
         else if (v.castUntil && v.castUntil <= this.time) { v.castUntil = 0; v.handle.play(/^stand$/i, true); }
       } else if (v.state === 'out' && dd < 0.5) { v.handle.release(); this.vessel = null; return; }
-      if (v.state !== 'station') v.yaw += clamp(angDelta(v.yaw, Math.atan2(dy, dx)), -2 * dt, 2 * dt);
+      if (v.state === 'retreat') v.yaw += clamp(angDelta(v.yaw, Math.PI / 2), -2 * dt, 2 * dt);      // backs off, still facing the fight
+      else if (v.state !== 'station') v.yaw += clamp(angDelta(v.yaw, Math.atan2(dy, dx)), -2 * dt, 2 * dt);
       v.handle.setPos(v.x, v.y, v.z + 0.15 * Math.sin(this.time * 1.3)).setYaw(v.yaw);
     }
     vesselCast(v, x, y) {
@@ -1252,7 +1306,7 @@ window.BS = window.BS || {};
       this.minerals -= d.cost; this.ab.strikeCd = this.strikeCooldown();
       const lane = this.mode === 'lane';
       for (let i = 0; i < d.count + rotors; i++) {
-        const post = this.strikePosts[i % this.strikePosts.length];
+        const post = this.strikeFormation(d.count + rotors)[i];
         const b = { post, x: post[0] * 0.5, y: (lane ? -16 : -34) - i * 1.2, z: d.fly + 1.5, yaw: Math.PI / 2, cd: 0.3 + i * 0.2, state: 'in', t: 0, anim: '', hp: d.hp, maxHp: d.hp };
         b.handle = this.r.spawn('banshee', b.x, b.y, b.z, b.yaw).setTeam(1);
         b.handle.play(/^walk|^fly/i, true);
@@ -1260,6 +1314,14 @@ window.BS = window.BS || {};
       }
       this.toast('Banshees inbound');
       return true;
+    }
+    // Where each banshee of an n-strong strike hovers: the four posts, then (with Hyperflight Rotors) a second rank
+    // further up the lane, or in the arena a wider ring, so no two share a spot.
+    strikeFormation(n) {
+      if (this.mode !== 'lane') return Array.from({ length: n }, (_, i) => { const a = (45 + i * 360 / n) * Math.PI / 180; return [Math.cos(a) * 7, Math.sin(a) * 7]; });
+      const posts = this.strikePosts.slice(0, n), m = n - posts.length;
+      for (let j = 0; j < m; j++) posts.push([(j - (m - 1) / 2) * 4.4, 9.0]);
+      return posts;
     }
     strikeCooldown() { return T().banshee.cooldown * (1 - 0.25 * this.cardLevel('rotors')); }
     useStim() {
@@ -1894,7 +1956,7 @@ window.BS = window.BS || {};
       for (const s of this.banshees) if (!s.dead) list.push({ kind: 'banshee', obj: s, x: s.x, y: s.y, z: s.z, radius: 0.6, light: true });
       for (const w of this.wraiths) if (!w.dead && w.state !== 'in') list.push({ kind: 'wraith', obj: w, x: w.x, y: w.y, z: w.z, radius: 0.6, light: true });
       const v = this.vessel;
-      if (v && !v.dead && v.state === 'station') list.push({ kind: 'vessel', obj: v, x: v.x, y: v.y, z: v.z, radius: 1.2, armored: true });
+      if (v && !v.dead && (v.state === 'station' || v.state === 'retreat')) list.push({ kind: 'vessel', obj: v, x: v.x, y: v.y, z: v.z, radius: 1.2, armored: true });
       return list;
     }
     killAir(o, kind) {
@@ -1964,6 +2026,10 @@ window.BS = window.BS || {};
       } else if (tg.kind === 'bc' || tg.kind === 'viking' || tg.kind === 'banshee' || tg.kind === 'wraith' || tg.kind === 'vessel') {
         o.hp -= Math.max(0.5, dmg - (o.armor || 0)); o.flash = 1;
         if (o.hp <= 0 && !o.dead) this.killAir(o, tg.kind);
+        else if (tg.kind === 'vessel') {
+          o.hitAt = this.time;
+          if (o.state === 'station') { o.state = 'retreat'; o.castUntil = 0; o.handle.play(/^stand$/i, true); this.toast('Science vessel under fire, pulling back'); }
+        }
       } else if (tg.kind === 'structure') {
         o.hp -= Math.max(0.5, dmg - o.armor); o.flash = 1;
         if (o.hp <= 0 && !o.dead) this.destroyStructure(o);

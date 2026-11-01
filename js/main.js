@@ -5,7 +5,7 @@ window.BS = window.BS || {};
   'use strict';
 
   const $ = id => document.getElementById(id);
-  let renderer, game = null, hud = null, mode = 'lane', attract = [], last = performance.now();
+  let renderer, game = null, hud = null, mode = 'lane', attract = [], last = performance.now(), savedShop = null;
   const touch = matchMedia('(pointer: coarse)').matches;
   // Phones get a smaller cap on live zerg and a lower render resolution, so big swarms stay smooth.
   BS.perfScale = touch ? 0.65 : 1;
@@ -28,7 +28,15 @@ window.BS = window.BS || {};
       $('best').textContent = 'BEST  LANE ' + bl + '   ARENA ' + ba;
     } catch (e) { /* private mode */ }
     $(isPortrait() ? 'tagLane' : 'tagArena').textContent = isPortrait() ? 'BEST ON PHONE' : 'BEST ON DESKTOP';
-    document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => start(b.dataset.mode)));
+    document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { Checkpoint.clear(); start(b.dataset.mode); }));
+    // A run the browser threw away while it was in the background (or lost to a dropped WebGL context): carry on.
+    const cp = Checkpoint.load();
+    if (cp) {
+      $('resumeLine').textContent = (cp.mode === 'arena' ? '360 Arena' : 'Lane Defence') + ', in the shop after wave ' + cp.wave + ', ' + Math.floor(cp.time / 60) + ' minutes in.';
+      $('resumeRun').classList.remove('hidden');
+      $('resumeRun').onclick = () => start(cp.mode, cp);
+    }
+    $('gl').addEventListener('webglcontextlost', () => { if (game) { Checkpoint.save(game); try { sessionStorage.setItem('bs.autoResume', '1'); } catch (e) { /* ignore */ } } location.reload(); });
     $('hyperionBtn').onclick = () => { renderHyperion(); $('hyperion').classList.remove('hidden'); };
     $('hyperionClose').onclick = () => $('hyperion').classList.add('hidden');
     $('perks').onclick = ev => { const el = ev.target.closest('[data-p]'); if (el && BS.Meta.buyPerk(el.dataset.p)) renderHyperion(); };
@@ -36,14 +44,24 @@ window.BS = window.BS || {};
     setupInput();
     stageAttract();
     renderer.fx.preload(BS.CORE_FX);
-    renderer.preload(BS.CORE_MODELS, (d, n) => { $('progress').textContent = 'LOADING SC2 ART ' + d + ' / ' + n; }).then(() => {
+    const ready = renderer.preload(BS.CORE_MODELS, (d, n) => { $('progress').textContent = 'LOADING SC2 ART ' + d + ' / ' + n; }).then(() => {
       $('progress').textContent = '';
       if (st && st.mode === 'local') cacheAllArt();
     });
     requestAnimationFrame(loop);
     const m = new URLSearchParams(location.search).get('mode');
-    if (m === 'lane' || m === 'arena') start(m);
+    if (m === 'lane' || m === 'arena') { Checkpoint.clear(); start(m); }
+    else if (cp && (document.wasDiscarded || takeFlag('bs.autoResume'))) ready.then(() => start(cp.mode, cp));
   }
+  function takeFlag(k) { try { const v = sessionStorage.getItem(k); sessionStorage.removeItem(k); return !!v; } catch (e) { return false; } }
+
+  // The last shop of the run in progress, in localStorage (see Game.snapshot); gone once the run ends.
+  const Checkpoint = {
+    key: 'bs.run',
+    save(g) { const s = g.snapshot(); if (s) try { localStorage.setItem(this.key, JSON.stringify(s)); } catch (e) { /* private mode, full */ } },
+    load() { try { const s = JSON.parse(localStorage.getItem(this.key)); return s && s.v === 1 && Date.now() - s.savedAt < 7 * 864e5 ? s : null; } catch (e) { return null; } },
+    clear() { try { localStorage.removeItem(this.key); } catch (e) { /* ignore */ } },
+  };
 
   // The Hyperion: perks bought with vespene, and every shop card (locked ones say what unlocks them).
   function renderHyperion() {
@@ -92,7 +110,7 @@ window.BS = window.BS || {};
     for (const [k, x, y] of zerg) put(k, x, y, Math.atan2(-y, -x) + (Math.random() - 0.5) * 0.6, /^stand/i, 3);
   }
 
-  function start(m) {
+  function start(m, resume) {
     if (game) return;
     mode = m;
     BS.audio.unlock();
@@ -105,7 +123,8 @@ window.BS = window.BS || {};
     game = new BS.Game(renderer, { mode });
     hud = new BS.Hud(game, renderer);
     window.game = game;                     // for poking at from the browser console
-    game.beginOpening();
+    if (resume) game.restore(resume);
+    else game.beginOpening();
     game.started = true;
     // Playtesting: ?tech=max researches everything (unlocking the high-tech cards) and banks minerals.
     if (new URLSearchParams(location.search).get('tech') === 'max') setTimeout(() => game.grantAllTech(), 1500);
@@ -124,9 +143,10 @@ window.BS = window.BS || {};
     $('pause').onclick = togglePause;
     $('resume').onclick = togglePause;
     $('mute').onclick = () => BS.audio.setMuted(!BS.audio.muted);
-    $('redeploy').onclick = () => { location.search = '?mode=' + mode; };
-    document.querySelectorAll('.menuBtn').forEach(b => { b.onclick = () => { location.search = ''; }; });
-    document.addEventListener('visibilitychange', () => { if (document.hidden && game && !game.over) setPaused(true); });
+    $('redeploy').onclick = () => { Checkpoint.clear(); location.search = '?mode=' + mode; };
+    document.querySelectorAll('.menuBtn').forEach(b => { b.onclick = () => { if (game.over) Checkpoint.clear(); location.search = ''; }; });
+    document.addEventListener('visibilitychange', () => { if (document.hidden && game && !game.over) { setPaused(true); Checkpoint.save(game); } });
+    window.addEventListener('pagehide', () => { if (game && !game.over) Checkpoint.save(game); });
   }
 
   function setPaused(p) { if (!game || game.over) return; game.paused = p; $('pausedModal').classList.toggle('hidden', !p); }
@@ -142,7 +162,8 @@ window.BS = window.BS || {};
       renderer.frame(vdt);
       hud.drawOverlay();
       hud.refresh();
-      if (game.over && $('overModal').classList.contains('hidden')) showGameOver();
+      if (game.shop && game.shop !== savedShop) { savedShop = game.shop; Checkpoint.save(game); }      // each wave's shop
+      if (game.over && $('overModal').classList.contains('hidden')) { Checkpoint.clear(); showGameOver(); }
     } else {
       renderer.cam.yaw = Math.sin(t / 9000) * 0.35; renderer.updateCamera();
       renderer.frame(dt);
