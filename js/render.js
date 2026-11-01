@@ -32,8 +32,7 @@ window.BS = window.BS || {};
       inst.bsHide = this.swipe === false ? HIDE_ADDITIVE : null;
       inst.bsTurret = this.turret || 0;
       if (this.turretBone) hookTurret(inst, this.turretBone);
-      if (this.corpse) { inst.vertexColor[0] = inst.vertexColor[1] = inst.vertexColor[2] = 0.42; }
-      else if (this.tint) { inst.vertexColor[0] = this.tint[0]; inst.vertexColor[1] = this.tint[1]; inst.vertexColor[2] = this.tint[2]; }
+      if (this.tint && !this.corpse) { inst.vertexColor[0] = this.tint[0]; inst.vertexColor[1] = this.tint[1]; inst.vertexColor[2] = this.tint[2]; }
       if (this.pending) { const p = this.pending; this.pending = null; if (p.death) this.playDeath(p.loop); else if (p.random) this.playRandom(p.name, p.loop); else this.play(p.name, p.loop, p.timeScale); }
       inst.show();
     }
