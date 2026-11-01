@@ -2106,8 +2106,10 @@ FVector ABSGame::PatrolPos(const FBSBanshee& U) const
 
 void ABSGame::Wedge(FBSBanshee& U, int32 I, int32 N, float S0) const
 {
-	const float C = I - (N - 1) / 2.f;
-	U.S = S0 - FMath::Abs(C) * 1.8f; U.Off = C * 2.2f;
+	// Past six, a second V behind the first.
+	const int32 Row = I / 6, M = FMath::Min(6, N - Row * 6);
+	const float C = I % 6 - (M - 1) / 2.f;
+	U.S = S0 - FMath::Abs(C) * 1.8f - Row * 6; U.Off = C * 2.2f + Row * 1.1f;
 }
 
 TSharedPtr<FBSEnemy> ABSGame::StrafeTarget(const FBSBanshee& U, TWeakPtr<FBSEnemy>& Lock, float Heading, float Range, float Cone, TFunctionRef<bool(const FBSEnemy&)> Pred) const
@@ -2130,10 +2132,11 @@ bool ABSGame::CallVikings()
 	if (VikingCd > 0) { Toast(TEXT("Vikings are rearming")); return false; }
 	if (Minerals < BSDefs::VikingCost) { Toast(TEXT("Not enough minerals")); return false; }
 	Minerals -= BSDefs::VikingCost; VikingCd = BSDefs::VikingCooldown;
-	for (int32 i = 0; i < BSDefs::VikingCount; i++)
+	const int32 NV = BSDefs::VikingCount + CardLevel(TEXT("vikingplus"));
+	for (int32 i = 0; i < NV; i++)
 	{
 		const FVector2D Post = StrikePosts[i % StrikePosts.Num()];
-		FBSBanshee V; Wedge(V, i, BSDefs::VikingCount, 0); V.Post = FVector2D(Post.X * 1.2f, Post.Y + 2); V.X = Post.X * 0.6f; V.Y = (Mode == EBSMode::Lane ? -18.f : -34.f) - i * 1.2f;
+		FBSBanshee V; Wedge(V, i, NV, 0); V.Post = FVector2D(Post.X * 1.2f, Post.Y + 2); V.X = Post.X * 0.6f; V.Y = (Mode == EBSMode::Lane ? -18.f : -34.f) - i * 1.2f;
 		V.Z = BSDefs::VikingFly + 1.5f; V.Yaw = PI / 2; V.Cd = 0.4f + i * 0.2f;
 		V.Actor = AcquireModel(TEXT("vikingfighter"));
 		if (V.Actor) { V.Actor->SetTeamColor(TerranColor); V.Actor->Play(WalkNames, true); }
@@ -2202,10 +2205,11 @@ bool ABSGame::CallWraiths()
 	if (WraithCd > 0) { Toast(TEXT("Wraiths are rearming")); return false; }
 	if (Minerals < BSDefs::WraithCost) { Toast(TEXT("Not enough minerals")); return false; }
 	Minerals -= BSDefs::WraithCost; WraithCd = BSDefs::WraithCooldown;
-	for (int32 i = 0; i < BSDefs::WraithCount; i++)
+	const int32 NW = BSDefs::WraithCount + CardLevel(TEXT("wraithplus"));
+	for (int32 i = 0; i < NW; i++)
 	{
 		const FVector2D Post = StrikePosts[(i + 1) % StrikePosts.Num()];
-		FBSBanshee W; Wedge(W, i, BSDefs::WraithCount, 30); W.Post = FVector2D(Post.X * 1.3f, Post.Y + 4); W.X = Post.X * 0.6f; W.Y = (Mode == EBSMode::Lane ? -18.f : -34.f) - i * 1.2f;
+		FBSBanshee W; Wedge(W, i, NW, 30); W.Post = FVector2D(Post.X * 1.3f, Post.Y + 4); W.X = Post.X * 0.6f; W.Y = (Mode == EBSMode::Lane ? -18.f : -34.f) - i * 1.2f;
 		W.Z = BSDefs::WraithFly + 1.5f; W.Yaw = PI / 2; W.Cd = 0.3f + i * 0.2f; W.Cd2 = 0.5f + i * 0.2f;
 		W.Actor = AcquireModel(TEXT("wraith"));
 		if (W.Actor) { W.Actor->SetTeamColor(TerranColor); W.Actor->Play(WalkNames, true); }

@@ -335,6 +335,9 @@ namespace
 		Endless(TEXT("fortified"), TEXT("Neosteel Fortified Armor"), TEXT("btn-upgrade-mengsk-engineeringbay-neosteelfortifiedarmor"), 450, TEXT("Bunker +150 HP"), TEXT("plating8"));
 		Card(TEXT("vikings"), TEXT("Starport"), TEXT("btn-building-terran-starport"), TEXT("common"), { 250 }, TEXT("Viking wing in the armoury"), TEXT("wave16"));
 		Card(TEXT("wraiths"), TEXT("Wraith Squadron"), TEXT("btn-unit-terran-wraith"), TEXT("common"), { 300 }, TEXT("Wraiths in the armoury: lasers and missiles"), TEXT("vikings"));
+		// More fliers per call, up to twelve apiece.
+		Card(TEXT("vikingplus"), TEXT("Viking Reinforcements"), TEXT("btn-unit-terran-vikingfighter"), TEXT("common"), { 200, 250, 300, 350, 400, 450, 500, 550 }, TEXT("Viking wing: +1 viking (up to 12)"), TEXT("vikings"));
+		Card(TEXT("wraithplus"), TEXT("Wraith Reinforcements"), TEXT("btn-unit-terran-wraith"), TEXT("common"), { 225, 275, 325, 375, 425, 475, 525, 575, 625 }, TEXT("Wraith squadron: +1 wraith (up to 12)"), TEXT("wraiths"));
 		Card(TEXT("vessel"), TEXT("Science Facility"), TEXT("btn-building-terran-sciencefacility"), TEXT("rare"), { 400 }, TEXT("Science vessel in the armoury: Irradiate, Defensive Matrix"), TEXT("vikings"));
 		{ FBSCardDef& C = Card(TEXT("siegerange"), TEXT("Siege Optics"), TEXT("btn-upgrade-swann-vehiclerangeincrease"), TEXT("epic"), { 300 }, TEXT("Siege tanks +2 range"), TEXT("tank")); C.UnlockBuys = TEXT("vehicle"); C.UnlockBuysN = 3; }
 		{ FBSCardDef& C = Card(TEXT("goliath"), TEXT("Factory"), TEXT("btn-building-terran-factory"), TEXT("epic"), { 300 }, TEXT("Goliaths in the armoury"), TEXT("vehicle2")); C.UnlockBuys = TEXT("vehicle"); C.UnlockBuysN = 5; }

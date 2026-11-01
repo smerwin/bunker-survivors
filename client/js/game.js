@@ -1128,7 +1128,11 @@ window.BS = window.BS || {};
     // A flier on patrol: s metres round the loop, off metres to its side.
     patrolPos(u) { const [x, y, h] = this.patrolAt(u.s); return [x - Math.sin(h) * u.off, y + Math.cos(h) * u.off, h]; }
     // Wedge slots for flier i of n: spread side to side, the outer ones trailing.
-    wedge(i, n, s0) { const c = i - (n - 1) / 2; return { s: s0 - Math.abs(c) * 1.8, off: c * 2.2 }; }
+    // Wedge slot for flier i of n: spread side to side, the outer ones trailing; past six, a second V behind the first.
+    wedge(i, n, s0) {
+      const row = Math.floor(i / 6), m = Math.min(6, n - row * 6), c = i % 6 - (m - 1) / 2;
+      return { s: s0 - Math.abs(c) * 1.8 - row * 6, off: c * 2.2 + row * 1.1 };
+    }
     // What a strafing flier shoots: its locked target while that stays in reach and ahead of its nose, else the
     // nearest that is.
     strafeTarget(u, lockKey, heading, range, cone, pred) {
@@ -1144,9 +1148,10 @@ window.BS = window.BS || {};
       if (this.techCd.vikings > 0) return this.toast('Vikings are rearming');
       if (this.minerals < D.cost) return this.toast('Not enough minerals');
       this.minerals -= D.cost; this.techCd.vikings = D.cooldown;
-      for (let i = 0; i < D.count; i++) {
+      const n = D.count + this.cardLevel('vikingplus');
+      for (let i = 0; i < n; i++) {
         const post = this.strikePosts[i % this.strikePosts.length];
-        const v = { ...this.wedge(i, D.count, 0), post: [post[0] * 1.2, post[1] + 2], x: post[0] * 0.6, y: (this.mode === 'lane' ? -18 : -34) - i * 1.2, z: D.fly + 1.5, yaw: Math.PI / 2, cd: 0.4 + i * 0.2, state: 'in', t: 0, hp: D.hp, maxHp: D.hp };
+        const v = { ...this.wedge(i, n, 0), post: [post[0] * 1.2, post[1] + 2], x: post[0] * 0.6, y: (this.mode === 'lane' ? -18 : -34) - i * 1.2, z: D.fly + 1.5, yaw: Math.PI / 2, cd: 0.4 + i * 0.2, state: 'in', t: 0, hp: D.hp, maxHp: D.hp };
         v.handle = this.r.spawn('vikingfighter', v.x, v.y, v.z, v.yaw).setTeam(1);
         v.handle.play(/^walk|^fly|^stand/i, true);
         this.vikingWing.push(v);
@@ -1199,9 +1204,10 @@ window.BS = window.BS || {};
       if (this.techCd.wraiths > 0) return this.toast('Wraiths are rearming');
       if (this.minerals < D.cost) return this.toast('Not enough minerals');
       this.minerals -= D.cost; this.techCd.wraiths = D.cooldown;
-      for (let i = 0; i < D.count; i++) {
+      const n = D.count + this.cardLevel('wraithplus');
+      for (let i = 0; i < n; i++) {
         const post = this.strikePosts[(i + 1) % this.strikePosts.length];
-        const w = { ...this.wedge(i, D.count, 30), cloakUntil: 0, cloakReady: 0, post: [post[0] * 1.3, post[1] + 4], x: post[0] * 0.6, y: (this.mode === 'lane' ? -18 : -34) - i * 1.2, z: D.fly + 1.5, yaw: Math.PI / 2,
+        const w = { ...this.wedge(i, n, 30), cloakUntil: 0, cloakReady: 0, post: [post[0] * 1.3, post[1] + 4], x: post[0] * 0.6, y: (this.mode === 'lane' ? -18 : -34) - i * 1.2, z: D.fly + 1.5, yaw: Math.PI / 2,
           gCd: 0.3 + i * 0.2, aCd: 0.5 + i * 0.2, state: 'in', t: 0, hp: D.hp, maxHp: D.hp, armor: 0, flash: 0 };
         w.handle = this.r.spawn('wraith', w.x, w.y, w.z, w.yaw).setTeam(1);
         w.handle.play(/^walk$|^stand$/i, true);
