@@ -604,6 +604,31 @@ window.BS = window.BS || {};
     ],
   };
 
+  // The ladder: the forces on both sides grow run by run. The first run is marines against zerglings (lots of them);
+  // every run that clears enough waves (LADDER_WAVES on the first rung, one more on each rung after) opens the next
+  // rung: a Terran unit (or two) and a zerg strain (or a few).
+  // terran: armoury items (infantry, scv, sam, sensor, tank), abilities (strike, yamato) and high-tech or unit shop
+  // cards (by card id); zerg: BS.ZERG keys. Anything not listed is there from the start. The Hyperion still comes at
+  // 30 minutes and Kerrigan at 28 whatever the rung: early runs simply fall sooner.
+  BS.LADDER = [
+    { t: 'Marines', z: 'Zerglings', terran: ['marine'], zerg: ['zergling'] },
+    { t: 'Firebats', z: 'Hydralisks', terran: ['firebat'], zerg: ['hydralisk'] },
+    { t: 'Marauders', z: 'Roaches', terran: ['marauder'], zerg: ['roach'] },
+    { t: 'SCVs', z: 'Banelings', terran: ['scv'], zerg: ['baneling'] },
+    { t: 'Siege tanks', z: 'Infested terrans', terran: ['tank'], zerg: ['infested'] },
+    { t: 'Missile turrets and the air strike', z: 'Mutalisks and overlords', terran: ['sam', 'strike'], zerg: ['mutalisk', 'overlordWatch'] },
+    { t: 'Sensor tower and reapers', z: 'Lurkers', terran: ['sensor', 'reaper'], zerg: ['lurker'] },
+    { t: 'Goliaths and the high ground', z: 'Ultralisks', terran: ['goliath', 'highground'], zerg: ['ultralisk'] },
+    { t: 'Vikings and wraiths', z: 'Brood lords and guardians', terran: ['vikings', 'wraiths'], zerg: ['broodlord', 'guardian'] },
+    { t: 'Ghosts and the nuke', z: 'Brood queens and defilers', terran: ['ghost', 'nuke'], zerg: ['broodqueen', 'defiler', 'overseer'] },
+    { t: 'Science vessel and the Yamato', z: 'Vipers, devourers and scourge', terran: ['vessel', 'yamato'], zerg: ['viper', 'devourer', 'scourge'] },
+    { t: 'Thors', z: 'Creep, drops and nydus worms', terran: ['thor'], zerg: ['wingling', 'queen', 'overlordCreep', 'overlord', 'overlordDrop', 'nydus'] },
+    { t: 'The battlecruiser and the Odin', z: 'The full swarm', terran: ['bc', 'odin'], zerg: [] },
+  ];
+  BS.LADDER_WAVES = 3;
+  // Shop cards that only make sense with a unit the ladder has not opened yet.
+  BS.LADDER_CARD_NEEDS = { incinerator: 'firebat', concussive: 'marauder', scvrepair: 'scv', mule: 'scv', rotors: 'strike' };
+
   // Abilities on the action bar.
   BS.ABILITIES = [
     { id: 'stim', name: 'STIM', icon: 'btn-ability-terran-stimpack', key: 'S', accent: '#ffbf3c' },

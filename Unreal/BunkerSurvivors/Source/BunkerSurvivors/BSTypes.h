@@ -137,6 +137,14 @@ struct FBSRarity { FString Key, Name; float Weight = 1; int32 From = 1; FLinearC
 // A perk at the Hyperion, bought with vespene between runs (see BSMeta); Costs: one per level.
 struct FBSPerkDef { FString Id, Name, Icon, Desc; TArray<int32> Costs; };
 
+// The ladder: the forces on both sides grow run by run. The first run is marines against zerglings (lots of them);
+// every run that clears enough waves (LadderWaves on the first rung, one more on each rung after) opens the next rung:
+// a Terran unit (or two) and a zerg strain (or a few). Terran: armoury items (infantry, scv, sam, sensor, tank),
+// abilities (strike, yamato) and high-tech or unit shop cards (by card id); Zerg: FBSZergDef keys. Anything not listed
+// is there from the start. The Hyperion still comes at 30 minutes and Kerrigan at 28 whatever the rung: early runs
+// simply fall sooner. T and Z: display names. Port of BS.LADDER in units.js.
+struct FBSLadderRung { FString T, Z; TArray<FString> Terran, Zerg; };
+
 namespace BSDefs
 {
 	const TArray<FBSZergDef>& Zerg();
@@ -154,6 +162,10 @@ namespace BSDefs
 	const FBSRarity& FindRarity(const FString& Key);
 	const TArray<FBSPerkDef>& Perks();
 	const FBSPerkDef* FindPerk(const FString& Id);
+	const TArray<FBSLadderRung>& Ladder();
+	constexpr int32 LadderWaves = 3;
+	// Shop cards that only make sense with a unit the ladder has not opened yet (that unit's id, else empty).
+	FString LadderCardNeeds(const FString& CardId);
 
 	// The shop. Every cleared wave pauses the fight and offers ShopOffers random cards, bought with banked minerals;
 	// troops, tanks, SCVs, turrets and repairs stay in the armoury throughout. A reroll costs RerollCost, RerollStep more

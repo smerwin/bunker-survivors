@@ -13,6 +13,12 @@ namespace
 		for (const FBSCardDef& C : BSDefs::Cards()) if (!BSMeta::Unlocked(C)) Out.Add(&C);
 		return Out;
 	}
+	int32 LadderIndex(const FString& Id, bool bZerg)
+	{
+		const TArray<FBSLadderRung>& L = BSDefs::Ladder();
+		for (int32 i = 0; i < L.Num(); i++) if ((bZerg ? L[i].Zerg : L[i].Terran).Contains(Id)) return i;
+		return 0;
+	}
 }
 
 namespace BSMeta
@@ -21,6 +27,11 @@ namespace BSMeta
 	int32 Best() { return Get(TEXT("Best")); }
 	int32 Perk(const FString& Id) { return Get(TEXT("Perk.") + Id); }
 	int32 Buys(const FString& CardId) { return Get(TEXT("Buy.") + CardId); }
+
+	int32 Force = INDEX_NONE;
+	int32 Rung() { return FMath::Clamp(Force != INDEX_NONE ? Force : Get(TEXT("Rung")), 0, BSDefs::Ladder().Num() - 1); }
+	int32 TerranRung(const FString& Id) { return LadderIndex(Id, false); }
+	int32 ZergRung(const FString& Key) { return LadderIndex(Key, true); }
 
 	int32 PerkCost(const FString& Id)
 	{
@@ -73,6 +84,8 @@ namespace BSMeta
 	{
 		const TArray<const FBSCardDef*> Was = Locked();
 		FRunResult R;
+		const int32 OnRung = Get(TEXT("Rung"));
+		if (Force == INDEX_NONE && WavesCleared >= LadderWaves(OnRung) && OnRung < BSDefs::Ladder().Num() - 1) { R.Rung = OnRung + 1; Set(TEXT("Rung"), R.Rung); }
 		R.Gas = FMath::RoundToInt((WavesCleared * BSDefs::GasPerWave + (WavesCleared / 10) * BSDefs::GasMilestone + (bEvacuated ? BSDefs::GasEvac : 0.f)) * (bArena ? BSDefs::GasArena : 1.f));
 		Set(TEXT("Gas"), Gas() + R.Gas);
 		Set(TEXT("Best"), FMath::Max(Best(), WavesCleared));

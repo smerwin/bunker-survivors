@@ -130,6 +130,31 @@ minerals buy research and other upgrades from a few random cards. Every fifth wa
 minutes and the Hyperion comes down over the bunker and evacuates you: the run is won. If the bunker falls first, the
 run is over. Either way, the vespene it earned buys permanent perks at the Hyperion for the runs after.
 
+**The ladder.** Both sides grow run by run. Your first run is marines alone against zerglings (a great many of them),
+and it is over quickly. Every run that clears enough waves (3 on the first rung, one more on each rung after) climbs a
+rung of the ladder and opens one more Terran unit and one more zerg strain for the runs after; the start screen shows
+the rung you are on and what the next one brings. The Hyperion still comes at 30 minutes and Kerrigan at 28 whatever
+the rung: early runs simply fall long before. Shop cards for a unit you have not unlocked stay out of the shop.
+
+| Rung | Terran | Zerg |
+| --- | --- | --- |
+| 1 | Marines | Zerglings |
+| 2 | Firebats | Hydralisks |
+| 3 | Marauders | Roaches |
+| 4 | SCVs | Banelings |
+| 5 | Siege tanks | Infested terrans |
+| 6 | Missile turrets, the air strike | Mutalisks, overlords |
+| 7 | Sensor tower, reapers | Lurkers |
+| 8 | Goliaths, the High Ground | Ultralisks |
+| 9 | Vikings, wraiths | Brood lords, guardians |
+| 10 | Ghosts, the nuke | Brood queens, defilers (and overseers) |
+| 11 | Science vessel, the Yamato | Vipers, devourers, scourge |
+| 12 | Thors | Creep, overlord drops, nydus worms, winglings |
+| 13 | Battlecruiser, the Odin | The full swarm |
+
+Playtesting: `?rung=5` plays that rung and `?tech=max` the top one (Unreal: `-BSRung=5`, `-BSTechMax`); neither
+saves ladder progress.
+
 **Thirty minutes.** The clock under HYPERION in the top bar counts fighting time only; it stops while you shop. A run
 is about 40 waves. Early waves ramp up steadily. Past wave 16 the swarm stops simply getting bigger and starts getting
 stranger: from wave 20 it evolves on its own (one more late-game strain every five waves, on top of whatever your tech

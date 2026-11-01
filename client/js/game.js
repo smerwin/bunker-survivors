@@ -44,6 +44,7 @@ window.BS = window.BS || {};
     constructor(renderer, opts) {
       this.r = renderer; this.fx = renderer.fx;
       this.mode = opts.mode || 'lane';
+      this.rung = opts.rung !== undefined ? opts.rung : BS.Meta.rung();
       this.hard = this.mode === 'arena';
       this.time = 0; this.acc = 0; this.step = 1 / 60;
       this.paused = false; this.over = false; this.started = false;
@@ -72,7 +73,7 @@ window.BS = window.BS || {};
       this.layout();
       this.bunker.handle = this.r.spawn('bunker', 0, 0, 0, this.bunker.yaw).setTeam(1);
       this.bunker.handle.play(/^stand$/i, true);
-      this.addScv(true);
+      if (this.unitOpen('scv')) this.addScv(true);
       this.initCreep();
     }
 
@@ -130,7 +131,7 @@ window.BS = window.BS || {};
     // Three marines double-time it into the bunker while the first wave gathers.
     beginOpening() {
       for (let i = 0; i < 3; i++) this.addWalker('marine', -3.3 + i * 0.25, 3.0 + i * 0.9, 0.5 + i * 0.45);
-      if (BS.Meta.perk('firebat')) this.addWalker('firebat', 3.2, 3.4, 1.2);       // Veteran Fireteam
+      if (BS.Meta.perk('firebat') && this.unitOpen('firebat')) this.addWalker('firebat', 3.2, 3.4, 1.2);       // Veteran Fireteam
     }
     addWalker(type, x, y, delay) {
       const w = { def: BS.INFANTRY[type], type, x, y, delay: delay || 0, walking: false, handle: this.r.spawn(type, x, y, 0, -Math.PI / 4).setTeam(1) };
@@ -142,6 +143,7 @@ window.BS = window.BS || {};
 
     addInfantry(type, free) {
       const d = BS.INFANTRY[type];
+      if (!free && !this.unitOpen(type)) return false;
       if (this.troopsFull()) return this.toast('No room for more troops');
       if (!free) { const cost = this.troopCost(type); if (this.minerals < cost) return this.toast('Not enough minerals'); this.minerals -= cost; }
       // Ride along with a medivac that is still inbound, or call a new one.
@@ -403,6 +405,7 @@ window.BS = window.BS || {};
     sensorUp() { return this.structures.some(s => s.kind === 'sensor' && s.state === 'ready'); }
     buildStructure(kind) {
       const D = T()[kind];
+      if (!this.unitOpen(kind)) return false;
       let slot;
       if (kind === 'sam') {
         if (this.samCount() >= D.max) return this.toast('Turret limit reached');
@@ -572,6 +575,7 @@ window.BS = window.BS || {};
     // ---- Purchases --------------------------------------------------------------------------------
     addScv(free) {
       const d = T().scv;
+      if (!free && !this.unitOpen('scv')) return false;
       if (this.scvs.length >= d.max) return this.toast('SCV limit reached');
       if (!free) { if (this.minerals < d.cost) return this.toast('Not enough minerals'); this.minerals -= d.cost; }
       const idle = this.scvIdle[this.scvs.length % this.scvIdle.length];
@@ -583,6 +587,7 @@ window.BS = window.BS || {};
     tankCost() { return T().tank.cost + T().tank.costStep * Math.max(0, this.tanks.length - 1); }
     dropTank() {
       const d = T().tank;
+      if (!this.unitOpen('tank')) return false;
       if (this.tanks.length >= this.tankMax) return this.toast('No room for more tanks');
       const cost = this.tankCost();
       if (this.minerals < cost) return this.toast('Not enough minerals');
@@ -689,8 +694,11 @@ window.BS = window.BS || {};
       if (m[1] === 'wave') return this.wave >= +m[2];
       return this.up[m[1]] >= +m[2];
     }
+    // The ladder (BS.LADDER): what this run's rung lets into the fight.
+    unitOpen(id) { return this.rung >= BS.Meta.terranRung(id); }
+    zergOpen(k) { return this.rung >= BS.Meta.zergRung(k); }
     cardOpen(c) {
-      return BS.Meta.unlocked(c) && (!c.lane || this.mode === 'lane') && this.cardLevel(c) < this.cardMax(c) && this.cardReq(c) && this.wave >= BS.RARITY[c.rarity].from;
+      return this.unitOpen(c.id) && (!BS.LADDER_CARD_NEEDS[c.id] || this.unitOpen(BS.LADDER_CARD_NEEDS[c.id])) && BS.Meta.unlocked(c) && (!c.lane || this.mode === 'lane') && this.cardLevel(c) < this.cardMax(c) && this.cardReq(c) && this.wave >= BS.RARITY[c.rarity].from;
     }
     // Weighted by rarity (Field Intelligence shifts weight from common cards to the rarer ones); no repeats in one offer,
     // and the first card is always research while there is any left.
@@ -1415,6 +1423,7 @@ window.BS = window.BS || {};
 
     // ---- Abilities ----------------------------------------------------------------------------------
     callAirStrike() {
+      if (!this.unitOpen('strike')) return false;
       const d = T().banshee, rotors = this.cardLevel('rotors');
       if (this.ab.strikeCd > 0) return this.toast('Air support is refuelling');
       if (this.minerals < d.cost) return this.toast('Not enough minerals');
@@ -1465,6 +1474,7 @@ window.BS = window.BS || {};
       return true;
     }
     useYamato() {
+      if (!this.unitOpen('yamato')) return false;
       const Y = T().yamato;
       if (this.ab.yamatoCd > 0) return this.toast('Yamato cannon recharging');
       if (this.minerals < Y.cost) return this.toast('Not enough minerals');
@@ -1509,7 +1519,7 @@ window.BS = window.BS || {};
       const tier = push ? Math.max(this.lateTier(), BS.TECH.length + 1) : this.lateTier(), air = this.airPresence();
       const wt = d => d.weight * (d.late ? 0.6 + 0.4 * tier : 1) * (d.prefer === 'mech' && this.mechs.length ? 2 : 1) * (d.antiAir && !air ? 0 : 1);
       // Winged zerglings only in lane mode, where they hop the mesa in the middle of the Y.
-      const types = Object.entries(BS.ZERG).filter(([, d]) => d.budget > 0 && w >= Math.ceil(d.unlock * (this.hard ? 0.85 : 1)) && (!d.late || tier >= d.late) && (!d.hops || this.mode === 'lane'));
+      const types = Object.entries(BS.ZERG).filter(([k, d]) => d.budget > 0 && this.zergOpen(k) && w >= Math.ceil(d.unlock * (this.hard ? 0.85 : 1)) && (!d.late || tier >= d.late) && (!d.hops || this.mode === 'lane'));
       const list = [], have = {};
       for (const e of this.enemies) have[e.type] = (have[e.type] || 0) + 1;
       for (const s of this.spawnQueue) have[s.type] = (have[s.type] || 0) + 1;
@@ -1584,6 +1594,8 @@ window.BS = window.BS || {};
         this.toast(ms.toast);
         this.shake = 0.6;
       }
+      // The ladder: only the strains this rung has met (the finale's queen and leviathan come whatever the rung).
+      this.spawnQueue = this.spawnQueue.filter(s => this.zergOpen(s.type));
       if (finale) this.startFinale();
     }
 

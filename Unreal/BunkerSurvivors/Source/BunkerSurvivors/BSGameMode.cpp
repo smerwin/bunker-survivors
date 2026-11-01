@@ -38,6 +38,12 @@ void ABSGameMode::StartPlay()
 	float ShotStart = 0;
 	FParse::Value(Cmd, TEXT("BSShotStart="), ShotStart);     // e.g. -BSShotStart=200 -BSShotEvery=0.1 for animation frames
 	NextShot = ShotEvery > 0 ? FMath::Max(ShotStart, ShotEvery) : 0;
+	// Playtesting: -BSRung=N plays rung N (1 is the first) of the ladder (-BSTechMax: the top one, as do bot playtests,
+	// -BSAutoPlay, unless -BSRung says otherwise); none of these saves ladder progress.
+	int32 ForceRung = 0;
+	if (FParse::Param(Cmd, TEXT("BSTechMax"))) BSMeta::Force = BSDefs::Ladder().Num() - 1;
+	else if (FParse::Value(Cmd, TEXT("BSRung="), ForceRung)) BSMeta::Force = FMath::Max(0, ForceRung - 1);
+	else if (FParse::Param(Cmd, TEXT("BSAutoPlay"))) BSMeta::Force = BSDefs::Ladder().Num() - 1;
 
 	FString Auto = UGameplayStatics::ParseOption(OptionsString, TEXT("mode"));
 	if (Auto.IsEmpty()) FParse::Value(Cmd, TEXT("BSAutoStart="), Auto);

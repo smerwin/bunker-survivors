@@ -382,6 +382,10 @@ public:
 
 	// State read by the HUD and camera.
 	EBSMode Mode = EBSMode::Lane;
+	// The ladder (BSDefs::Ladder): this run's rung, and what it lets into the fight.
+	int32 Rung = 0;
+	bool UnitOpen(const FString& Id) const { return Rung >= BSMeta::TerranRung(Id); }
+	bool ZergOpen(const FString& Key) const { return Rung >= BSMeta::ZergRung(Key); }
 	bool bStarted = false, bPaused = false, bOver = false, bHard = false;
 	bool bBunkerView = false;            // the camera is inside the bunker: skip corpses on top of the eye
 	bool NearEye(const FVector& P) const { return bBunkerView && P.X * P.X + P.Y * P.Y < 2.4f * 2.4f && P.Z < 3.f; }

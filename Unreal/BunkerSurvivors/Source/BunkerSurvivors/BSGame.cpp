@@ -212,6 +212,7 @@ void ABSGame::Init(UBSAssets* InAssets, EBSMode InMode)
 {
 	Assets = InAssets;
 	Mode = InMode;
+	Rung = BSMeta::Rung();
 	bHard = Mode == EBSMode::Arena;
 	WaveLen = 30.f;
 	BuildPatrol();
@@ -280,7 +281,7 @@ void ABSGame::Init(UBSAssets* InAssets, EBSMode InMode)
 	InitCreep();
 	Bunker.Actor = AcquireModel(TEXT("bunker"));
 	if (Bunker.Actor) { Bunker.Actor->SetSim(0, 0, 0, PI / 2); Bunker.Actor->SetTeamColor(TerranColor); }
-	AddScv(true);
+	if (UnitOpen(TEXT("scv"))) AddScv(true);
 	GConfig->GetInt(TEXT("BunkerSurvivors"), *(FString(TEXT("Best.")) + (Mode == EBSMode::Lane ? TEXT("Lane") : TEXT("Arena"))), Best, GGameUserSettingsIni);
 }
 
@@ -574,6 +575,7 @@ bool ABSGame::AddInfantry(const FString& Type, bool bFree, bool bInstant)
 {
 	const FBSInfantryDef* D = BSDefs::FindInfantry(Type);
 	if (!D) return false;
+	if (!bFree && !UnitOpen(Type)) return false;
 	if (TroopsFull()) { Toast(TEXT("No room for more troops")); return false; }
 	if (!bFree) { const int32 Cost = TroopCost(D); if (Minerals < Cost) { Toast(TEXT("Not enough minerals")); return false; } Minerals -= Cost; }
 	if (bInstant || !Assets->Model(TEXT("medivac")))
@@ -619,7 +621,7 @@ void ABSGame::BeginOpening()
 	if (bAutoPlay) return;
 	Minerals += 50 * BSMeta::Perk(TEXT("minerals"));
 	Bunker.MaxHp = Bunker.Hp = BSDefs::BunkerHp + 50 * BSMeta::Perk(TEXT("hull"));
-	if (BSMeta::Perk(TEXT("firebat"))) AddInfantry(TEXT("firebat"), true);
+	if (BSMeta::Perk(TEXT("firebat")) && UnitOpen(TEXT("firebat"))) AddInfantry(TEXT("firebat"), true);
 }
 
 void ABSGame::UpdateReinforcements(float Dt)
@@ -929,6 +931,7 @@ void ABSGame::KillTrooper(const FBSInfantryDef* Def, float X, float Y, float Yaw
 // ---- Structures: missile turrets and the sensor tower ---------------------------------------------------------
 bool ABSGame::BuildStructure(bool bSam)
 {
+	if (!UnitOpen(bSam ? TEXT("sam") : TEXT("sensor"))) return false;
 	FVector2D Slot;
 	if (bSam)
 	{
@@ -1187,6 +1190,7 @@ void ABSGame::UpdateFwdScv(FBSScv& S, float Dt)
 
 bool ABSGame::AddScv(bool bFree)
 {
+	if (!bFree && !UnitOpen(TEXT("scv"))) return false;
 	if (Scvs.Num() >= BSDefs::ScvMax) { Toast(TEXT("SCV limit reached")); return false; }
 	if (!bFree) { if (Minerals < BSDefs::ScvCost) { Toast(TEXT("Not enough minerals")); return false; } Minerals -= BSDefs::ScvCost; }
 	TSharedPtr<FBSScv> S = MakeShared<FBSScv>();
@@ -1200,6 +1204,7 @@ bool ABSGame::AddScv(bool bFree)
 
 bool ABSGame::DropTank()
 {
+	if (!UnitOpen(TEXT("tank"))) return false;
 	if (Tanks.Num() >= TankMax) { Toast(TEXT("No room for more tanks")); return false; }
 	const int32 Cost = TankCost();
 	if (Minerals < Cost) { Toast(TEXT("Not enough minerals")); return false; }
@@ -1236,6 +1241,7 @@ TArray<FVector2D> ABSGame::StrikeFormation(int32 N) const
 
 bool ABSGame::CallAirStrike()
 {
+	if (!UnitOpen(TEXT("strike"))) return false;
 	if (Ab.StrikeCd > 0) { Toast(TEXT("Air support is refuelling")); return false; }
 	if (Minerals < BSDefs::BansheeCost) { Toast(TEXT("Not enough minerals")); return false; }
 	Minerals -= BSDefs::BansheeCost;
@@ -1258,6 +1264,7 @@ bool ABSGame::CallAirStrike()
 
 bool ABSGame::UseYamato()
 {
+	if (!UnitOpen(TEXT("yamato"))) return false;
 	if (Ab.YamatoCd > 0) { Toast(TEXT("Yamato cannon recharging")); return false; }
 	if (Minerals < BSDefs::YamatoCost) { Toast(TEXT("Not enough minerals")); return false; }
 	// A Battlecruiser in orbit fires on the densest cluster of zerg.
@@ -1535,7 +1542,9 @@ bool ABSGame::ReqMet(const FString& R) const
 
 bool ABSGame::CardOpen(const FBSCardDef& C) const
 {
-	return BSMeta::Unlocked(C) && (!C.bLane || Mode == EBSMode::Lane) && CardLevel(C) < CardMax(C) && CardReq(C) && Wave >= BSDefs::FindRarity(C.Rarity).From;
+	// The ladder: the card (and the unit it works on) must be open on this rung.
+	const FString Needs = BSDefs::LadderCardNeeds(C.Id);
+	return UnitOpen(C.Id) && (Needs.IsEmpty() || UnitOpen(Needs)) && BSMeta::Unlocked(C) && (!C.bLane || Mode == EBSMode::Lane) && CardLevel(C) < CardMax(C) && CardReq(C) && Wave >= BSDefs::FindRarity(C.Rarity).From;
 }
 
 // Weighted by rarity (Field Intelligence shifts weight from common cards to the rarer ones, research weighs double); no
@@ -2522,7 +2531,7 @@ void ABSGame::StartWave()
 	auto Wt = [&](const FBSZergDef* D) { return D->Weight * (D->Late ? 0.6f + 0.4f * Tier : 1.f) * (D->bPreferMech && Mechs.Num() ? 2.f : 1.f) * (D->bAntiAir && !bAirUp ? 0.f : 1.f); };
 	TArray<const FBSZergDef*> Types;
 	for (const FBSZergDef& D : BSDefs::Zerg())
-		if (D.Budget > 0 && Wv >= FMath::CeilToInt(D.Unlock * (bHard ? 0.85f : 1.f)) && (!D.Late || Tier >= D.Late) && (!D.bHops || Mode == EBSMode::Lane)) Types.Add(&D);   // winged zerglings only in lane mode, where they hop the mesa
+		if (D.Budget > 0 && ZergOpen(D.Key) && Wv >= FMath::CeilToInt(D.Unlock * (bHard ? 0.85f : 1.f)) && (!D.Late || Tier >= D.Late) && (!D.bHops || Mode == EBSMode::Lane)) Types.Add(&D);   // winged zerglings only in lane mode, where they hop the mesa
 	TArray<FString> List;
 	TMap<FString, int32> Have;
 	for (const TSharedPtr<FBSEnemy>& E : Enemies) Have.FindOrAdd(E->Def->Key)++;
@@ -2636,6 +2645,8 @@ void ABSGame::StartWave()
 		Toast(Ms.Toast);
 		Shake = 0.6f;
 	}
+	// The ladder: only the strains this rung has met (the finale's Kerrigan and leviathan come whatever the rung).
+	SpawnQueue.RemoveAll([this](const FBSSpawn& S) { return !ZergOpen(S.Type); });
 	if (bFinale) StartFinale();
 }
 
@@ -5466,8 +5477,12 @@ FString ABSGame::DebugState() const
 	for (const TSharedPtr<FBSStructure>& S : Structures) Str += FString::Printf(TEXT("%s:%d:%.0f "), S->bCc ? TEXT("cc") : S->bSam ? TEXT("sam") : TEXT("sensor"), S->bReady ? 1 : 0, S->Hp);
 	FString Ban;
 	for (const TSharedPtr<FBSBanshee>& Bn : Banshees) Ban += FString::Printf(TEXT("%d@%.1f,%.1f "), (int32)Bn->State, Bn->X, Bn->Y);
-	return FString::Printf(TEXT("t=%.1f wave=%d enemies=%d kills=%d minerals=%.0f bunker=%.0f/%.0f units=%d tanks=%d scvs=%d over=%d squad=[%s] structures=[%s] banshees=[%s] radar=%d rails=%d bunkerActor[%s]"),
-		Time, Wave, Enemies.Num(), Kills, Minerals, Bunker.Hp, Bunker.MaxHp, Bunker.Units.Num(), Tanks.Num(), Scvs.Num(), bOver ? 1 : 0, *Out, *Str, *Ban, SensorUp() ? 1 : 0, Up.bRails ? 1 : 0, *B);
+	TMap<FString, int32> Kinds;
+	for (const TSharedPtr<FBSEnemy>& E : Enemies) Kinds.FindOrAdd(E->Def->Key)++;
+	FString Zg;
+	for (const auto& K : Kinds) Zg += FString::Printf(TEXT("%s:%d "), *K.Key, K.Value);
+	return FString::Printf(TEXT("t=%.1f rung=%d wave=%d enemies=%d zerg=[%s] kills=%d minerals=%.0f bunker=%.0f/%.0f units=%d tanks=%d scvs=%d over=%d squad=[%s] structures=[%s] banshees=[%s] radar=%d rails=%d bunkerActor[%s]"),
+		Time, Rung + 1, Wave, Enemies.Num(), *Zg.TrimEnd(), Kills, Minerals, Bunker.Hp, Bunker.MaxHp, Bunker.Units.Num(), Tanks.Num(), Scvs.Num(), bOver ? 1 : 0, *Out, *Str, *Ban, SensorUp() ? 1 : 0, Up.bRails ? 1 : 0, *B);
 }
 
 void ABSGame::WriteTelemetry(const FString& Kind)

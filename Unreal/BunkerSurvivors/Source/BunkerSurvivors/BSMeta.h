@@ -19,7 +19,16 @@ namespace BSMeta
 	FString CardName(const FBSCardDef& C);
 	// A card bought in a run; returns the cards this purchase unlocked.
 	TArray<const FBSCardDef*> RecordBuy(const FString& CardId);
-	// The run is over (bEvacuated: the Hyperion took you off): bank its vespene and best wave.
-	struct FRunResult { int32 Gas = 0; TArray<const FBSCardDef*> Unlocked; };
+	// The ladder rung reached (BSDefs::Ladder): forced (playtesting, -BSRung=N or -BSTechMax; INDEX_NONE: not forced) or earned.
+	extern int32 Force;
+	int32 Rung();
+	// The rung on which a Terran unit or ability (an armoury item, ability or card id) or a zerg strain joins the fight.
+	int32 TerranRung(const FString& Id);
+	int32 ZergRung(const FString& Key);
+	// Waves a run on rung I (0 is the first) must clear to open the next.
+	inline int32 LadderWaves(int32 I) { return BSDefs::LadderWaves + I; }
+	// The run is over (bEvacuated: the Hyperion took you off): bank its vespene and best wave. A run that clears enough
+	// waves opens the next rung of the ladder (Rung: that rung's index, else INDEX_NONE).
+	struct FRunResult { int32 Gas = 0; TArray<const FBSCardDef*> Unlocked; int32 Rung = INDEX_NONE; };
 	FRunResult EndRun(bool bArena, int32 WavesCleared, bool bEvacuated);
 }
