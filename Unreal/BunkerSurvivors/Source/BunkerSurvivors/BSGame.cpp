@@ -2072,13 +2072,14 @@ void ABSGame::BcAlerts()
 void ABSGame::BuildPatrol()
 {
 	PatrolPts.Reset(); PatrolS0.Reset(); PatrolLen = 0;
-	// Lane: a long racetrack, straight strafing runs up the east of the lane and back down the west with wide turns at
+	// Lane: a long racetrack, straight strafing runs up the east of the lane and back down the west, turning out of sight at
 	// either end. Arena: a wide circle round the bunker.
 	auto Arc = [this](float Cx, float Cy, float R, float A0, float A1)
 	{
 		for (int32 i = 0; i <= 8; i++) { const float A = A0 + (A1 - A0) * i / 8.f; PatrolPts.Add(FVector2D(Cx + FMath::Cos(A) * R, Cy + FMath::Sin(A) * R)); }
 	};
-	if (Mode == EBSMode::Lane) { Arc(0, 21, 4.5f, 0, PI); Arc(0, -3, 4.5f, PI, PI * 2); PatrolPts.Add(FVector2D(4.5f, 21)); }
+	// (Lane: up the east from s = 0, turning out of sight past the top of the view and behind the bunker.)
+	if (Mode == EBSMode::Lane) { PatrolPts.Add(FVector2D(4.5f, -14)); Arc(0, 34, 4.5f, 0, PI); Arc(0, -14, 4.5f, PI, PI * 2); }
 	else
 		for (int32 i = 0; i <= 32; i++) PatrolPts.Add(FVector2D(FMath::Cos(i / 32.f * PI * 2) * 11, FMath::Sin(i / 32.f * PI * 2) * 11));
 	for (int32 i = 0; i + 1 < PatrolPts.Num(); i++) { PatrolS0.Add(PatrolLen); PatrolLen += FVector2D::Distance(PatrolPts[i], PatrolPts[i + 1]); }

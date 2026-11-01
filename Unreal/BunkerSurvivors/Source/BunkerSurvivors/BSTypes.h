@@ -175,7 +175,7 @@ namespace BSDefs
 	constexpr float TankSplash1 = 0.47f, TankSplash2 = 0.78f, TankSplash3 = 1.25f;
 	constexpr int32 TankCost = 300, TankCostStep = 100, TankMaxLane = 4, TankMaxArena = 4, TankHigh = 2;   // TankHigh: more with the High Ground card
 	// Air strike: four banshees hover over the lane (and its ledges) and fire missiles at passing zerg.
-	constexpr float BansheeDmg = 12, BansheeCd = 1.1f, BansheeRange = 6, BansheeSpeed = 9, BansheeFly = 2.4f, BansheeHover = 14, BansheeCooldown = 32;
+	constexpr float BansheeDmg = 16, BansheeCd = 0.9f, BansheeRange = 6, BansheeSpeed = 9, BansheeFly = 2.4f, BansheeHover = 14, BansheeCooldown = 32;
 	constexpr int32 BansheeShots = 2, BansheeCost = 200, BansheeCount = 4;
 	// Troops standing behind the bunker (ejected, or recruited while it is full).
 	constexpr int32 SquadMax = 48;
@@ -221,12 +221,12 @@ namespace BSDefs
 	// wedge, always flying straight on, firing on whatever lies within *Cone radians of their nose and staying on that
 	// target while it does. Ship Weapons adds to every shot (ABSGame::AirBonus).
 	// Four viking fighters hunt air (VikingPatrol: metres a second round the patrol loop).
-	constexpr float VikingDmg = 7, VikingCd = 0.7f, VikingRange = 9, VikingCone = 1.0f, VikingHover = 20, VikingFly = 4.2f, VikingSpeed = 9, VikingCooldown = 35, VikingPatrol = 6.5f;
+	constexpr float VikingDmg = 10, VikingCd = 0.55f, VikingRange = 9, VikingCone = 1.0f, VikingHover = 24, VikingFly = 4.2f, VikingSpeed = 12, VikingCooldown = 35, VikingPatrol = 11;
 	constexpr int32 VikingShots = 2, VikingCost = 300, VikingCount = 4;
 	// Three wraiths sweep the lane for a while: burst lasers at ground zerg (GDmg every GCd), Gemini missiles at air.
 	// Wraiths cloak for WraithCloakDur s when fired upon (an overseer still sees them), then not again for WraithCloakCd s.
-	constexpr float WraithHp = 120, WraithGDmg = 5, WraithGCd = 0.3f, WraithADmg = 7, WraithACd = 0.8f, WraithRange = 7, WraithCone = 1.0f, WraithHover = 20, WraithFly = 3.4f, WraithSpeed = 9, WraithCooldown = 40;
-	constexpr float WraithPatrol = 7.5f, WraithCloakDur = 6, WraithCloakCd = 12;
+	constexpr float WraithHp = 120, WraithGDmg = 8, WraithGCd = 0.25f, WraithADmg = 10, WraithACd = 0.7f, WraithRange = 7, WraithCone = 1.0f, WraithHover = 24, WraithFly = 3.4f, WraithSpeed = 12, WraithCooldown = 40;
+	constexpr float WraithPatrol = 11, WraithCloakDur = 6, WraithCloakCd = 12;
 	constexpr int32 WraithCost = 350, WraithCount = 3, WraithAShots = 2;
 	// A science vessel on station for VesselStay seconds, casting from VesselRange: Irradiate on the densest pack (dps to
 	// the target and everything within radius, for its duration), Defensive Matrix on the most battered of the bunker,
