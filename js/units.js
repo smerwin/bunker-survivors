@@ -572,6 +572,9 @@ window.BS = window.BS || {};
     { id: 'fortified', name: 'Neosteel Fortified Armor', icon: 'btn-upgrade-mengsk-engineeringbay-neosteelfortifiedarmor', rarity: 'common', max: 99, cost: 450, grow: 125, req: 'plating8', desc: 'Bunker +150 HP' },
     { id: 'vikings', tech: 'vikings', name: 'Starport', icon: 'btn-building-terran-starport', rarity: 'common', cost: 250, req: 'wave16', desc: 'Viking wing in the armoury' },
     { id: 'wraiths', tech: 'wraiths', name: 'Wraith Squadron', icon: 'btn-unit-terran-wraith', rarity: 'common', cost: 300, req: 'vikings', desc: 'Wraiths in the armoury: lasers and missiles' },
+    // More fliers per call, up to twelve apiece.
+    { id: 'vikingplus', name: 'Viking Reinforcements', icon: 'btn-unit-terran-vikingfighter', rarity: 'common', max: 8, cost: [200, 250, 300, 350, 400, 450, 500, 550], req: 'vikings', desc: 'Viking wing: +1 viking (up to 12)' },
+    { id: 'wraithplus', name: 'Wraith Reinforcements', icon: 'btn-unit-terran-wraith', rarity: 'common', max: 9, cost: [225, 275, 325, 375, 425, 475, 525, 575, 625], req: 'wraiths', desc: 'Wraith squadron: +1 wraith (up to 12)' },
     { id: 'vessel', tech: 'vessel', name: 'Science Facility', icon: 'btn-building-terran-sciencefacility', rarity: 'rare', cost: 400, req: 'vikings', desc: 'Science vessel in the armoury: Irradiate, Defensive Matrix' },
     { id: 'siegerange', name: 'Siege Optics', icon: 'btn-upgrade-swann-vehiclerangeincrease', rarity: 'epic', cost: 300, req: 'tank', desc: 'Siege tanks +2 range', unlock: { buys: ['vehicle', 3] } },
     { id: 'goliath', tech: 'goliath', name: 'Factory', icon: 'btn-building-terran-factory', rarity: 'epic', cost: 300, req: 'vehicle2', desc: 'Goliaths in the armoury', unlock: { buys: ['vehicle', 5] } },
