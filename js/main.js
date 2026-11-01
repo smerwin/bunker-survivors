@@ -28,6 +28,11 @@ window.BS = window.BS || {};
       $('best').textContent = 'BEST  LANE ' + bl + '   ARENA ' + ba;
     } catch (e) { /* private mode */ }
     $(isPortrait() ? 'tagLane' : 'tagArena').textContent = isPortrait() ? 'BEST ON PHONE' : 'BEST ON DESKTOP';
+    // Playtesting: ?rung=N plays rung N (1 is the first) of the ladder (?tech=max: the top one); neither saves ladder progress.
+    const qr = new URLSearchParams(location.search);
+    if (qr.get('tech') === 'max') BS.Meta.force = BS.LADDER.length - 1;
+    else if (qr.get('rung') !== null) BS.Meta.force = Math.max(0, (parseInt(qr.get('rung'), 10) || 1) - 1);
+    renderRung();
     document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { Checkpoint.clear(); start(b.dataset.mode); }));
     // A run the browser threw away while it was in the background (or lost to a dropped WebGL context): carry on.
     const cp = Checkpoint.load();
@@ -80,6 +85,13 @@ window.BS = window.BS || {};
     load() { try { const s = JSON.parse(localStorage.getItem(this.key)); return s && s.v === 1 && Date.now() - s.savedAt < 7 * 864e5 ? s : null; } catch (e) { return null; } },
     clear() { try { localStorage.removeItem(this.key); } catch (e) { /* ignore */ } },
   };
+
+  // The ladder (BS.LADDER): which rung this run is on, and what clearing enough waves opens next.
+  function renderRung() {
+    const i = BS.Meta.rung(), r = BS.LADDER[i], next = BS.LADDER[i + 1];
+    $('rung').textContent = 'RUNG ' + (i + 1) + ' OF ' + BS.LADDER.length + (next ? '  //  CLEAR WAVE ' + BS.Meta.ladderWaves(i) + ' TO UNLOCK ' + next.t.toUpperCase() + ' AND ' + next.z.toUpperCase() : '  //  EVERYTHING UNLOCKED');
+    $('rung').title = BS.LADDER.slice(0, i + 1).map(x => x.t + ' / ' + x.z).join('\n');
+  }
 
   // The Hyperion: perks bought with vespene, and every shop card (locked ones say what unlocks them).
   function renderHyperion() {
@@ -198,7 +210,10 @@ window.BS = window.BS || {};
     b.textContent = game.newBest ? 'NEW BEST' : 'BEST ' + Number(game.best).toLocaleString('en-US');
     b.classList.toggle('new', !!game.newBest);
     const mr = game.metaResult;
-    $('overMeta').innerHTML = mr ? '+' + mr.gas + ' VESPENE FOR THE HYPERION' + mr.unlocked.map(c => '<span>NEW CARD: ' + BS.Meta.cardName(c).toUpperCase() + '</span>').join('') : '';
+    const rung = mr && mr.rung !== null && BS.LADDER[mr.rung];
+    $('overMeta').innerHTML = mr ? '+' + mr.gas + ' VESPENE FOR THE HYPERION' + (rung ? '<span>UNLOCKED: ' + rung.t.toUpperCase() + '  //  THE SWARM BRINGS ' + rung.z.toUpperCase() + '</span>' : '') +
+      mr.unlocked.map(c => '<span>NEW CARD: ' + BS.Meta.cardName(c).toUpperCase() + '</span>').join('') : '';
+    renderRung();
   }
 
   // ---- Input ------------------------------------------------------------------------------------------

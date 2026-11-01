@@ -45,7 +45,8 @@ window.BS = window.BS || {};
 
     buildAbilities() {
       const box = $('abilities'); box.innerHTML = '';
-      this.abEls = BS.ABILITIES.map(a => {
+      // (The ladder: abilities this rung has not opened stay off the bar.)
+      this.abEls = BS.ABILITIES.filter(a => this.g.unitOpen(a.id)).map(a => {
         const b = document.createElement('button');
         b.className = 'ability'; b.style.setProperty('--accent', a.accent);
         b.innerHTML = '<div class="tile"><img src="' + icon(a.icon) + '" alt=""><div class="cd"></div></div><b>' + a.name + '</b><small></small>';
@@ -68,11 +69,11 @@ window.BS = window.BS || {};
       for (const c of BS.TECH) items.push({ name: c.name, tech: c.id, icon: () => c.icon, cost: () => g.techState(c.id).cost,
         state: () => g.techState(c.id).state, wait: () => g.techState(c.id).wait, hidden: () => !g.techUnlocked[c.id], buy: () => g.buyTech(c.id) });
       for (const [k, d] of Object.entries(BS.INFANTRY)) items.push({ name: d.name, icon: () => d.icon, cost: () => g.troopCost(k),
-        state: () => g.troopsFull() ? 'full' : '', buy: () => g.addInfantry(k) });
-      items.push({ name: 'SCV', icon: () => 'btn-unit-terran-scv', cost: () => T.scv.cost, state: () => g.scvs.length >= T.scv.max ? 'max' : '', buy: () => g.addScv() });
-      items.push({ name: 'Missile Turret', icon: () => 'btn-building-terran-missileturret', cost: () => T.sam.cost, state: () => g.samCount() >= T.sam.max ? 'max' : '', buy: () => g.buildStructure('sam') });
-      items.push({ name: 'Sensor Tower', icon: () => 'btn-building-terran-sensortower-silver', cost: () => T.sensor.cost, state: () => g.structures.some(s => s.kind === 'sensor') ? 'max' : '', buy: () => g.buildStructure('sensor') });
-      items.push({ name: 'Siege Tank', icon: () => 'btn-unit-terran-siegetank', cost: () => g.tankCost(), state: () => g.tanks.length >= g.tankMax ? 'max' : '', buy: () => g.dropTank() });
+        state: () => g.troopsFull() ? 'full' : '', hidden: () => !g.unitOpen(k), buy: () => g.addInfantry(k) });
+      items.push({ name: 'SCV', icon: () => 'btn-unit-terran-scv', cost: () => T.scv.cost, state: () => g.scvs.length >= T.scv.max ? 'max' : '', hidden: () => !g.unitOpen('scv'), buy: () => g.addScv() });
+      items.push({ name: 'Missile Turret', icon: () => 'btn-building-terran-missileturret', cost: () => T.sam.cost, state: () => g.samCount() >= T.sam.max ? 'max' : '', hidden: () => !g.unitOpen('sam'), buy: () => g.buildStructure('sam') });
+      items.push({ name: 'Sensor Tower', icon: () => 'btn-building-terran-sensortower-silver', cost: () => T.sensor.cost, state: () => g.structures.some(s => s.kind === 'sensor') ? 'max' : '', hidden: () => !g.unitOpen('sensor'), buy: () => g.buildStructure('sensor') });
+      items.push({ name: 'Siege Tank', icon: () => 'btn-unit-terran-siegetank', cost: () => g.tankCost(), state: () => g.tanks.length >= g.tankMax ? 'max' : '', hidden: () => !g.unitOpen('tank'), buy: () => g.dropTank() });
       const box = $('armoury'); box.innerHTML = '';
       this.items = items.map(it => {
         const el = document.createElement('button');
