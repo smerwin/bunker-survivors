@@ -1794,8 +1794,8 @@ TArray<FVector> ABSGame::MechMuzzles(const FBSMech& M, bool bAir) const
 		L = bAir ? TArray<FMz>{ { TEXT("Ref_Weapon_01"), -1.49f, 4.2f, -0.91f }, { TEXT("Ref_Weapon_04"), 1.5f, 4.31f, -0.76f }, { TEXT("Ref_Weapon_02"), -0.93f, 4.52f, -0.87f }, { TEXT("Ref_Weapon_03"), 0.86f, 4.63f, -0.81f } }
 			: TArray<FMz>{ { TEXT("Ref_Weapon_07"), -2.14f, 1.69f, 1.83f }, { TEXT("Ref_Weapon_05"), 2.15f, 1.68f, 1.84f }, { TEXT("Ref_Weapon_08"), -2.18f, 1.17f, 1.83f }, { TEXT("Ref_Weapon_06"), 2.21f, 1.17f, 1.83f } };
 	else
-		L = bAir ? TArray<FMz>{ { TEXT("Ref_Weapon_01"), -1.14f, 5.02f, -0.97f }, { TEXT("Ref_Weapon_04"), 1.42f, 4.88f, -0.75f }, { TEXT("Ref_Weapon_02"), -0.73f, 5.27f, -1.4f }, { TEXT("Ref_Weapon_03"), 1.13f, 5.13f, -1.28f } }
-			: TArray<FMz>{ { TEXT("Ref_Weapon_07"), -2.22f, 2.27f, 1.4f }, { TEXT("Ref_Weapon_05"), 2.24f, 2.47f, 1.83f }, { TEXT("Ref_Weapon_08"), -2.25f, 1.76f, 1.51f }, { TEXT("Ref_Weapon_06"), 2.27f, 1.98f, 1.99f } };
+		L = bAir ? TArray<FMz>{ { TEXT("Ref_Weapon_01"), -1.51f, 4.73f, -0.69f }, { TEXT("Ref_Weapon_04"), 1.5f, 4.67f, -0.62f }, { TEXT("Ref_Weapon_02"), -1.24f, 5.0f, -1.21f }, { TEXT("Ref_Weapon_03"), 1.25f, 4.92f, -1.17f } }
+			: TArray<FMz>{ { TEXT("Ref_Weapon_07"), -1.97f, 1.64f, 2.16f }, { TEXT("Ref_Weapon_05"), 2.08f, 1.61f, 2.26f }, { TEXT("Ref_Weapon_08"), -1.99f, 1.12f, 2.18f }, { TEXT("Ref_Weapon_06"), 2.11f, 1.09f, 2.27f } };   // (measured in its attack pose)
 	const float H = BSTerrain::Height(M.X, M.Y), Cs = FMath::Cos(M.Yaw), Sn = FMath::Sin(M.Yaw), K = M.Def->Scale;
 	TArray<FVector> Out;
 	for (const FMz& Z : L)
@@ -1855,9 +1855,11 @@ void ABSGame::MechFire(FBSMech& M, const TSharedPtr<FBSEnemy>& Target, bool bAir
 		if (bAir) { Trail = TEXT("thorShoulderMissile"); Impact = TEXT("odinShoulderImpact"); Launch = TEXT("thorShoulderLaunch"); Splash = D->ASplash; LaunchScale = 1.4f; }
 		else { Impact = TEXT("tankImpact"); Launch = TEXT("tankLaunch"); Splash = D->GSplash; Scale = 1.6f; Arc = 3; LaunchScale = 1.6f; FlashScale = 3; }
 	}
+	// Thor and odin arm cannons: each volley fires from the other pair of barrels.
+	const int32 First = bAir ? 0 : ++M.Volley * Shots;
 	for (int32 k = 0; k < Shots; k++)
 	{
-		const FVector& Muzzle = Mz[k % Mz.Num()];
+		const FVector& Muzzle = Mz[(First + k) % Mz.Num()];
 		if (Launch) PlayFx(Launch, Muzzle, Ang, LaunchScale, k * 0.08f);
 		if (FlashScale > 0) MuzzleMesh(Muzzle, Ang, k * 0.08f, FlashScale);
 		FBSProjectile P; P.Kind = EBSProjKind::Missile; P.bFriendly = true; P.From = Muzzle; P.To = Hit; P.T = -k * 0.08f;

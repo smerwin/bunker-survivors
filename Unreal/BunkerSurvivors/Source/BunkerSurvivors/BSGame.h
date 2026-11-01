@@ -68,6 +68,7 @@ struct FBSMech
 	FVector2D Slot = FVector2D::ZeroVector;
 	float X = 0, Y = 0, Yaw = PI / 2, Aim = PI / 2, Hp = 0, MaxHp = 0, CdG = 0.5f, CdA = 0.5f, Flash = 0, PlagueUntil = 0;
 	float StunUntil = 0;                      // pinned by Kerrigan (no firing) until then
+	int32 Volley = 0;                         // arm-cannon volleys fired (they alternate barrels)
 	FBSShield Shield;
 	bool bReady = false, bDead = false;
 	FString Anim;
