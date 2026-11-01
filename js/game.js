@@ -35,8 +35,9 @@ window.BS = window.BS || {};
                a: [['Ref_Weapon 02', [-0.82, 2.15, 0.32]], ['Ref_Weapon 05', [0.85, 2.15, 0.32]], ['Ref_Weapon 04', [-0.83, 2.31, 0.29]], ['Ref_Weapon 07', [0.86, 2.31, 0.29]]] },
     thor: { g: [['Ref_Weapon 07', [-2.14, 1.69, 1.83]], ['Ref_Weapon 05', [2.15, 1.68, 1.84]], ['Ref_Weapon 08', [-2.18, 1.17, 1.83]], ['Ref_Weapon 06', [2.21, 1.17, 1.83]]],
             a: [['Ref_Weapon 01', [-1.49, 4.2, -0.91]], ['Ref_Weapon 04', [1.5, 4.31, -0.76]], ['Ref_Weapon 02', [-0.93, 4.52, -0.87]], ['Ref_Weapon 03', [0.86, 4.63, -0.81]]] },
-    odin: { g: [['Ref_Weapon 07', [-2.22, 2.27, 1.4]], ['Ref_Weapon 05', [2.24, 2.47, 1.83]], ['Ref_Weapon 08', [-2.25, 1.76, 1.51]], ['Ref_Weapon 06', [2.27, 1.98, 1.99]]],
-            a: [['Ref_Weapon 01', [-1.14, 5.02, -0.97]], ['Ref_Weapon 04', [1.42, 4.88, -0.75]], ['Ref_Weapon 02', [-0.73, 5.27, -1.4]], ['Ref_Weapon 03', [1.13, 5.13, -1.28]]] },
+    // (The odin's, measured in its attack pose: it usually stands off camera behind the bunker, unposed.)
+    odin: { g: [['Ref_Weapon 07', [-1.97, 1.64, 2.16]], ['Ref_Weapon 05', [2.08, 1.61, 2.26]], ['Ref_Weapon 08', [-1.99, 1.12, 2.18]], ['Ref_Weapon 06', [2.11, 1.09, 2.27]]],
+            a: [['Ref_Weapon 01', [-1.51, 4.73, -0.69]], ['Ref_Weapon 04', [1.5, 4.67, -0.62]], ['Ref_Weapon 02', [-1.24, 5.0, -1.21]], ['Ref_Weapon 03', [1.25, 4.92, -1.17]]] },
   };
 
   class Game {
@@ -918,8 +919,9 @@ window.BS = window.BS || {};
       const h = BS.Terrain.height(m.x, m.y), cs = Math.cos(m.yaw), sn = Math.sin(m.yaw);
       const k = m.def.scale || 1;
       for (const [bone, [rx, ry, rz]] of M) {
-        const w = m.handle.boneWorld(bone);
-        out.push(w || [m.x + (cs * rz + sn * rx) * k, m.y + (sn * rz - cs * rx) * k, h + ry * k]);
+        const w = m.handle.boneWorld(bone), rest = [m.x + (cs * rz + sn * rx) * k, m.y + (sn * rz - cs * rx) * k, h + ry * k];
+        // A skeleton last posed while on screen keeps that pose after it leaves: trust it only near the rest spot.
+        out.push(w && Math.hypot(w[0] - rest[0], w[1] - rest[1], w[2] - rest[2]) < 2.5 * k ? w : rest);
       }
       return out;
     }
@@ -949,8 +951,10 @@ window.BS = window.BS || {};
                   : { trail: null, impact: 'tankImpact', launch: 'tankLaunch', launchScale: 1.6, flash: 3, splash: D.gSplash, scale: 1.6, arc: 3 },
       }[m.kind];
       const pred = e => !!e.def.flying === air;
+      // Thor and odin arm cannons: each volley fires from the other pair of barrels.
+      const first = air ? 0 : (m.volley = (m.volley || 0) + 1) * shots;
       for (let k = 0; k < shots; k++) {
-        const [sx, sy, sz] = mz[k % mz.length], delay = k * 0.08;
+        const [sx, sy, sz] = mz[(first + k) % mz.length], delay = k * 0.08;
         this.fx.play(look.launch, sx, sy, sz, ang, look.launchScale || 1, delay);
         if (look.flash) this.flashes.push({ x: sx, y: sy, z: sz, yaw: ang, delay, life: 0.1, scale: look.flash });
         const p = { kind: 'missile', friendly: true, fx: sx, fy: sy, fz: sz, tx: hx, ty: hy, tz: hz, t: -delay, dur: 0.45 + (look.arc ? 0.15 : 0), arc: look.arc || (air ? 0.8 : 0.4),
