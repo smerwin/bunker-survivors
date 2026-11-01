@@ -34,7 +34,7 @@ window.BS = window.BS || {};
     if (cp) {
       $('resumeLine').textContent = (cp.mode === 'arena' ? '360 Arena' : 'Lane Defence') + ', in the shop after wave ' + cp.wave + ', ' + Math.floor(cp.time / 60) + ' minutes in.';
       $('resumeRun').classList.remove('hidden');
-      $('resumeRun').onclick = () => start(cp.mode, cp);
+      $('resumeRun').onclick = () => resumeRun(cp);
     }
     $('gl').addEventListener('webglcontextlost', () => { if (game) { Checkpoint.save(game); try { sessionStorage.setItem('bs.autoResume', '1'); } catch (e) { /* ignore */ } } location.reload(); });
     $('hyperionBtn').onclick = () => { renderHyperion(); $('hyperion').classList.remove('hidden'); };
@@ -51,7 +51,25 @@ window.BS = window.BS || {};
     requestAnimationFrame(loop);
     const m = new URLSearchParams(location.search).get('mode');
     if (m === 'lane' || m === 'arena') { Checkpoint.clear(); start(m); }
-    else if (cp && (document.wasDiscarded || takeFlag('bs.autoResume'))) ready.then(() => start(cp.mode, cp));
+    else if (cp && (document.wasDiscarded || takeFlag('bs.autoResume'))) ready.then(() => resumeRun(cp));
+  }
+  // Resuming puts a whole army in place at once: load every model it needs first, so nothing pops in half-built.
+  async function resumeRun(cp) {
+    if (game || $('resumeRun').disabled) return;
+    $('resumeRun').disabled = true;
+    const keys = new Set(['bunker', 'scv', 'medivac']);
+    cp.bunker.units.concat(cp.squad).forEach(([t]) => keys.add(t));
+    if (cp.tanks.length) ['siegetank', 'siegetankMorph'].forEach(k => keys.add(k));
+    cp.structures.forEach(([k]) => keys.add(k === 'sam' ? 'missileturret' : 'sensortower'));
+    cp.mechs.forEach(([k]) => keys.add(k));
+    if (cp.bc) keys.add('battlecruiser');
+    if ((cp.reapers || []).length) keys.add('reaper');
+    if ((cp.ghosts || []).length) keys.add('ghost');
+    let done = 0;
+    const line = () => { $('resumeLine').textContent = 'Bringing the army back in: ' + done + ' / ' + keys.size; };
+    line();
+    await Promise.all([...keys].map(k => Promise.resolve().then(() => renderer.ensureModel(k)).catch(() => null).then(() => { done++; line(); })));
+    start(cp.mode, cp);
   }
   function takeFlag(k) { try { const v = sessionStorage.getItem(k); sessionStorage.removeItem(k); return !!v; } catch (e) { return false; } }
 
@@ -184,7 +202,32 @@ window.BS = window.BS || {};
   }
 
   // ---- Input ------------------------------------------------------------------------------------------
+  // iOS Safari ignores user-scalable=no: a quick double tap (buying twice on the armoury, say) zooms the page, and the
+  // game's own pinch handling then leaves no way to zoom back out. Swallow the second tap's zoom (still clicking what
+  // it hit), block the page pinch, and if the page does end up zoomed, reset the viewport.
+  function guardPageZoom() {
+    let lastEnd = 0;
+    document.addEventListener('touchend', ev => {
+      const now = Date.now();
+      if (now - lastEnd < 350 && ev.target.closest && !ev.target.closest('#fx')) {
+        ev.preventDefault();
+        if (ev.target.click) ev.target.click();          // a click bubbles to whatever handles it
+      }
+      lastEnd = now;
+    }, { passive: false });
+    for (const g of ['gesturestart', 'gesturechange']) document.addEventListener(g, ev => ev.preventDefault(), { passive: false });
+    document.addEventListener('dblclick', ev => ev.preventDefault(), { passive: false });
+    const vv = window.visualViewport, meta = document.querySelector('meta[name=viewport]');
+    if (vv && meta) vv.addEventListener('resize', () => {
+      if (vv.scale <= 1.01) return;
+      const c = meta.content;
+      meta.content = c + ', minimum-scale=1';
+      setTimeout(() => { meta.content = c; }, 50);
+    });
+  }
+
   function setupInput() {
+    guardPageZoom();
     const el = $('fx'), pointers = new Map();
     let dragging = false, moved = 0, pinch = 0, downT = 0, lastTap = 0;
     el.addEventListener('pointerdown', ev => {
