@@ -438,7 +438,7 @@ window.BS = window.BS || {};
     scv: { hp: 45, repairRate: 13.8, speed: 3.94, radius: 0.375, cost: 50, max: 4 },
     tank: { hp: 175, armor: 1, dmg: 40, dmgArmored: 30, cd: 2.14, range: 13, minRange: 2, splash: [0.47, 0.78, 1.25], radius: 0.9, cost: 300, costStep: 100, maxLane: 4, maxArena: 4, high: 2 },
     // Air strike: four banshees hover over the lane (and its ledges) and fire missiles at passing zerg.
-    banshee: { hp: 140, count: 4, dmg: 12, shots: 2, cd: 1.1, range: 6, speed: 9, fly: 2.4, hover: 14, cost: 200, cooldown: 32 },
+    banshee: { hp: 140, count: 4, dmg: 16, shots: 2, cd: 0.9, range: 6, speed: 9, fly: 2.4, hover: 14, cost: 200, cooldown: 32 },
     // Troops standing behind the bunker (ejected, or recruited while it is full).
     squad: { max: 48 },
     // Missile turrets: anti-air only, like SC2 (12 x2, range 7).
@@ -477,11 +477,11 @@ window.BS = window.BS || {};
       snipe: { dmg: 170, range: 10, cd: 8, channel: 1.43, minHp: 300 } },
     // Vikings and wraiths fly close air support: long strafing passes up and down the lane (round the arena) in a spread
     // wedge, always flying straight on, firing on whatever lies within cone radians of their nose and staying on that
-    // target while it does. Vehicle Weapons and Maelstrom Rounds add to every shot.
-    vikings: { hp: 135, cost: 300, cooldown: 35, count: 4, dmg: 7, shots: 2, cd: 0.7, range: 9, cone: 1.0, hover: 20, fly: 4.2, speed: 9, patrol: 6.5 },
+    // target while it does. Ship Weapons adds to every shot.
+    vikings: { hp: 135, cost: 300, cooldown: 35, count: 4, dmg: 10, shots: 2, cd: 0.55, range: 9, cone: 1.0, hover: 24, fly: 4.2, speed: 12, patrol: 11 },
     // Three wraiths sweep the lane for a while: burst lasers at ground zerg (gDmg every gCd), Gemini missiles at air.
     // Wraiths cloak for cloak.dur s when fired upon (an overseer still sees them), then not again for cloak.cd s.
-    wraiths: { hp: 120, cost: 350, cooldown: 40, count: 3, gDmg: 5, gCd: 0.3, aDmg: 7, aShots: 2, aCd: 0.8, range: 7, cone: 1.0, hover: 20, fly: 3.4, speed: 9, patrol: 7.5,
+    wraiths: { hp: 120, cost: 350, cooldown: 40, count: 3, gDmg: 8, gCd: 0.25, aDmg: 10, aShots: 2, aCd: 0.7, range: 7, cone: 1.0, hover: 24, fly: 3.4, speed: 12, patrol: 11,
       cloak: { dur: 6, cd: 12 } },
     // A science vessel on station for `stay` seconds, casting from `range`: Irradiate on the densest pack (dps to the
     // target and everything within radius, for dur s), Defensive Matrix on the most battered of the bunker, tanks and

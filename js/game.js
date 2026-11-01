@@ -1110,10 +1110,11 @@ window.BS = window.BS || {};
     // in the arena a ring round the bunker. patrolAt(s) is the point s metres round it and the heading there.
     patrolLoop() {
       if (this._patrol && this._patrol.mode === this.mode) return this._patrol;
-      // Lane: a long racetrack, straight strafing runs up the east of the lane and back down the west with wide turns at
-      // either end. Arena: a wide circle round the bunker.
+      // Lane: a long racetrack, straight strafing runs up the east of the lane (from s = 0) and back down the west, turning
+      // out of sight at either end: past the top of the view to the north, behind the bunker to the south. Arena: a wide
+      // circle round the bunker.
       const arc = (cx, cy, r, a0, a1) => Array.from({ length: 9 }, (_, i) => { const a = a0 + (a1 - a0) * i / 8; return [cx + Math.cos(a) * r, cy + Math.sin(a) * r]; });
-      const pts = this.mode === 'lane' ? [...arc(0, 21, 4.5, 0, Math.PI), ...arc(0, -3, 4.5, Math.PI, Math.PI * 2), [4.5, 21]]
+      const pts = this.mode === 'lane' ? [[4.5, -14], ...arc(0, 34, 4.5, 0, Math.PI), ...arc(0, -14, 4.5, Math.PI, Math.PI * 2)]
         : Array.from({ length: 33 }, (_, i) => [Math.cos(i / 32 * Math.PI * 2) * 11, Math.sin(i / 32 * Math.PI * 2) * 11]);
       const segs = []; let len = 0;
       for (let i = 0; i + 1 < pts.length; i++) { const l = dist(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]); segs.push([pts[i], pts[i + 1], len, l]); len += l; }
@@ -1127,7 +1128,6 @@ window.BS = window.BS || {};
     }
     // A flier on patrol: s metres round the loop, off metres to its side.
     patrolPos(u) { const [x, y, h] = this.patrolAt(u.s); return [x - Math.sin(h) * u.off, y + Math.cos(h) * u.off, h]; }
-    // Wedge slots for flier i of n: spread side to side, the outer ones trailing.
     // Wedge slot for flier i of n: spread side to side, the outer ones trailing; past six, a second V behind the first.
     wedge(i, n, s0) {
       const row = Math.floor(i / 6), m = Math.min(6, n - row * 6), c = i % 6 - (m - 1) / 2;
