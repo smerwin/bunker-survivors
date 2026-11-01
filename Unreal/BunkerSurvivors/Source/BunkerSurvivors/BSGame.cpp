@@ -2797,6 +2797,25 @@ bool ABSGame::UpdateKerrigan(const TSharedPtr<FBSEnemy>& EP, const FBSTarget& T,
 		}
 		E.LeapCd = 1;
 	}
+	// Making no headway on foot for 3 s (wedged on a cliff or against the mesa): Leaping Strike to a clear spot beside the
+	// bunker, on her side of it.
+	if (E.bAttacking || FVector2D::Distance(FVector2D(E.X, E.Y), E.StuckAt) > 0.6f) { E.StuckAt = FVector2D(E.X, E.Y); E.Stuck = 0; }
+	else if ((E.Stuck += Dt) > 3)
+	{
+		const float A0 = FMath::Atan2(E.Y, E.X), Off = BSDefs::BunkerHalfSize + E.Radius + 0.4f;
+		for (const float Da : { 0.f, 0.5f, -0.5f, 1.f, -1.f, 1.6f, -1.6f })
+		{
+			const float Tx = FMath::Cos(A0 + Da) * Off, Ty = FMath::Sin(A0 + Da) * Off;
+			if (!BSTerrain::Walkable(Tx, Ty)) continue;
+			E.Stuck = 0; E.Route.Reset(); E.bPerched = false;
+			E.LeapT = 0; E.LeapFrom = FVector2D(E.X, E.Y); E.LeapTo = FVector2D(Tx, Ty);
+			E.Yaw = FMath::Atan2(Ty - E.Y, Tx - E.X); E.Anim = TEXT("leap");
+			if (E.Actor) E.Actor->Play(TEXT("jump"), true);
+			PlayFx(TEXT("psionicShift"), FVector(E.X, E.Y, E.Z + 1), E.Yaw);
+			PlaySound(TEXT("kerriganLeap"), 0.8f);
+			return true;
+		}
+	}
 	return false;
 }
 
@@ -4610,6 +4629,12 @@ void ABSGame::UpdateEnemies(float Dt)
 				Gx = E.Route[0].X; Gy = E.Route[0].Y;
 				if (Dist2(Gx, Gy, E.X, E.Y) < 0.81f) { E.Route.RemoveAt(0); if (!E.Route.Num() && E.bHighRoute) E.bPerched = true; }
 			}
+			else if (D->Boss == TEXT("kerrigan") && Mode == EBSMode::Lane && !BSTerrain::ClearPath(E.X, E.Y, Gx, Gy))
+			{
+				// Off her route (after a leap) with a cliff in the way: down the flow towards the bunker.
+				FVector2D Flow;
+				if (BSTerrain::HomeFlow(E.X, E.Y, Flow)) { Gx = E.X + Flow.X; Gy = E.Y + Flow.Y; }
+			}
 			const float Gd = FMath::Max(0.001f, FMath::Sqrt(Dist2(Gx, Gy, E.X, E.Y)));
 			// Zerg on creep move faster (ground units only).
 			E.bOnCreep = !D->bFlying && OnCreep(E.X, E.Y);
@@ -4617,7 +4642,8 @@ void ABSGame::UpdateEnemies(float Dt)
 			const float Nx = (Gx - E.X) / Gd, Ny = (Gy - E.Y) / Gd;
 			const float Mx = Nx * Sp * Dt + E.Sx * 0.8f, My = Ny * Sp * Dt + E.Sy * 0.8f;
 			// Cliffs: ground units steer around them; flyers ignore them, and winged zerglings hop straight over.
-			if (D->bFlying || D->bHops) { E.X += Mx; E.Y += My; } else StepGround(E.X, E.Y, Mx, My);
+			// (Kerrigan drops down cliff faces as infantry do, so a leap onto the high ground never strands her there.)
+			if (D->bFlying || D->bHops) { E.X += Mx; E.Y += My; } else StepGround(E.X, E.Y, Mx, My, D->Boss == TEXT("kerrigan"));
 			if (Mode == EBSMode::Lane) E.X = FMath::Clamp(E.X, -21.f, 21.f);
 			if (D->bHops)
 			{

@@ -217,6 +217,7 @@ struct FBSEnemy
 	ABSModelActor* Actor = nullptr;
 	// Finale bosses: ability cooldowns, Kerrigan's leap (LeapT < 0: on the ground) and her pending Apocalypse blast.
 	float LeapCd = 0, ApocCd = 0, BroodCd = 0, LeapT = -1, BlastAt = -1;
+	float Stuck = 0; FVector2D StuckAt = FVector2D(1e6f, 1e6f);      // Kerrigan making no headway on foot (UpdateKerrigan)
 	FVector2D LeapFrom = FVector2D::ZeroVector, LeapTo = FVector2D::ZeroVector, Blast = FVector2D::ZeroVector;
 	int32 BlastFx = 0;
 	// Kerrigan's kit (ABSGame::KerriganKit): its cooldowns, her swings so far and her Fury; any zerg: under her Wild
