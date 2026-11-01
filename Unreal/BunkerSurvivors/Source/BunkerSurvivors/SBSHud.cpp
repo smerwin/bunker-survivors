@@ -717,7 +717,8 @@ static const TArray<FBSArmItem>& ArmItems()
 			const FString Id = Tc.Id, Ic = Tc.Icon;
 			FBSArmItem I; I.Id = Id; I.Name = Tc.Name; I.bTech = true;
 			I.Short = Id == TEXT("goliath") ? TEXT("Walker: autocannons, AA missiles") : Id == TEXT("nuke") ? TEXT("Ghost-called nuke on the densest pack")
-				: Id == TEXT("vikings") ? TEXT("Fighter wing hunts air") : Id == TEXT("wraiths") ? TEXT("Lasers on the swarm, missiles at air")
+				: Id == TEXT("vikings") ? TEXT("Fighter wing hunts air") : Id == TEXT("reaper") ? TEXT("Hit-and-run pistols, KD8 charges, hops cliffs")
+				: Id == TEXT("ghost") ? TEXT("Cloaked sniper; each makes nukes cheaper") : Id == TEXT("wraiths") ? TEXT("Lasers on the swarm, missiles at air")
 				: Id == TEXT("vessel") ? TEXT("Irradiate and Defensive Matrix") : Id == TEXT("thor") ? TEXT("Heavy walker holds the lane")
 				: Id == TEXT("bc") ? TEXT("Hovers overhead: lasers, missiles, Yamato") : TEXT("The Odin");
 			I.Icon = [Ic](ABSGame*) { return Ic; };

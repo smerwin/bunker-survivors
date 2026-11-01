@@ -87,7 +87,16 @@ void ABSModelActor::SetHitFlash(float Amount)
 {
 	if (FMath::IsNearlyEqual(Amount, HitFlash, 0.01f)) return;
 	HitFlash = Amount;
-	for (UMaterialInstanceDynamic* M : Mids) if (M) M->SetScalarParameterValue(TEXT("HitFlash"), Amount);
+	for (UMaterialInstanceDynamic* M : Mids) if (M) M->SetScalarParameterValue(TEXT("HitFlash"), FMath::Max(Amount, TintGlow));
+}
+
+void ABSModelActor::SetTint(const FLinearColor& C)
+{
+	const bool bWhite = C.Equals(FLinearColor::White, 0.01f);
+	TintGlow = bWhite ? 0.f : 0.45f;
+	const FLinearColor Col = bWhite ? FLinearColor(1.0f, 0.85f, 0.7f) : C;     // HitFlashColor's default (import_sc2.py)
+	for (UMaterialInstanceDynamic* M : Mids)
+		if (M) { M->SetVectorParameterValue(TEXT("HitFlashColor"), Col); M->SetScalarParameterValue(TEXT("HitFlash"), FMath::Max(HitFlash, TintGlow)); }
 }
 
 void ABSModelActor::SetScalarParam(FName Name, float Value)
@@ -142,6 +151,7 @@ void ABSModelActor::Activate()
 	SetActorHiddenInGame(false);
 	Mesh->SetComponentTickEnabled(true);
 	SetActorScale3D(FVector(1));
+	SetTint(FLinearColor::White);
 	SetHitFlash(0.f);
 	SetScalarParam(TEXT("EmissiveStrength"), 2.f);
 	SetScalarParam(TEXT("DepthPush"), 0.f);

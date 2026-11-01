@@ -107,6 +107,10 @@ window.BS = window.BS || {};
   // Extra models: zerg strain/skin variants for variety, and projectile meshes (streamed on demand).
   const E = 'assets/effects/';
   BS.EXTRA_MODELS = {
+  // Special infantry from the armoury (BS.TERRAN.reaper / ghost), and the overseer that hunts cloaked ghosts.
+  reaper: U + 'terran/reaper/reaper.m3', reaperDeath: U + 'terran/reaperdeath/reaperdeath_00.m3',
+  ghost: U + 'terran/ghost/ghost.m3', ghostDeath: U + 'terran/ghostdeath/ghostdeath.m3',
+  overseer: U + 'zerg/overseer/overseer.m3', overseerDeath: U + 'zerg/overseerdeath/overseerdeath.m3',
   zerglingWinged: U + 'zerg/zerglingupgrade/zerglingupgrade.m3',
   zerglingRaptor: U + 'zerg/zerglingex1a/zerglingex1a.m3', zerglingRaptorDeath: U + 'zerg/zerglingex1adeath/zerglingex1adeath.m3',
   zerglingSwarmling: U + 'zerg/zerglingex1b/zerglingex1b.m3', zerglingSwarmlingDeath: U + 'zerg/zerglingex1bdeath/zerglingex1bdeath.m3',
@@ -159,6 +163,13 @@ window.BS = window.BS || {};
   // The wraith's laser hit (its beam is an M3 ribbon, which neither build reads, so the games draw the beam themselves).
   laserImpact: [E + 'terran/wraithlasermissileimpact/wraithlasermissileimpact.m3'],
   wraithMissile: [E + 'terran/wraithmissile/wraithmissile.m3', '^stand', true], wraithImpact: [E + 'terran/wraithmissileimpact/wraithmissileimpact.m3'],
+  reaperLaunch: [E + 'terran/reaperweaponlaunch/reaperweaponlaunch.m3'], reaperImpact: [E + 'terran/reaperweaponimpact/reaperweaponimpact.m3'],
+  reaperJump: [E + 'terran/reaperjumplaunch/reaperjumplaunch.m3'], reaperLand: [E + 'terran/reaperjumplanddown/reaperjumplanddown.m3'],
+  // The KD8 charge: SC2's own has no effect model of its own, so it borrows the co-op Hellion grenade.
+  kd8Missile: [E + 'terran/mirahorner_hellion_basicgrenade_coop_missile/mirahorner_hellion_basicgrenade_coop_missile.m3', null, true],
+  kd8Impact: [E + 'terran/mirahorner_hellion_basicgrenade_coop_impact/mirahorner_hellion_basicgrenade_coop_impact.m3'],
+  ghostLaunch: [E + 'terran/ghostweaponlaunch/ghostweaponlaunch.m3'], ghostImpact: [E + 'terran/ghostweaponimpact/ghostweaponimpact.m3'],
+  snipeImpact: [E + 'terran/ghostsnipehitsprite/ghostsnipehitsprite.m3'],
   samMissile: [E + 'terran/missileturretmissile/missileturretmissile.m3', null, true], samImpact: [E + 'terran/missileturretmissileimpact/missileturretmissileimpact.m3'],
   // Late-game zerg.
   guardianMissile: [E + 'zerg/primalguardianmissile/primalguardianmissile.m3', null, true], guardianImpact: [E + 'zerg/primalguardianmissileimpact/primalguardianmissileimpact.m3'],
@@ -198,6 +209,13 @@ window.BS = window.BS || {};
   const S = 'assets/sounds/';
   BS.SOUNDS = {
     marineFire: [0, 1, 2, 3, 4, 5, 6, 7, 8].map(i => S + 'terran/marine/marine_attacklaunch' + i + '.wav'),
+    reaperFire: [0, 1, 2, 3, 4, 5].map(i => S + 'terran/reaper/reaper_attacklaunch' + i + '.wav'),
+    kd8Throw: [0, 1, 2].map(i => S + 'terran/reaper/reaper_d8chargeattacklaunch' + i + '.wav'),
+    kd8Blast: [1, 2, 3, 4].map(i => S + 'reaper_kd8chargeexplosion0' + i + '.wav'),
+    ghostFire: [0, 1, 2].map(i => S + 'terran/ghost/ghost_attacklaunch' + i + '.wav'),
+    snipeFire: [S + 'terran/ghost/ghost_snipeattacklaunch.wav'],
+    snipeHit: [0, 1, 2, 3, 4].map(i => S + 'terran/ghost/ghost_snipeimpact' + i + '.wav'),
+    cloakOn: [S + 'terran/ghost/ghost_cloakon.wav'], cloakOff: [S + 'terran/ghost/ghost_cloakoff.wav'],
     stim: [0, 1, 2, 3].map(i => S + 'terran/marine/marine_stimpack' + i + '.wav'),
     firebatFire: [S + 'terran/firebat/firebat_attacklaunch0.wav'],
     marauderFire: [S + 'terran/marauder/marauder_attacklaunch0.wav'],
@@ -298,6 +316,8 @@ window.BS = window.BS || {};
     // Overlords from wave 3 (BS.OVERLORDS): watchers hang over the field glaring at the bunker (they never attack or hold up
     // the end of a wave); drop overlords unload zerg up the lane, worse ones as the waves go on. No overlord counts toward
     // the alive cap.
+    // Hunts cloaked ghosts (BS.OVERSEERS): flies to the nearest one and hangs over it, so the swarm can see and kill it.
+    overseer: { name: 'Overseer', model: 'overseer', death: 'overseerDeath', hp: 200, armor: 1, dmg: 0, cd: 1, range: 0, speed: 4.2, radius: 1.0, armored: true, flying: true, fly: 5.0, detector: true, uncounted: true, bounty: 25, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2 },
     overlordWatch: { name: 'Overlord', model: 'overlordCreep', death: 'overlordCreepDeath', hp: 200, armor: 1, dmg: 0, cd: 1, range: 0, speed: 1.6, radius: 1.0, armored: true, flying: true, fly: 5.4, watcher: true, ambient: true, uncounted: true, bounty: 15, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2 },
     overlordDrop: { name: 'Overlord', model: 'overlord', death: 'overlordDeath', hp: 250, armor: 1, dmg: 0, cd: 1, range: 0, speed: 2.6, radius: 1.0, armored: true, flying: true, fly: 4.2, transport: true, front: true, uncounted: true, bounty: 15, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2 },
     nydus: { name: 'Nydus Worm', model: 'nydus', death: null, hp: 450, armor: 1, dmg: 0, cd: 1, range: 0, speed: 0, radius: 1.3, armored: true, nydus: true, bounty: 60, budget: 0, unlock: 999, weight: 0, hitFrac: 0, height: 3 },
@@ -322,6 +342,10 @@ window.BS = window.BS || {};
   // Overlords from wave from: watchers (watch[0] a wave, plus watch[1] every 10 waves, at most max), each staying life
   // seconds; and drops (chance per wave, plus chanceGrow a wave up to chanceMax; a second one from second) unloading up
   // the lane n zerg picked from the latest of the cargo tiers the wave has reached.
+  // Overseers: from wave from, while there are ghosts on the field, base + perGhost per ghost a wave. A ghost within
+  // detect metres of one is revealed.
+  BS.OVERSEERS = { from: 18, base: 1, perGhost: 0.5, detect: 7 };
+
   BS.OVERLORDS = { from: 3, watch: [0.7, 0.4], max: 3, life: [25, 45], chance: 0.35, chanceGrow: 0.02, chanceMax: 0.8, second: 15,
     cargo: [
       { from: 3, n: 4, units: ['zergling'] },
@@ -416,9 +440,21 @@ window.BS = window.BS || {};
     // A ghost calls a tactical nuke on the densest pack well away from the bunker.
     nuke: { cost: 400, cooldown: 45, dmg: 300, radius: 7, delay: 3, minDist: 9 },
     // Four viking fighters patrol overhead hunting air for a while.
-    vikings: { hp: 135, cost: 300, cooldown: 35, count: 4, dmg: 10, shots: 2, cd: 1.4, range: 9, hover: 20, fly: 4.2, speed: 9 },
+    // Reapers: fast, light, hit-and-run pistoleers that hop cliffs both ways; every kd8.cd s a KD8 charge on a pack (damage
+    // and a knock back). They regenerate out of combat, and below fallBack of their hit points pull back home to do so.
+    // Up to max at a time.
+    reaper: { hp: 60, cost: 100, max: 6, dmg: 4, dmgLight: 5, shots: 2, cd: 1.1, range: 5, speed: 5.25, hunt: 11, kite: 4, regen: 3, regenAfter: 4, fallBack: 0.4, scale: 1,
+      kd8: { cd: 12, dmg: 10, radius: 1.6, knock: 2.2, range: 5, minPack: 3 } },
+    // Ghosts: cloaked snipers on the high ground (lane: over the ramp tops, then the cliffs over the stem). C-10 rifle at
+    // anything climbing to them, Steady Targeting on anything big and armoured. Overseers reveal them. Each ghost on the
+    // field takes nukeCut off the tactical nuke's price and reload (up to 4).
+    ghost: { hp: 100, cost: 200, max: 4, dmg: 10, dmgLight: 10, cd: 1.07, range: 6, speed: 3.94, nukeCut: 0.15,
+      snipe: { dmg: 170, range: 10, cd: 8, channel: 1.43, minHp: 300 } },
+    vikings: { hp: 135, cost: 300, cooldown: 35, count: 4, dmg: 10, shots: 2, cd: 1.4, range: 9, hover: 20, fly: 4.2, speed: 9, patrol: 4.5 },
     // Three wraiths sweep the lane for a while: burst lasers at ground zerg (gDmg every gCd), Gemini missiles at air.
-    wraiths: { hp: 120, cost: 350, cooldown: 40, count: 3, gDmg: 9, gCd: 0.75, aDmg: 10, aShots: 2, aCd: 1.5, range: 7, hover: 20, fly: 3.4, speed: 9 },
+    // Wraiths cloak for cloak.dur s when fired upon (an overseer still sees them), then not again for cloak.cd s.
+    wraiths: { hp: 120, cost: 350, cooldown: 40, count: 3, gDmg: 9, gCd: 0.75, aDmg: 10, aShots: 2, aCd: 1.5, range: 7, hover: 20, fly: 3.4, speed: 9, patrol: 5.5,
+      cloak: { dur: 6, cd: 12 } },
     // A science vessel on station for `stay` seconds, casting from `range`: Irradiate on the densest pack (dps to the
     // target and everything within radius, for dur s), Defensive Matrix on the most battered of the bunker, tanks and
     // mechs (absorbs hp damage for dur s).
@@ -448,6 +484,8 @@ window.BS = window.BS || {};
     { id: 'goliath', name: 'Goliath', icon: 'btn-unit-terran-goliath', banner: 'GOLIATHS' },
     { id: 'nuke', name: 'Tactical Nuke', icon: 'btn-ability-terran-nuclearstrike', banner: 'TACTICAL NUKE' },
     { id: 'vikings', name: 'Viking Wing', icon: 'btn-unit-terran-vikingfighter', banner: 'VIKING WING' },
+    { id: 'reaper', name: 'Reaper', icon: 'btn-unit-terran-reaper', banner: 'REAPERS' },
+    { id: 'ghost', name: 'Ghost', icon: 'btn-unit-terran-ghost', banner: 'GHOSTS' },
     { id: 'wraiths', name: 'Wraith Squadron', icon: 'btn-unit-terran-wraith', banner: 'WRAITH SQUADRON' },
     { id: 'vessel', name: 'Science Vessel', icon: 'btn-unit-terran-sciencevessel', banner: 'SCIENCE VESSEL' },
     { id: 'thor', name: 'Thor', icon: 'btn-unit-terran-thor', banner: 'THOR' },
@@ -504,6 +542,8 @@ window.BS = window.BS || {};
     { id: 'siegerange', name: 'Siege Optics', icon: 'btn-upgrade-swann-vehiclerangeincrease', rarity: 'epic', cost: 300, req: 'tank', desc: 'Siege tanks +2 range', unlock: { buys: ['vehicle', 3] } },
     { id: 'goliath', tech: 'goliath', name: 'Factory', icon: 'btn-building-terran-factory', rarity: 'epic', cost: 300, req: 'vehicle2', desc: 'Goliaths in the armoury', unlock: { buys: ['vehicle', 5] } },
     { id: 'nuke', tech: 'nuke', name: 'Ghost Academy', icon: 'btn-building-terran-ghostacademy', rarity: 'epic', cost: 350, req: 'weapons3', desc: 'Tactical nukes in the armoury', unlock: { buys: ['weapons', 10] } },
+    { id: 'reaper', tech: 'reaper', name: 'Reaper Squad', icon: 'btn-unit-terran-reaper', rarity: 'rare', cost: 200, req: 'wave8', desc: 'Reapers in the armoury: hit-and-run pistols, KD8 charges', unlock: { best: 10 } },
+    { id: 'ghost', tech: 'ghost', name: 'Ghost Program', icon: 'btn-unit-terran-ghost', rarity: 'epic', cost: 400, req: 'nuke', desc: 'Cloaked ghosts on the high ground; each makes nukes cheaper', unlock: { buys: ['nuke', 1] } },
     { id: 'thor', tech: 'thor', name: 'Armory', icon: 'btn-building-terran-armory', rarity: 'epic', cost: 450, req: 'plating3', desc: 'Thors in the armoury', unlock: { buys: ['plating', 6] } },
     { id: 'bc', tech: 'bc', name: 'Fusion Core', icon: 'btn-building-terran-fusioncore', rarity: 'legendary', cost: 800, req: 'wave20', desc: 'The battlecruiser in the armoury', unlock: { best: 25 } },
     { id: 'odin', tech: 'odin', name: 'The Odin', icon: 'btn-unit-terran-odin', rarity: 'legendary', cost: 1200, req: 'bc', desc: 'The Odin in the armoury', unlock: { buys: ['bc', 1] } },

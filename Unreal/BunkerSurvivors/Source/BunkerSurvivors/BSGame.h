@@ -75,6 +75,23 @@ struct FBSMech
 
 struct FBSEnemy;
 
+// Armoury special infantry. A reaper fights hit and run from Home (Cd: pistols, Kd: next KD8 charge, Kite: backing off
+// until then, JumpUntil: mid jump-pack hop over a cliff). A ghost holds Home, its post on the high ground (Side: the
+// ledge route up to it in the lane), walking Route there; cloaked unless bDetected, it channels Steady Targeting on
+// Channel until ChannelUntil (bChannel), and holds still until Hold after a rifle shot.
+struct FBSSpecial
+{
+	bool bGhost = false, bDead = false, bDetected = false, bChannel = false;
+	FVector2D Home = FVector2D::ZeroVector;
+	int32 Side = 0;
+	float X = 0, Y = 0, Yaw = PI / 2, Hp = 0, MaxHp = 0, Cd = 0, Kd = 0, Kite = 0, HitAt = -99, JumpUntil = 0, Flash = 0, Radius = 0.375f;
+	float SnipeCd = 3, ChannelUntil = 0, Hold = 0;
+	TWeakPtr<FBSEnemy> Channel;
+	TArray<FVector2D> Route;
+	FString Anim;
+	ABSModelActor* Actor = nullptr;
+};
+
 // Battlecruiser on station, with laser batteries on six hardpoints (each keeps its own target).
 struct FBSBcTurret { FName Bone; TWeakPtr<FBSEnemy> Target; };
 struct FBSBattlecruiser
@@ -117,20 +134,23 @@ struct FBSStructure
 
 // Air strike banshee, viking, wraith or science vessel: flies in to a post, fights from there, then leaves (or is shot
 // down). Wraiths keep a second cooldown (Cd: lasers, Cd2: missiles); the vessel casts (Cd: Irradiate, Cd2: Defensive
-// Matrix) facing Aim until CastUntil, and goes Home when it leaves.
+// Matrix) facing Aim until CastUntil, and goes Home when it leaves. Vikings and wraiths range round the patrol loop (S metres
+// along it, Off to its side; see ABSGame::PatrolAt); a wraith fired upon cloaks until CloakUntil, then not again until
+// CloakReady.
 struct FBSBanshee
 {
 	enum EState : uint8 { In, Hover, Out, Retreat } State = In;
 	FVector2D Post = FVector2D::ZeroVector, Home = FVector2D::ZeroVector;
 	float X = 0, Y = 0, Z = 0, Yaw = 0, Cd = 0, Cd2 = 0, T = 0, StandAt = 0, CastUntil = 0, Aim = 0, HitAt = 0;
 	float Hp = BSDefs::BansheeHp, MaxHp = BSDefs::BansheeHp, AcidUntil = 0, Flash = 0;
+	float S = 0, Off = 0, CloakUntil = 0, CloakReady = 0;
 	bool bDead = false, bArrived = false;
 	ABSModelActor* Actor = nullptr;
 };
 
 struct FBSTarget
 {
-	enum EKind : uint8 { None, Bunker, Tank, Scv, Trooper, Structure, Mech, Bc, Air } Kind = None;
+	enum EKind : uint8 { None, Bunker, Tank, Scv, Trooper, Structure, Mech, Bc, Air, Reaper, Ghost } Kind = None;
 	TWeakPtr<FBSTank> TankRef;
 	TWeakPtr<FBSScv> ScvRef;
 	TWeakPtr<FBSTrooper> TrooperRef;
@@ -138,6 +158,7 @@ struct FBSTarget
 	TWeakPtr<FBSMech> MechRef;
 	TWeakPtr<FBSBattlecruiser> BcRef;        // Terran air, hunted by scourge and devourers
 	TWeakPtr<FBSBanshee> AirRef;
+	TWeakPtr<FBSSpecial> SpecialRef;          // reapers and ghosts (a ghost only while an overseer reveals it)
 	enum EAir : uint8 { Banshee, Viking, Wraith, Vessel } AirType = Banshee;
 	float X = 0, Y = 0, Radius = 0, Z = -1;   // Z: height of an air target (-1 = on the ground)
 	bool bStructure = false, bArmored = false, bLight = false;
@@ -153,10 +174,11 @@ struct FBSTarget
 		case Mech: { auto P = MechRef.Pin(); return P && !P->bDead; }
 		case Bc: { auto P = BcRef.Pin(); return P && !P->bDead; }
 		case Air: { auto P = AirRef.Pin(); return P && !P->bDead; }
+		case Reaper: case Ghost: { auto P = SpecialRef.Pin(); return P && !P->bDead; }
 		default: return false;
 		}
 	}
-	bool Same(const FBSTarget& O) const { return Kind == O.Kind && TankRef == O.TankRef && ScvRef == O.ScvRef && TrooperRef == O.TrooperRef && StructureRef == O.StructureRef && MechRef == O.MechRef && BcRef == O.BcRef && AirRef == O.AirRef; }
+	bool Same(const FBSTarget& O) const { return Kind == O.Kind && TankRef == O.TankRef && ScvRef == O.ScvRef && TrooperRef == O.TrooperRef && StructureRef == O.StructureRef && MechRef == O.MechRef && BcRef == O.BcRef && AirRef == O.AirRef && SpecialRef == O.SpecialRef; }
 };
 
 // A Defensive Matrix shell on screen, over the defender it guards.
@@ -194,7 +216,7 @@ struct FBSEnemy
 	bool Alive() const { return Hp > 0; }
 };
 
-enum class EBSProjKind : uint8 { Shell, Grenade, Rocket, Acid, Spine, Bullet, Glaive, Spines, Brood, Yamato, Sam, Missile, Guardian, Spores, BroodSpell, Bile };
+enum class EBSProjKind : uint8 { Shell, Grenade, Rocket, Acid, Spine, Bullet, Glaive, Spines, Brood, Yamato, Sam, Missile, Guardian, Spores, BroodSpell, Bile, Kd8 };
 
 struct FBSProjectile
 {
@@ -325,6 +347,10 @@ public:
 	TSharedPtr<FBSBanshee> Vessel;
 	TArray<TSharedPtr<FBSEnemy>> Irradiated;
 	TArray<FBSMatrix> Matrices;
+	TArray<TSharedPtr<FBSSpecial>> Reapers, Ghosts;     // armoury special infantry (UpdateReapers, UpdateGhosts)
+	// Each ghost on the field takes GhostNukeCut off the tactical nuke's price and reload (up to four).
+	float NukeCut() const { return 1 - BSDefs::GhostNukeCut * FMath::Min(4, Ghosts.Num()); }
+	int32 NukeCost() const { return FMath::RoundToInt(BSDefs::NukeCost * NukeCut()); }
 	int32 TechCount(const FString& Kind) const { int32 N = 0; for (auto& M : Mechs) N += M->Def->Key == Kind; return N; }
 	// For the armoury: Cost, and whether it can be bought now; Tag is "MAX" or the seconds left when it cannot.
 	bool TechReady(const FString& Id, int32& OutCost, FString& OutTag) const;
@@ -457,6 +483,26 @@ private:
 	FBSShield* ShieldOf(const FBSTarget& T);
 	bool LaunchNuke();
 	void UpdateNukes(float Dt);
+	// The fighters' patrol loop (lane: up the stem, round the west arm, across the top and back down the east arm; arena: a
+	// ring round the bunker). PatrolAt(S): the point S metres round it (X, Y) and the heading there (Z).
+	void BuildPatrol();
+	FVector PatrolAt(float S) const;
+	FVector PatrolPos(const FBSBanshee& U) const;     // a flier on patrol: S metres round the loop, Off to its side
+	TArray<FVector2D> PatrolPts; TArray<float> PatrolS0; float PatrolLen = 0;
+	// Reapers and ghosts.
+	bool AddReaper();
+	void UpdateReapers(float Dt);
+	void ReaperFire(FBSSpecial& R, const TSharedPtr<FBSEnemy>& E);
+	bool ThrowKD8(FBSSpecial& R);
+	void Kd8Blast(float X, float Y);
+	TArray<FVector> GhostPosts() const;              // X, Y and the ledge side (Z)
+	TArray<FVector2D> GhostRoute(const FBSSpecial& G) const;
+	bool AddGhost();
+	void CloakTint(FBSSpecial& G);
+	void UpdateGhosts(float Dt);
+	void KillSpecial(const TSharedPtr<FBSSpecial>& O);
+	bool DetectedAt(float X, float Y) const;          // is anything cloaked at (X, Y) seen by an overseer?
+	void UpdateOverseer(const TSharedPtr<FBSEnemy>& E, float Dt);
 	TArray<FBSNuke> Nukes;
 	TMap<FString, TArray<FVector2D>> MechSlots;
 	void BuildTerrain();                      // the lane chokepoint's ground mesh (BSTerrain heights)
@@ -530,7 +576,7 @@ private:
 	void BuildAirTargets();
 	void KillAir(const FBSTarget& T);
 	struct FBSSwarm { float X = 0, Y = 0, R = 3, Until = 0; int32 Fx = 0; };
-	struct FBSAbduct { TWeakPtr<FBSTrooper> Trooper; TWeakPtr<FBSMech> Mech; float Fx = 0, Fy = 0, Tx = 0, Ty = 0, T = 0; };
+	struct FBSAbduct { TWeakPtr<FBSTrooper> Trooper; TWeakPtr<FBSMech> Mech; TWeakPtr<FBSSpecial> Special; float Fx = 0, Fy = 0, Tx = 0, Ty = 0, T = 0; };
 	TArray<FBSSwarm> Swarms;                  // defiler dark swarm clouds
 	TArray<FBSAbduct> Abductions;             // viper pulls in progress
 	TArray<FBSTarget> AirTargets;

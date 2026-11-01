@@ -175,6 +175,13 @@ namespace
 			D.bTransport = true; D.bFront = true; D.bUncounted = true;
 			D.Bounty = 15; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0; D.SoundDeath = TEXT("overlordDeath"); D.Height = 2;
 		}
+		// Hunts cloaked ghosts (BSOverseers): flies to the nearest one and hangs over it, so the swarm can see and kill it.
+		{
+			FBSZergDef& D = Add(TEXT("overseer"), TEXT("Overseer"), TEXT("overseer"), TEXT("overseerDeath"), TEXT("btn-unit-zerg-overseer"));
+			D.Hp = 200; D.Armor = 1; D.Dmg = 0; D.Cd = 1; D.Range = 0; D.Speed = 4.2f; D.Radius = 1.0f; D.bArmored = true; D.bFlying = true; D.Fly = 5.0f;
+			D.bDetector = true; D.bUncounted = true;
+			D.Bounty = 25; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0; D.SoundDeath = TEXT("overlordDeath"); D.Height = 2;
+		}
 		// The finale (see ABSGame::StartFinale): Kerrigan casts Leaping Strike and Apocalypse, is untouchable and makes for
 		// the bunker; the leviathan bombards and spawns mutalisks.
 		{
@@ -268,6 +275,8 @@ namespace
 			{ TEXT("goliath"), TEXT("Goliath"), TEXT("btn-unit-terran-goliath"), TEXT("GOLIATHS") },
 			{ TEXT("nuke"), TEXT("Tactical Nuke"), TEXT("btn-ability-terran-nuclearstrike"), TEXT("TACTICAL NUKE") },
 			{ TEXT("vikings"), TEXT("Viking Wing"), TEXT("btn-unit-terran-vikingfighter"), TEXT("VIKING WING") },
+			{ TEXT("reaper"), TEXT("Reaper"), TEXT("btn-unit-terran-reaper"), TEXT("REAPERS") },
+			{ TEXT("ghost"), TEXT("Ghost"), TEXT("btn-unit-terran-ghost"), TEXT("GHOSTS") },
 			{ TEXT("wraiths"), TEXT("Wraith Squadron"), TEXT("btn-unit-terran-wraith"), TEXT("WRAITH SQUADRON") },
 			{ TEXT("vessel"), TEXT("Science Vessel"), TEXT("btn-unit-terran-sciencevessel"), TEXT("SCIENCE VESSEL") },
 			{ TEXT("thor"), TEXT("Thor"), TEXT("btn-unit-terran-thor"), TEXT("THOR") },
@@ -319,10 +328,12 @@ namespace
 		{ FBSCardDef& C = Card(TEXT("siegerange"), TEXT("Siege Optics"), TEXT("btn-upgrade-swann-vehiclerangeincrease"), TEXT("epic"), { 300 }, TEXT("Siege tanks +2 range"), TEXT("tank")); C.UnlockBuys = TEXT("vehicle"); C.UnlockBuysN = 3; }
 		{ FBSCardDef& C = Card(TEXT("goliath"), TEXT("Factory"), TEXT("btn-building-terran-factory"), TEXT("epic"), { 300 }, TEXT("Goliaths in the armoury"), TEXT("vehicle2")); C.UnlockBuys = TEXT("vehicle"); C.UnlockBuysN = 5; }
 		{ FBSCardDef& C = Card(TEXT("nuke"), TEXT("Ghost Academy"), TEXT("btn-building-terran-ghostacademy"), TEXT("epic"), { 350 }, TEXT("Tactical nukes in the armoury"), TEXT("weapons3")); C.UnlockBuys = TEXT("weapons"); C.UnlockBuysN = 10; }
+		Card(TEXT("reaper"), TEXT("Reaper Squad"), TEXT("btn-unit-terran-reaper"), TEXT("rare"), { 200 }, TEXT("Reapers in the armoury: hit-and-run pistols, KD8 charges"), TEXT("wave8")).UnlockBest = 10;
+		{ FBSCardDef& C = Card(TEXT("ghost"), TEXT("Ghost Program"), TEXT("btn-unit-terran-ghost"), TEXT("epic"), { 400 }, TEXT("Cloaked ghosts on the high ground; each makes nukes cheaper"), TEXT("nuke")); C.UnlockBuys = TEXT("nuke"); C.UnlockBuysN = 1; }
 		{ FBSCardDef& C = Card(TEXT("thor"), TEXT("Armory"), TEXT("btn-building-terran-armory"), TEXT("epic"), { 450 }, TEXT("Thors in the armoury"), TEXT("plating3")); C.UnlockBuys = TEXT("plating"); C.UnlockBuysN = 6; }
 		Card(TEXT("bc"), TEXT("Fusion Core"), TEXT("btn-building-terran-fusioncore"), TEXT("legendary"), { 800 }, TEXT("The battlecruiser in the armoury"), TEXT("wave20")).UnlockBest = 25;
 		{ FBSCardDef& C = Card(TEXT("odin"), TEXT("The Odin"), TEXT("btn-unit-terran-odin"), TEXT("legendary"), { 1200 }, TEXT("The Odin in the armoury"), TEXT("bc")); C.UnlockBuys = TEXT("bc"); C.UnlockBuysN = 1; }
-		for (FBSCardDef& C : Out) if (C.Id == TEXT("vikings") || C.Id == TEXT("wraiths") || C.Id == TEXT("vessel") || C.Id == TEXT("goliath") || C.Id == TEXT("nuke") || C.Id == TEXT("thor") || C.Id == TEXT("bc") || C.Id == TEXT("odin")) C.Tech = C.Id;
+		for (FBSCardDef& C : Out) if (C.Id == TEXT("vikings") || C.Id == TEXT("wraiths") || C.Id == TEXT("vessel") || C.Id == TEXT("goliath") || C.Id == TEXT("nuke") || C.Id == TEXT("reaper") || C.Id == TEXT("ghost") || C.Id == TEXT("thor") || C.Id == TEXT("bc") || C.Id == TEXT("odin")) C.Tech = C.Id;
 		return Out;
 	}
 

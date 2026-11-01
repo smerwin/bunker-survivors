@@ -36,6 +36,8 @@ struct FBSZergDef
 	// Overlords (BSOverlords): watchers glare from a vantage point (ambient: they never hold up the end of a wave); front
 	// drops unload zerg up the lane. No overlord counts toward the alive cap (bUncounted).
 	bool bWatcher = false, bFront = false, bAmbient = false, bUncounted = false;
+	// Overseer (BSOverseers): hunts cloaked ghosts and reveals them (and cloaked wraiths) within BSOverseers::Detect.
+	bool bDetector = false;
 	// Finale bosses: "kerrigan" (Leaping Strike, Apocalypse) or "leviathan" (bombards, spawns mutalisks). Bosses
 	// keep their own hit points (no late-wave toughening) and always spawn, whatever the alive cap.
 	FString Boss;
@@ -64,6 +66,14 @@ namespace BSOverlords
 		{ 22, 4, { TEXT("roach"), TEXT("hydralisk"), TEXT("infested") } },
 		{ 30, 1, { TEXT("ultralisk") } },
 	};
+}
+
+// Overseers: from wave From, while there are ghosts on the field, Base + PerGhost per ghost a wave. A ghost within
+// Detect metres of one is revealed. Port of BS.OVERSEERS in units.js.
+namespace BSOverseers
+{
+	constexpr int32 From = 18, Base = 1;
+	constexpr float PerGhost = 0.5f, Detect = 7;
 }
 
 namespace BSCreep
@@ -187,11 +197,27 @@ namespace BSDefs
 	// A ghost calls a tactical nuke on the densest pack well away from the bunker.
 	constexpr float NukeDmg = 300, NukeRadius = 7, NukeDelay = 3, NukeMinDist = 9, NukeCooldown = 45;
 	constexpr int32 NukeCost = 400;
-	// Four viking fighters patrol overhead hunting air.
-	constexpr float VikingDmg = 10, VikingCd = 1.4f, VikingRange = 9, VikingHover = 20, VikingFly = 4.2f, VikingSpeed = 9, VikingCooldown = 35;
+	// Reapers: fast, light, hit-and-run pistoleers that hop cliffs both ways; every Kd8Cd s a KD8 charge on a pack (damage
+	// and a knock back). They regenerate out of combat, and below ReaperFallBack of their hit points pull back home to do
+	// so. Up to ReaperMax at a time.
+	constexpr float ReaperHp = 60, ReaperDmg = 4, ReaperDmgLight = 5, ReaperCd = 1.1f, ReaperRange = 5, ReaperSpeed = 5.25f, ReaperHunt = 11, ReaperKite = 4;
+	constexpr float ReaperRegen = 3, ReaperRegenAfter = 4, ReaperFallBack = 0.4f;
+	constexpr int32 ReaperCost = 100, ReaperMax = 6, ReaperShots = 2;
+	constexpr float Kd8Cd = 12, Kd8Dmg = 10, Kd8Radius = 1.6f, Kd8Knock = 2.2f, Kd8Range = 5;
+	constexpr int32 Kd8MinPack = 3;
+	// Ghosts: cloaked snipers on the high ground (lane: over the ramp tops, then the cliffs over the stem). C-10 rifle at
+	// anything climbing to them, Steady Targeting (Snipe*) on anything big and armoured. Overseers reveal them. Each ghost on
+	// the field takes GhostNukeCut off the tactical nuke's price and reload (up to 4).
+	constexpr float GhostHp = 100, GhostDmg = 10, GhostDmgLight = 10, GhostCd = 1.07f, GhostRange = 6, GhostSpeed = 3.94f, GhostNukeCut = 0.15f;
+	constexpr int32 GhostCost = 200, GhostMax = 4;
+	constexpr float SnipeDmg = 170, SnipeRange = 10, SnipeCd = 8, SnipeChannel = 1.43f, SnipeMinHp = 300;
+	// Four viking fighters patrol overhead hunting air (VikingPatrol: metres a second round the patrol loop).
+	constexpr float VikingDmg = 10, VikingCd = 1.4f, VikingRange = 9, VikingHover = 20, VikingFly = 4.2f, VikingSpeed = 9, VikingCooldown = 35, VikingPatrol = 4.5f;
 	constexpr int32 VikingShots = 2, VikingCost = 300, VikingCount = 4;
 	// Three wraiths sweep the lane for a while: burst lasers at ground zerg (GDmg every GCd), Gemini missiles at air.
+	// Wraiths cloak for WraithCloakDur s when fired upon (an overseer still sees them), then not again for WraithCloakCd s.
 	constexpr float WraithHp = 120, WraithGDmg = 9, WraithGCd = 0.75f, WraithADmg = 10, WraithACd = 1.5f, WraithRange = 7, WraithHover = 20, WraithFly = 3.4f, WraithSpeed = 9, WraithCooldown = 40;
+	constexpr float WraithPatrol = 5.5f, WraithCloakDur = 6, WraithCloakCd = 12;
 	constexpr int32 WraithCost = 350, WraithCount = 3, WraithAShots = 2;
 	// A science vessel on station for VesselStay seconds, casting from VesselRange: Irradiate on the densest pack (dps to
 	// the target and everything within radius, for its duration), Defensive Matrix on the most battered of the bunker,

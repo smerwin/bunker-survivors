@@ -53,6 +53,7 @@ window.BS = window.BS || {};
       this.techUnlocked = {}; this.techCd = { nuke: 0, vikings: 0, wraiths: 0, vessel: 0 };
       this.swarms = []; this.abductions = []; this.airTgs = [];      // late-game zerg: dark swarm clouds, viper pulls
       this.mechs = []; this.bc = null; this.vikingWing = []; this.nukes = [];
+      this.reapers = []; this.ghosts = [];                         // armoury special infantry (updateReapers, updateGhosts)
       this.wraiths = []; this.vessel = null; this.irradiated = []; this.matrices = [];   // Starport support (and the vessel's spells)
       this.pods = []; this.finale = null;                          // the last push: zerg drop pods, the boss fight
       this.evac = null; this.won = false;                          // the Hyperion's arrival (BS.EVAC)
@@ -712,7 +713,8 @@ window.BS = window.BS || {};
     // For the armoury: '' (buyable), 'max' (all out) or 'wait' (cooling down), plus the price.
     techCount(kind) { return this.mechs.filter(m => m.kind === kind).length; }
     techState(id) {
-      if (id === 'nuke' || id === 'vikings' || id === 'wraiths' || id === 'vessel') return { state: this.techCd[id] > 0 ? 'wait' : '', cost: T()[id].cost, wait: this.techCd[id] };
+      if (id === 'nuke' || id === 'vikings' || id === 'wraiths' || id === 'vessel') return { state: this.techCd[id] > 0 ? 'wait' : '', cost: id === 'nuke' ? this.nukeCost() : T()[id].cost, wait: this.techCd[id] };
+      if (id === 'reaper' || id === 'ghost') return { state: this[id + 's'].length >= T()[id].max ? 'max' : '', cost: T()[id].cost };
       if (id === 'bc') return { state: this.bc ? 'max' : '', cost: T().bc.cost };
       return { state: this.techCount(id) >= T()[id].max ? 'max' : '', cost: T()[id].cost };
     }
@@ -722,6 +724,8 @@ window.BS = window.BS || {};
       if (id === 'vikings') return this.callVikings();
       if (id === 'wraiths') return this.callWraiths();
       if (id === 'vessel') return this.callVessel();
+      if (id === 'reaper') return this.addReaper();
+      if (id === 'ghost') return this.addGhost();
       if (id === 'bc') return this.callBattlecruiser();
       return this.addMech(id);
     }
@@ -747,7 +751,8 @@ window.BS = window.BS || {};
         squad: alive(this.squad).map(m => [m.type, m.hp]).concat(this.walkers.map(w => [w.type, this.trooperHp(w.type)])),
         tanks: alive(this.tanks).map(t => t.hp), scvs: alive(this.scvs).length,
         structures: alive(this.structures).filter(s => s.kind !== 'cc').map(s => [s.kind, s.hp]),
-        mechs: alive(this.mechs).map(m => [m.kind, m.hp]), bc: this.bc && !this.bc.dead ? this.bc.hp : 0 };
+        mechs: alive(this.mechs).map(m => [m.kind, m.hp]), bc: this.bc && !this.bc.dead ? this.bc.hp : 0,
+        reapers: alive(this.reapers).map(r => r.hp), ghosts: alive(this.ghosts).map(g => g.hp) };
     }
     restore(s) {
       Object.assign(this, { time: s.time, wave: s.wave, wavesCleared: s.wavesCleared, kills: s.kills, score: s.score, income: s.income,
@@ -763,18 +768,23 @@ window.BS = window.BS || {};
       for (const [kind] of s.structures) this.buildStructure(kind);
       for (const [kind] of s.mechs) this.addMech(kind);
       if (s.bc) this.callBattlecruiser();
+      (s.reapers || []).forEach(() => this.addReaper());
+      (s.ghosts || []).forEach(() => this.addGhost());
       this.tgs = this.targets(); this.airTgs = [];
       const play = BS.audio.play; BS.audio.play = () => {};
       for (let i = 0; i < 25 * 60; i++) {
         for (const st of this.structures) if (st.state === 'building') st.t = 1e3;
         this.updateTanks(this.step); this.updateScvs(this.step); this.updateSquad(this.step); this.updateStructures(this.step);
         this.updateMechs(this.step); this.updateBc(this.step); this.updateReinforcements(this.step);
+        this.updateReapers(this.step); this.updateGhosts(this.step);
       }
       BS.audio.play = play;
       s.tanks.forEach((hp, i) => { if (this.tanks[i]) this.tanks[i].hp = hp; });
       s.structures.forEach(([, hp], i) => { if (this.structures[i]) this.structures[i].hp = hp; });
       s.mechs.forEach(([, hp], i) => { if (this.mechs[i]) this.mechs[i].hp = hp; });
       if (this.bc) this.bc.hp = s.bc;
+      (s.reapers || []).forEach((hp, i) => { if (this.reapers[i]) this.reapers[i].hp = hp; });
+      (s.ghosts || []).forEach((hp, i) => { if (this.ghosts[i]) this.ghosts[i].hp = hp; });
       this.minerals = s.minerals; this.shake = 0; this.toasts = [];
       this.shop = s.shop;
       this.waveBanner = { text: 'RUN RESUMED  //  WAVE ' + this.wave + ' CLEARED', t: this.time };
@@ -1038,6 +1048,24 @@ window.BS = window.BS || {};
     }
 
     // Viking wing: four fighters take up posts high over the lane and shoot down air for a while.
+    // The fighters' patrol: in the lane a loop up the stem, round the west arm, across the top and back down the east arm;
+    // in the arena a ring round the bunker. patrolAt(s) is the point s metres round it and the heading there.
+    patrolLoop() {
+      if (this._patrol && this._patrol.mode === this.mode) return this._patrol;
+      const pts = this.mode === 'lane' ? [[0, 2.5], [-2, 9], [-8, 17], [-3, 22], [3, 22], [8, 17], [2, 9], [0, 2.5]]
+        : Array.from({ length: 25 }, (_, i) => [Math.cos(i / 24 * Math.PI * 2) * 9, Math.sin(i / 24 * Math.PI * 2) * 9]);
+      const segs = []; let len = 0;
+      for (let i = 0; i + 1 < pts.length; i++) { const l = dist(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]); segs.push([pts[i], pts[i + 1], len, l]); len += l; }
+      return (this._patrol = { mode: this.mode, segs, len });
+    }
+    patrolAt(s) {
+      const P = this.patrolLoop();
+      s = ((s % P.len) + P.len) % P.len;
+      for (const [a, b, s0, l] of P.segs) if (s <= s0 + l) { const k = (s - s0) / l; return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, Math.atan2(b[1] - a[1], b[0] - a[0])]; }
+      const [a, b] = P.segs[0]; return [a[0], a[1], Math.atan2(b[1] - a[1], b[0] - a[0])];
+    }
+    // A flier on patrol: s metres round the loop, off metres to its side.
+    patrolPos(u) { const [x, y, h] = this.patrolAt(u.s); return [x - Math.sin(h) * u.off, y + Math.cos(h) * u.off, h]; }
     callVikings() {
       const D = T().vikings;
       if (this.techCd.vikings > 0) return this.toast('Vikings are rearming');
@@ -1045,7 +1073,7 @@ window.BS = window.BS || {};
       this.minerals -= D.cost; this.techCd.vikings = D.cooldown;
       for (let i = 0; i < D.count; i++) {
         const post = this.strikePosts[i % this.strikePosts.length];
-        const v = { post: [post[0] * 1.2, post[1] + 2], x: post[0] * 0.6, y: (this.mode === 'lane' ? -18 : -34) - i * 1.2, z: D.fly + 1.5, yaw: Math.PI / 2, cd: 0.4 + i * 0.2, state: 'in', t: 0, hp: D.hp, maxHp: D.hp };
+        const v = { s: i * 2.2, off: i % 2 ? 0.9 : -0.9, post: [post[0] * 1.2, post[1] + 2], x: post[0] * 0.6, y: (this.mode === 'lane' ? -18 : -34) - i * 1.2, z: D.fly + 1.5, yaw: Math.PI / 2, cd: 0.4 + i * 0.2, state: 'in', t: 0, hp: D.hp, maxHp: D.hp };
         v.handle = this.r.spawn('vikingfighter', v.x, v.y, v.z, v.yaw).setTeam(1);
         v.handle.play(/^walk|^fly|^stand/i, true);
         this.vikingWing.push(v);
@@ -1059,14 +1087,16 @@ window.BS = window.BS || {};
         const v = this.vikingWing[i];
         v.t += dt;
         if (v.state === 'in') {
-          const dx = v.post[0] - v.x, dy = v.post[1] - v.y, dz = D.fly - v.z, dd = Math.hypot(dx, dy, dz);
-          if (dd > 0.2) { const s = Math.min(dd, D.speed * dt) / dd; v.x += dx * s; v.y += dy * s; v.z += dz * s; v.yaw = Math.atan2(dy, dx); }
+          const [px, py] = this.patrolPos(v), dx = px - v.x, dy = py - v.y, dz = D.fly - v.z, dd = Math.hypot(dx, dy, dz);
+          if (dd > 0.3) { const s = Math.min(dd, D.speed * dt) / dd; v.x += dx * s; v.y += dy * s; v.z += dz * s; v.yaw = Math.atan2(dy, dx); }
           else { v.state = 'patrol'; v.t = 0; }
         } else if (v.state === 'patrol') {
-          // A lazy figure-of-eight round the post, turning to engage.
-          v.x = v.post[0] + Math.sin(v.t * 0.8 + i) * 1.2; v.y = v.post[1] + Math.sin(v.t * 1.6 + i) * 0.6; v.z = D.fly + 0.2 * Math.sin(v.t * 2 + i);
+          // Ranging round the patrol loop, turning to engage whatever flies within reach.
+          v.s += D.patrol * dt;
+          const [px, py, h] = this.patrolPos(v);
+          v.x += (px - v.x) * Math.min(1, 4 * dt); v.y += (py - v.y) * Math.min(1, 4 * dt); v.z = D.fly + 0.2 * Math.sin(v.t * 2 + i);
           const list = this.enemiesInRange(v.x, v.y, D.range, e => e.def.flying);
-          if (list.length) v.yaw += clamp(angDelta(v.yaw, Math.atan2(list[0].y - v.y, list[0].x - v.x)), -4 * dt, 4 * dt);
+          v.yaw += clamp(angDelta(v.yaw, list.length ? Math.atan2(list[0].y - v.y, list[0].x - v.x) : h), -4 * dt, 4 * dt);
           v.cd -= dt * (v.acidUntil > this.time ? 0.7 : 1);
           if (v.cd <= 0 && list.length) {
             v.cd = D.cd;
@@ -1098,7 +1128,7 @@ window.BS = window.BS || {};
       this.minerals -= D.cost; this.techCd.wraiths = D.cooldown;
       for (let i = 0; i < D.count; i++) {
         const post = this.strikePosts[(i + 1) % this.strikePosts.length];
-        const w = { post: [post[0] * 1.3, post[1] + 4], x: post[0] * 0.6, y: (this.mode === 'lane' ? -18 : -34) - i * 1.2, z: D.fly + 1.5, yaw: Math.PI / 2,
+        const w = { s: 30 + i * 2.6, off: (i - 1) * 1.0, cloakUntil: 0, cloakReady: 0, post: [post[0] * 1.3, post[1] + 4], x: post[0] * 0.6, y: (this.mode === 'lane' ? -18 : -34) - i * 1.2, z: D.fly + 1.5, yaw: Math.PI / 2,
           gCd: 0.3 + i * 0.2, aCd: 0.5 + i * 0.2, state: 'in', t: 0, hp: D.hp, maxHp: D.hp, armor: 0, flash: 0 };
         w.handle = this.r.spawn('wraith', w.x, w.y, w.z, w.yaw).setTeam(1);
         w.handle.play(/^walk$|^stand$/i, true);
@@ -1112,15 +1142,17 @@ window.BS = window.BS || {};
       for (let i = this.wraiths.length - 1; i >= 0; i--) {
         const w = this.wraiths[i];
         w.t += dt;
+        // Cloaked when fired upon (damageDefender); it fades back in when the cloak runs out.
+        if (w.cloakUntil && this.time > w.cloakUntil) { w.cloakUntil = 0; w.handle.setTint(1, 1, 1); BS.audio.play('cloakOff', { vol: 0.4 }); }
         if (w.state === 'in') {
-          const dx = w.post[0] - w.x, dy = w.post[1] - w.y, dz = D.fly - w.z, dd = Math.hypot(dx, dy, dz);
-          if (dd > 0.2) { const s = Math.min(dd, D.speed * dt) / dd; w.x += dx * s; w.y += dy * s; w.z += dz * s; w.yaw = Math.atan2(dy, dx); }
+          const [px, py] = this.patrolPos(w), dx = px - w.x, dy = py - w.y, dz = D.fly - w.z, dd = Math.hypot(dx, dy, dz);
+          if (dd > 0.3) { const s = Math.min(dd, D.speed * dt) / dd; w.x += dx * s; w.y += dy * s; w.z += dz * s; w.yaw = Math.atan2(dy, dx); }
           else { w.state = 'patrol'; w.t = 0; }
         } else if (w.state === 'patrol') {
-          // A wide figure-of-eight round the post, banking into the turns; it turns to face whatever it shoots.
-          const nx = w.post[0] + Math.sin(w.t * 0.9 + i * 2) * 2.6, ny = w.post[1] + Math.sin(w.t * 1.8 + i * 2) * 1.3;
-          const heading = Math.atan2(ny - w.y, nx - w.x);
-          w.x = nx; w.y = ny; w.z = D.fly + 0.25 * Math.sin(w.t * 2 + i);
+          // Ranging round the patrol loop, banking into the turns; it turns to face whatever it shoots.
+          w.s += D.patrol * dt;
+          const [px, py, heading] = this.patrolPos(w);
+          w.x += (px - w.x) * Math.min(1, 4 * dt); w.y += (py - w.y) * Math.min(1, 4 * dt); w.z = D.fly + 0.25 * Math.sin(w.t * 2 + i);
           const near = this.enemiesInRange(w.x, w.y, D.range), ground = near.find(e => !e.def.flying), air = near.find(e => e.def.flying);
           const aim = ground || air;
           w.yaw += clamp(angDelta(w.yaw, aim ? Math.atan2(aim.y - w.y, aim.x - w.x) : heading), -4 * dt, 4 * dt);
@@ -1269,7 +1301,8 @@ window.BS = window.BS || {};
     launchNuke() {
       const D = T().nuke;
       if (this.techCd.nuke > 0) return this.toast('Nuke silo reloading');
-      if (this.minerals < D.cost) return this.toast('Not enough minerals');
+      const cost = this.nukeCost();
+      if (this.minerals < cost) return this.toast('Not enough minerals');
       let best = null, bestN = 0;
       for (const e of this.enemies) {
         if (e.hp <= 0 || Math.hypot(e.x, e.y) < D.minDist) continue;
@@ -1277,7 +1310,7 @@ window.BS = window.BS || {};
         if (n > bestN) { bestN = n; best = e; }
       }
       if (!best) return this.toast('No target clear of the bunker');
-      this.minerals -= D.cost; this.techCd.nuke = D.cooldown;
+      this.minerals -= cost; this.techCd.nuke = D.cooldown * this.nukeCut();
       const n = { x: best.x, y: best.y, t: 0 };
       n.fall = this.fx.play('nukeFalling', n.x, n.y, 14, 0, 1.4);
       this.nukes.push(n);
@@ -1454,6 +1487,9 @@ window.BS = window.BS || {};
         const chance = Math.min(O.chanceMax, O.chance + O.chanceGrow * (w - O.from));
         for (let i = 0; i < (w >= O.second ? 2 : 1); i++) if (Math.random() < chance) this.spawnQueue.push({ t: rnd(2, spread), type: 'overlordDrop', ang: 0 });
       }
+      // Overseers come looking for cloaked ghosts.
+      const OS = BS.OVERSEERS, ng = this.ghosts.filter(g => !g.dead).length;
+      if (ng && w >= OS.from) for (let i = 0; i < OS.base + Math.floor(OS.perGhost * ng); i++) this.spawnQueue.push({ t: rnd(1, spread * 0.6), type: 'overseer', ang: 0 });
       this.spawnQueue.sort((a, b) => a.t - b.t);
       this.spawnTimer = 0; this.waveTimer = this.waveLen;
       this.minerals += 20 + 8 * w;
@@ -1623,7 +1659,7 @@ window.BS = window.BS || {};
       if (at) { x = at[0] + rnd(-0.6, 0.6); y = at[1] + rnd(-0.6, 0.6); }
       else if (d.transport) { x = lane ? side * 23 : Math.cos(ar) * 27; y = lane ? rnd(-3, 6) : Math.sin(ar) * 27; }        // overlords come in from a flank
       else if (d.nydus) { const r = rnd(5.5, 8); x = lane ? side * rnd(2.5, 4.5) : Math.cos(ar) * r; y = lane ? rnd(-8.5, -7) : Math.sin(ar) * r; }   // behind our lines
-      else if (d.creeper || d.watcher) { x = lane ? side * rnd(10, 18) : Math.cos(ar) * 29; y = lane ? rnd(30, 34) : Math.sin(ar) * 29; }   // creep overlords and watchers drift in from afar
+      else if (d.creeper || d.watcher || d.detector) { x = lane ? side * rnd(10, 18) : Math.cos(ar) * 29; y = lane ? rnd(30, 34) : Math.sin(ar) * 29; }   // creep overlords and watchers drift in from afar
       else if (this.mode === 'lane') {
         if ((ang === 1 || ang === 2) && !d.hops) {        // winged zerglings always come from the north, over the mesa
           // Somewhere down the arm (see terrain.js), not on the cliffs beside it.
@@ -1670,6 +1706,7 @@ window.BS = window.BS || {};
           e.drop = lane ? [rnd(-2.5, 2.5), rnd(6, 14)] : [Math.cos(a2) * rnd(7, 11), Math.sin(a2) * rnd(7, 11)];
         }
       }
+      if (d.detector) e.exit = [x, y];
       if (d.watcher) {           // a vantage point out of the bunker's reach: over the plateaus and mesa, or the arena's rim
         const a3 = Math.random() * Math.PI * 2;
         e.state = 'in'; e.t = 0; e.exit = [x, y]; e.stay = rnd(BS.OVERLORDS.life[0], BS.OVERLORDS.life[1]);
@@ -1768,7 +1805,7 @@ window.BS = window.BS || {};
     // Spawn Broodling lands. Troopers and SCVs die outright, as in Brood War; tanks and mechs are too big to hatch in one go
     // here and take BROOD_SPELL_DMG (armour ignored) instead. Two broodlings burst out of the victim and fight for 8 s.
     broodlingHit(tg) {
-      const o = tg.obj, x = o.x, y = o.y, gz = BS.Terrain.height(x, y), kill = tg.kind === 'trooper' || tg.kind === 'scv';
+      const o = tg.obj, x = o.x, y = o.y, gz = BS.Terrain.height(x, y), kill = tg.kind === 'trooper' || tg.kind === 'scv' || tg.kind === 'reaper' || tg.kind === 'ghost';
       this.fx.play('broodSpellImpact', x, y, gz + 0.3, 0);
       BS.audio.play('broodSpell', { vol: 0.8 }); BS.audio.play('broodlingBirth', { vol: 0.5 });
       this.damageDefender(tg, kill ? o.hp + 100 : BROOD_SPELL_DMG + (o.armor || 0));
@@ -1881,6 +1918,222 @@ window.BS = window.BS || {};
       BS.audio.play('tumorPlant', { vol: 0.6, gap: 0.3 });
       return true;
     }
+    // ---- Reapers and ghosts (armoury special infantry) ----------------------------------------------------------
+    // Each ghost on the field takes ghost.nukeCut off the tactical nuke's price and reload (up to four).
+    nukeCut() { return 1 - T().ghost.nukeCut * Math.min(4, this.ghosts.filter(g => !g.dead).length); }
+    nukeCost() { return Math.round(T().nuke.cost * this.nukeCut()); }
+    killSpecial(o, kind) {
+      o.dead = true;
+      const list = kind === 'reaper' ? this.reapers : this.ghosts;
+      list.splice(list.indexOf(o), 1);
+      o.handle.release();
+      this.corpse(kind + 'Death', o.x, o.y, BS.Terrain.height(o.x, o.y), o.yaw, 3.5, 1, true);
+      this.toast((kind === 'reaper' ? 'Reaper' : 'Ghost') + ' down');
+      this.floater(o.x, o.y, BS.Terrain.height(o.x, o.y) + 2.5, 'KIA', '#ff6a5a');
+    }
+    // Reapers drop in behind the bunker and take a spot just ahead of it.
+    addReaper() {
+      const D = T().reaper, lane = this.mode === 'lane';
+      if (this.reapers.length >= D.max) return this.toast('No room for more');
+      if (this.minerals < D.cost) return this.toast('Not enough minerals');
+      this.minerals -= D.cost;
+      const homes = Array.from({ length: D.max }, (_, i) => lane ? [-2.5 + i, 2.2] : [Math.cos(i * Math.PI / 3) * 3.6, Math.sin(i * Math.PI / 3) * 3.6]);
+      const home = homes.find(h => !this.reapers.some(r => r.home[0] === h[0] && r.home[1] === h[1])) || homes[0];
+      const r = { home, x: home[0], y: lane ? -9 : -12, yaw: Math.PI / 2, hp: D.hp, maxHp: D.hp, cd: 0, kd: rnd(2, 5), kite: 0, hitAt: -99, anim: '', jumpUntil: 0, dead: false, flash: 0, radius: 0.375 };
+      r.handle = this.r.spawn('reaper', r.x, r.y, BS.Terrain.height(r.x, r.y), r.yaw).setTeam(1);
+      this.reapers.push(r);
+      this.toast('Reaper inbound');
+      return true;
+    }
+    // Hit and run: harass the nearest ground zerg near our lines from pistol range, back off from anything that closes
+    // while reloading, lob a KD8 charge into a pack now and then, and jump-pack straight over the cliffs either way.
+    updateReapers(dt) {
+      const D = T().reaper, lane = this.mode === 'lane';
+      for (const r of this.reapers.slice()) {
+        if (r.dead) continue;
+        r.cd -= dt; r.kd -= dt;
+        if (this.time - r.hitAt > D.regenAfter) r.hp = Math.min(r.maxHp, r.hp + D.regen * dt);   // combat drugs
+        let tg = null, td = 1e9, nearE = null, near = 1e9;
+        for (const e of this.enemies) {
+          if (e.hp <= 0 || e.def.flying || e.def.untouchable || e.burrowed) continue;
+          const dd = dist(r.x, r.y, e.x, e.y);
+          if (dd < near) { near = dd; nearE = e; }
+          if (dd < td && Math.hypot(e.x, e.y) < D.hunt) { td = dd; tg = e; }
+        }
+        if (tg && r.cd <= 0 && td - tg.radius <= D.range) { this.reaperFire(r, tg); r.cd = D.cd; r.kite = this.time + 0.7; }
+        if (r.kd <= 0) r.kd = this.throwKD8(r) ? D.kd8.cd : 0.5;
+        let gx = r.home[0], gy = r.home[1];
+        const hurt = r.hp < r.maxHp * D.fallBack;
+        if (hurt && !(nearE && near < D.kite)) { /* pull back home to heal */ }
+        else if (nearE && near < D.kite && (hurt || r.cd > 0.2 || r.kite > this.time)) {     // run while reloading
+          const a = Math.atan2(r.y - nearE.y, r.x - nearE.x); gx = r.x + Math.cos(a) * 2; gy = r.y + Math.sin(a) * 2;
+        } else if (hurt) { /* home */ }
+        else if (tg && td - tg.radius > D.range * 0.9) {                       // close to pistol range
+          const a = Math.atan2(r.y - tg.y, r.x - tg.x), rr = D.range * 0.85 + tg.radius; gx = tg.x + Math.cos(a) * rr; gy = tg.y + Math.sin(a) * rr;
+        } else if (tg) { gx = r.x; gy = r.y; }
+        if (lane) { gx = clamp(gx, -18, 18); gy = clamp(gy, -10, 28); }
+        const dx = gx - r.x, dy = gy - r.y, dd = Math.hypot(dx, dy), z0 = BS.Terrain.height(r.x, r.y);
+        if (dd > 0.1) {
+          const s = Math.min(dd, D.speed * dt);
+          r.x += dx / dd * s; r.y += dy / dd * s;
+          if (r.kite <= this.time || !tg) r.yaw = Math.atan2(dy, dx);
+          const z1 = BS.Terrain.height(r.x, r.y);
+          if (BS.Terrain.slope(r.x, r.y) > 1.05 && Math.abs(z1 - z0) > 1e-3) {     // over a cliff face: the jump pack
+            if (r.anim !== 'jump') { this.fx.play('reaperJump', r.x, r.y, z0, r.yaw); r.anim = 'jump'; r.handle.play(/^jump$/i, true); }
+            r.jumpUntil = this.time + 0.2;
+          } else if (r.anim === 'jump' && this.time > r.jumpUntil) { this.fx.play('reaperLand', r.x, r.y, z1, r.yaw); r.anim = ''; }
+          if (r.anim !== 'walk' && r.anim !== 'jump') { r.anim = 'walk'; r.handle.play(/^walk/i, true, 1.6); }
+        } else if (r.anim === 'walk' || (r.anim === 'jump' && this.time > r.jumpUntil) || (r.anim === 'attack' && r.cd < D.cd - 0.5)) { r.anim = 'stand'; r.handle.play(/^stand$/i, true); }
+        r.handle.setPos(r.x, r.y, BS.Terrain.height(r.x, r.y)).setYaw(r.yaw);
+      }
+    }
+    reaperFire(r, e) {
+      const D = T().reaper, dmg = D.dmg + (e.def.light ? D.dmgLight : 0) + this.up.weapons + (this.cards.capacitors || 0);
+      r.yaw = Math.atan2(e.y - r.y, e.x - r.x);
+      const z = BS.Terrain.height(r.x, r.y), hz = e.z + e.def.height * 0.5, cs = Math.cos(r.yaw), sn = Math.sin(r.yaw);
+      for (let k = 0; k < D.shots; k++) {           // a pistol in each hand
+        const side = k ? -0.22 : 0.22;
+        this.fx.play('reaperLaunch', r.x + cs * 0.4 - sn * side, r.y + sn * 0.4 + cs * side, z + 0.75, r.yaw, 1, k * 0.12);
+        this.fx.play('reaperImpact', e.x + rnd(-0.2, 0.2), e.y + rnd(-0.2, 0.2), hz, r.yaw + Math.PI, 1, k * 0.12 + 0.03);
+        this.hurtEnemy(e, dmg);
+      }
+      if (r.anim !== 'walk' && r.anim !== 'jump') { r.anim = 'attack'; r.handle.play(/^attack/i, false, 1.4); }
+      BS.audio.play('reaperFire', { vol: 0.35, gap: 0.1 });
+    }
+    // KD8 charge: lobbed into the thickest pack in reach; damage and a knock back for everything in the blast.
+    throwKD8(r) {
+      const K = T().reaper.kd8;
+      let best = null, bn = 0;
+      for (const e of this.enemiesInRange(r.x, r.y, K.range, e => !e.def.flying && !e.def.untouchable)) {
+        const n = this.enemiesInRange(e.x, e.y, K.radius, v => !v.def.flying).length;
+        if (n > bn) { bn = n; best = e; }
+      }
+      if (!best || bn < K.minPack) return false;
+      const p = { kind: 'kd8', friendly: true, fx: r.x, fy: r.y, fz: BS.Terrain.height(r.x, r.y) + 1, tx: best.x, ty: best.y, tz: best.z + 0.2, t: 0, dur: 0.45, arc: 1.2, impact: 'kd8Impact' };
+      this.projectileModel(p, null, 'kd8Missile');
+      this.projectiles.push(p);
+      r.yaw = Math.atan2(best.y - r.y, best.x - r.x); r.anim = 'attack'; r.handle.play(/^spell/i, false);
+      BS.audio.play('kd8Throw', { vol: 0.5 });
+      return true;
+    }
+    kd8Blast(x, y) {
+      const K = T().reaper.kd8;
+      for (const e of this.enemiesInRange(x, y, K.radius, e => !e.def.flying)) {
+        this.hurtEnemy(e, K.dmg, true);
+        if (e.hp <= 0 || e.def.boss) continue;
+        const a = Math.atan2(e.y - y, e.x - x);
+        for (let k = 0; k < 8; k++) this.stepGround(e, Math.cos(a) * K.knock / 8, Math.sin(a) * K.knock / 8);
+      }
+      BS.audio.play('kd8Blast', { vol: 0.6 });
+    }
+    // Ghost posts: in the lane over the two ramp tops, then on the cliffs over the stem; in the arena on the diagonals.
+    ghostPosts() {
+      return this.mode === 'lane' ? [[11.8, 9.4, 1], [-11.8, 9.4, -1], [6.6, 5.6, 1], [-6.6, 5.6, -1]]
+        : [45, 225, 135, 315].map(a => [Math.cos(a * Math.PI / 180) * 7, Math.sin(a * Math.PI / 180) * 7, 0]);
+    }
+    ghostRoute(g) {
+      const post = [g.post[0], g.post[1]];
+      return this.mode === 'lane' && !BS.Terrain.onHigh(g.x, g.y) ? BS.Terrain.ledgeRoute(g.post[2]).concat([post]) : [post];
+    }
+    addGhost() {
+      const D = T().ghost, lane = this.mode === 'lane';
+      if (this.ghosts.length >= D.max) return this.toast('No room for more');
+      if (this.minerals < D.cost) return this.toast('Not enough minerals');
+      const post = this.ghostPosts().find(p => !this.ghosts.some(g => g.post[0] === p[0] && g.post[1] === p[1]));
+      if (!post) return this.toast('No room for more');
+      this.minerals -= D.cost;
+      const g = { post, x: lane ? post[2] * 3 : post[0] * 0.3, y: lane ? -9 : post[1] * 0.3 - 4, yaw: Math.PI / 2, hp: D.hp, maxHp: D.hp, cd: 0, snipeCd: 3, channel: null, hold: 0,
+        detected: false, anim: '', dead: false, flash: 0, radius: 0.375, hitAt: -99 };
+      g.route = this.ghostRoute(g);
+      g.handle = this.r.spawn('ghost', g.x, g.y, BS.Terrain.height(g.x, g.y), g.yaw).setTeam(1);
+      this.cloakTint(g);
+      this.ghosts.push(g);
+      BS.audio.play('cloakOn', { vol: 0.5 });
+      this.toast('Ghost inbound, cloaked');
+      return true;
+    }
+    cloakTint(g) { if (g.detected) g.handle.setTint(1, 1, 1); else g.handle.setTint(0.3, 0.45, 0.7); }
+    // Ghosts: cloaked unless an overseer is near. Steady Targeting (a long aim, then one huge shot) on the biggest
+    // armoured zerg in reach; otherwise the C-10 rifle on anything climbing to the high ground first.
+    updateGhosts(dt) {
+      const D = T().ghost, S = D.snipe, OS = BS.OVERSEERS;
+      for (const g of this.ghosts.slice()) {
+        if (g.dead) continue;
+        const det = this.enemies.some(e => e.def.detector && e.hp > 0 && dist(e.x, e.y, g.x, g.y) < OS.detect);
+        if (det !== g.detected) {
+          g.detected = det; this.cloakTint(g);
+          if (det) { this.toast('Ghost detected!'); this.floater(g.x, g.y, BS.Terrain.height(g.x, g.y) + 2.5, 'DETECTED', '#ff6a5a'); }
+          BS.audio.play(det ? 'cloakOff' : 'cloakOn', { vol: 0.5 });
+        }
+        g.cd -= dt; g.snipeCd -= dt;
+        const z = BS.Terrain.height(g.x, g.y), range = D.range + (BS.Terrain.onHigh(g.x, g.y) ? 1 : 0);
+        let busy = false;
+        if (g.channel) {
+          const e = g.channel.target;
+          if (e.hp <= 0 || dist(g.x, g.y, e.x, e.y) > S.range + 2) g.channel = null;
+          else if (this.time >= g.channel.until) {
+            const hz = e.z + e.def.height * 0.5;
+            this.fx.beam([g.x, g.y, z + 1.0], [e.x, e.y, hz], 0.3, [0.55, 0.85, 1], 0.05);
+            this.fx.play('snipeImpact', e.x, e.y, hz, 0, 1.3);
+            BS.audio.play('snipeHit', { vol: 0.6 });
+            this.floater(e.x, e.y, e.z + e.def.height + 1, 'SNIPED', '#9ad7ff');
+            this.hurtEnemy(e, S.dmg + this.up.weapons);
+            g.channel = null; g.snipeCd = S.cd; g.anim = '';
+          } else { busy = true; g.yaw = Math.atan2(e.y - g.y, e.x - g.x); }
+        }
+        if (!busy && g.snipeCd <= 0) {
+          let best = null;
+          for (const e of this.enemiesInRange(g.x, g.y, S.range, e => !e.def.untouchable && !e.def.tumor && (e.def.armored || e.maxHp >= S.minHp)))
+            if (!best || e.hp > best.hp) best = e;
+          if (best) {
+            g.channel = { target: best, until: this.time + S.channel }; busy = true;
+            g.yaw = Math.atan2(best.y - g.y, best.x - g.x); g.anim = 'spell'; g.handle.play(/^spell a$/i, false);
+            BS.audio.play('snipeFire', { vol: 0.6 });
+          } else g.snipeCd = 0.5;
+        }
+        if (!busy && g.cd <= 0) {
+          const list = this.enemiesInRange(g.x, g.y, range, e => !e.def.untouchable);
+          const tg = list.find(e => BS.Terrain.onHigh(e.x, e.y) || e.highRoute) || list[0];
+          if (tg) {
+            g.cd = D.cd; g.hold = this.time + 0.4;
+            g.yaw = Math.atan2(tg.y - g.y, tg.x - g.x);
+            const cs = Math.cos(g.yaw), sn = Math.sin(g.yaw), hz = tg.z + tg.def.height * 0.5;
+            this.fx.play('ghostLaunch', g.x + cs * 0.55, g.y + sn * 0.55, z + 0.8, g.yaw);
+            this.fx.play('ghostImpact', tg.x, tg.y, hz, g.yaw + Math.PI);
+            this.hurtEnemy(tg, D.dmg + (tg.def.light ? D.dmgLight : 0) + this.up.weapons + (this.cards.capacitors || 0));
+            g.anim = 'attack'; g.handle.play(/^attack$/i, false);
+            BS.audio.play('ghostFire', { vol: 0.35, gap: 0.1 });
+          } else g.cd = 0.1;
+        }
+        // Back to the post if something moved it (an abduction), then hold there.
+        if (!g.route.length && dist(g.x, g.y, g.post[0], g.post[1]) > 0.6) g.route = this.ghostRoute(g);
+        if (!busy && this.time > g.hold && g.route.length) {
+          const [wx, wy] = g.route[0], dx = wx - g.x, dy = wy - g.y, dd = Math.hypot(dx, dy);
+          if (dd < 0.3) g.route.shift();
+          else {
+            const s = Math.min(dd, D.speed * dt);
+            this.stepGround(g, dx / dd * s, dy / dd * s);
+            g.yaw = Math.atan2(dy, dx);
+            if (g.anim !== 'walk') { g.anim = 'walk'; g.handle.play(/^walk$/i, true, 1.2); }
+          }
+        } else if (g.anim === 'walk' || (g.anim === 'attack' && this.time > g.hold)) { g.anim = 'stand'; g.handle.play(/^stand$/i, true); }
+        g.handle.setPos(g.x, g.y, BS.Terrain.height(g.x, g.y)).setYaw(g.yaw);
+      }
+    }
+    // Is anything cloaked at (x, y) seen by an overseer?
+    detectedAt(x, y) { const r = BS.OVERSEERS.detect; return this.enemies.some(e => e.def.detector && e.hp > 0 && dist(e.x, e.y, x, y) < r); }
+    // Overseer: flies to the nearest ghost and hangs just behind it (on the swarm's side), revealing it; with no ghost
+    // left, it flies back out.
+    updateOverseer(e, dt) {
+      const d = e.def;
+      let g = null, gd = 1e9;
+      for (const o of this.ghosts) if (!o.dead) { const dd = dist(e.x, e.y, o.x, o.y); if (dd < gd) { gd = dd; g = o; } }
+      const [gx, gy] = g ? [g.x, g.y + 1.2] : e.exit, dx = gx - e.x, dy = gy - e.y, dd = Math.hypot(dx, dy);
+      if (!g && dd < 0.5) { this.despawn(e); return; }
+      if (dd > 0.05) { const s = Math.min(dd, d.speed * dt); e.x += dx / dd * s; e.y += dy / dd * s; e.yaw += clamp(angDelta(e.yaw, Math.atan2(dy, dx)), -3 * dt, 3 * dt); }
+      e.z = d.fly + 0.2 * Math.sin(this.time * 1.3 + e.x);
+      this.playAnim(e, 'walk');
+    }
     // Watcher overlord: drifts to its vantage point, hangs there bobbing and turned on the bunker, then drifts away.
     updateWatcher(e, dt) {
       const d = e.def;
@@ -1925,7 +2178,7 @@ window.BS = window.BS || {};
     // marines: they stay where they are and carry on into the next wave.
     waveAlive() {
       const reach = BS.INFANTRY.marine.range + T().bunker.rangeBonus + T().bunker.halfSize + (this.up.hisec ? T().hiSecRange : 0) + (this.up.rails ? T().railsRange : 0) + (this.hard ? 1 : 0);
-      return this.enemies.some(e => !e.def.tumor && !e.def.creeper && !e.def.ambient && !(e.def.flying && e.attacking && Math.hypot(e.x, e.y) - e.radius > reach));
+      return this.enemies.some(e => !e.def.tumor && !e.def.creeper && !e.def.ambient && !e.def.detector && !(e.def.flying && e.attacking && Math.hypot(e.x, e.y) - e.radius > reach));
     }
     // Defiler (alternating dark swarm and plague) and viper (abduct) spells.
     castSpell(e, t) {
@@ -1936,7 +2189,7 @@ window.BS = window.BS || {};
         // Yank the nearest trooper outside, goliath or thor out of position toward the viper.
         let best = null, bd = d.range + 1;
         for (const tg of this.tgs) {
-          if (tg.obj.dead || !(tg.kind === 'trooper' || (tg.kind === 'mech' && tg.obj.kind !== 'odin'))) continue;
+          if (tg.obj.dead || !(tg.kind === 'trooper' || tg.kind === 'reaper' || tg.kind === 'ghost' || (tg.kind === 'mech' && tg.obj.kind !== 'odin'))) continue;
           const dd = dist(e.x, e.y, tg.obj.x, tg.obj.y);
           if (dd < bd) { bd = dd; best = tg; }
         }
@@ -1991,7 +2244,7 @@ window.BS = window.BS || {};
       if (b && b.state === 'station' && !b.dead) list.push({ kind: 'bc', obj: b, x: b.x, y: b.y, z: b.sz, radius: 2.4, armored: true });
       for (const v of this.vikingWing) if (!v.dead && v.state !== 'in') list.push({ kind: 'viking', obj: v, x: v.x, y: v.y, z: v.z, radius: 0.6, armored: true });
       for (const s of this.banshees) if (!s.dead) list.push({ kind: 'banshee', obj: s, x: s.x, y: s.y, z: s.z, radius: 0.6, light: true });
-      for (const w of this.wraiths) if (!w.dead && w.state !== 'in') list.push({ kind: 'wraith', obj: w, x: w.x, y: w.y, z: w.z, radius: 0.6, light: true });
+      for (const w of this.wraiths) if (!w.dead && w.state !== 'in' && !(w.cloakUntil && !this.detectedAt(w.x, w.y))) list.push({ kind: 'wraith', obj: w, x: w.x, y: w.y, z: w.z, radius: 0.6, light: true });
       const v = this.vessel;
       if (v && !v.dead && (v.state === 'station' || v.state === 'retreat')) list.push({ kind: 'vessel', obj: v, x: v.x, y: v.y, z: v.z, radius: 1.2, armored: true });
       return list;
@@ -2032,6 +2285,8 @@ window.BS = window.BS || {};
       for (const m of this.squad) if (!m.dead) list.push({ kind: 'trooper', obj: m, x: m.x, y: m.y, radius: m.radius, light: m.type !== 'marauder', armored: m.type === 'marauder' });
       for (const st of this.structures) if (!st.dead) list.push({ kind: 'structure', obj: st, x: st.x, y: st.y, radius: st.radius, structure: true, armored: true });
       for (const m of this.mechs) if (!m.dead) list.push({ kind: 'mech', obj: m, x: m.x, y: m.y, radius: m.radius, armored: true });
+      for (const r of this.reapers) if (!r.dead) list.push({ kind: 'reaper', obj: r, x: r.x, y: r.y, radius: r.radius, light: true });
+      for (const g of this.ghosts) if (!g.dead && g.detected) list.push({ kind: 'ghost', obj: g, x: g.x, y: g.y, radius: g.radius });   // cloaked unless an overseer sees it
       return list;
     }
     valid(tg) { return tg && !tg.obj.dead && (tg.kind !== 'tank' || tg.obj.state === 'ready'); }
@@ -2054,6 +2309,9 @@ window.BS = window.BS || {};
           this.tanks.splice(this.tanks.indexOf(o), 1);
           this.toast('Siege tank destroyed');
         }
+      } else if (tg.kind === 'reaper' || tg.kind === 'ghost') {
+        o.hp -= Math.max(0.5, dmg); o.flash = 1; o.hitAt = this.time;
+        if (o.hp <= 0 && !o.dead) this.killSpecial(o, tg.kind);
       } else if (tg.kind === 'trooper') {
         o.hp -= Math.max(0.5, dmg - (o.type === 'marauder' ? 1 : 0)); o.flash = 1;
         if (o.hp <= 0 && !o.dead) this.killTrooper(o);
@@ -2063,6 +2321,12 @@ window.BS = window.BS || {};
       } else if (tg.kind === 'bc' || tg.kind === 'viking' || tg.kind === 'banshee' || tg.kind === 'wraith' || tg.kind === 'vessel') {
         o.hp -= Math.max(0.5, dmg - (o.armor || 0)); o.flash = 1;
         if (o.hp <= 0 && !o.dead) this.killAir(o, tg.kind);
+        else if (tg.kind === 'wraith' && !o.cloakUntil && this.time >= o.cloakReady) {
+          const C = T().wraiths.cloak;
+          o.cloakUntil = this.time + C.dur; o.cloakReady = o.cloakUntil + C.cd;
+          o.handle.setTint(0.3, 0.45, 0.7);
+          BS.audio.play('cloakOn', { vol: 0.4, gap: 0.3 });
+        }
         else if (tg.kind === 'vessel') {
           o.hitAt = this.time;
           if (o.state === 'station') { o.state = 'retreat'; o.castUntil = 0; o.handle.play(/^stand$/i, true); this.toast('Science vessel under fire, pulling back'); }
@@ -2226,6 +2490,8 @@ window.BS = window.BS || {};
       this.updateVikings(dt);
       this.updateWraiths(dt);
       this.updateVessel(dt);
+      this.updateReapers(dt);
+      this.updateGhosts(dt);
       this.updateNukes(dt);
       this.updatePods(dt);
       this.updateProjectiles(dt);
@@ -2264,6 +2530,7 @@ window.BS = window.BS || {};
         if (d.tumor) { this.updateTumor(e, dt); continue; }
         if (d.creeper) { this.updateCreeper(e, dt); continue; }
         if (d.watcher) { this.updateWatcher(e, dt); continue; }
+        if (d.detector) { this.updateOverseer(e, dt); continue; }
         if (d.tumors && this.queenCreep(e, dt)) continue;
         e.retarget -= dt;
         if (!this.valid(e.target) || e.retarget <= 0) {
@@ -2656,6 +2923,7 @@ window.BS = window.BS || {};
             if (p.target && p.target.hp > 0) this.hurtEnemy(p.target, p.dmg);
             BS.audio.play('bansheeHit', { vol: 0.35, gap: 0.1 });
           } else if (p.kind === 'yamato') this.yamatoImpact(p.tx, p.ty);
+          else if (p.kind === 'kd8') this.kd8Blast(p.tx, p.ty);
           continue;
         }
         const tg = p.target, d = p.def;

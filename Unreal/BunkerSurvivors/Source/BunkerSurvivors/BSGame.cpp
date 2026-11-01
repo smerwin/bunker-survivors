@@ -214,6 +214,7 @@ void ABSGame::Init(UBSAssets* InAssets, EBSMode InMode)
 	Mode = InMode;
 	bHard = Mode == EBSMode::Arena;
 	WaveLen = 30.f;
+	BuildPatrol();
 	if (Mode == EBSMode::Lane)
 	{
 		TankSlots = { FVector2D(-3.4f, -0.4f), FVector2D(3.4f, -0.4f), FVector2D(-5.4f, -2.8f), FVector2D(5.4f, -2.8f) };
@@ -1494,7 +1495,7 @@ bool ABSGame::CardReq(const FBSCardDef& C) const
 	if (R == TEXT("stim")) return Up.bStim;
 	if (R == TEXT("hisec")) return Up.bHiSec;
 	if (R == TEXT("medivac")) return Up.bMedivac;
-	if (R == TEXT("bc") || R == TEXT("vikings")) return TechUnlocked.Contains(R);
+	if (R == TEXT("bc") || BSDefs::FindTech(R)) return TechUnlocked.Contains(R);
 	int32 i = R.Len();
 	while (i > 0 && FChar::IsDigit(R[i - 1])) i--;
 	const FString Key = R.Left(i);
@@ -1582,11 +1583,13 @@ void ABSGame::ApplyCard(const FBSCardDef& C)
 
 bool ABSGame::TechReady(const FString& Id, int32& OutCost, FString& OutTag) const
 {
-	if (Id == TEXT("nuke")) { OutCost = BSDefs::NukeCost; OutTag = FString::Printf(TEXT("%ds"), FMath::CeilToInt(NukeCd)); return NukeCd <= 0; }
+	if (Id == TEXT("nuke")) { OutCost = NukeCost(); OutTag = FString::Printf(TEXT("%ds"), FMath::CeilToInt(NukeCd)); return NukeCd <= 0; }
 	if (Id == TEXT("vikings")) { OutCost = BSDefs::VikingCost; OutTag = FString::Printf(TEXT("%ds"), FMath::CeilToInt(VikingCd)); return VikingCd <= 0; }
 	if (Id == TEXT("wraiths")) { OutCost = BSDefs::WraithCost; OutTag = FString::Printf(TEXT("%ds"), FMath::CeilToInt(WraithCd)); return WraithCd <= 0; }
 	if (Id == TEXT("vessel")) { OutCost = BSDefs::VesselCost; OutTag = FString::Printf(TEXT("%ds"), FMath::CeilToInt(VesselCd)); return VesselCd <= 0 && !Vessel; }
 	OutTag = TEXT("MAX");
+	if (Id == TEXT("reaper")) { OutCost = BSDefs::ReaperCost; return Reapers.Num() < BSDefs::ReaperMax; }
+	if (Id == TEXT("ghost")) { OutCost = BSDefs::GhostCost; return Ghosts.Num() < BSDefs::GhostMax; }
 	if (Id == TEXT("bc")) { OutCost = BSDefs::BcCost; return !Bc.IsValid(); }
 	const FBSMechDef* D = BSDefs::FindMech(Id);
 	OutCost = D ? D->Cost : 0;
@@ -1600,6 +1603,8 @@ bool ABSGame::BuyTech(const FString& Id)
 	if (Id == TEXT("vikings")) return CallVikings();
 	if (Id == TEXT("wraiths")) return CallWraiths();
 	if (Id == TEXT("vessel")) return CallVessel();
+	if (Id == TEXT("reaper")) return AddReaper();
+	if (Id == TEXT("ghost")) return AddGhost();
 	if (Id == TEXT("bc")) return CallBattlecruiser();
 	return AddMech(Id);
 }
@@ -1978,6 +1983,38 @@ void ABSGame::BcAlerts()
 }
 
 // Viking wing: four fighters take up posts high over the lane and shoot down air for a while.
+// The fighters' patrol: in the lane a loop up the stem, round the west arm, across the top and back down the east arm; in
+// the arena a ring round the bunker.
+void ABSGame::BuildPatrol()
+{
+	PatrolPts.Reset(); PatrolS0.Reset(); PatrolLen = 0;
+	if (Mode == EBSMode::Lane)
+		PatrolPts = { FVector2D(0, 2.5f), FVector2D(-2, 9), FVector2D(-8, 17), FVector2D(-3, 22), FVector2D(3, 22), FVector2D(8, 17), FVector2D(2, 9), FVector2D(0, 2.5f) };
+	else
+		for (int32 i = 0; i <= 24; i++) PatrolPts.Add(FVector2D(FMath::Cos(i / 24.f * PI * 2) * 9, FMath::Sin(i / 24.f * PI * 2) * 9));
+	for (int32 i = 0; i + 1 < PatrolPts.Num(); i++) { PatrolS0.Add(PatrolLen); PatrolLen += FVector2D::Distance(PatrolPts[i], PatrolPts[i + 1]); }
+}
+
+FVector ABSGame::PatrolAt(float S) const
+{
+	if (PatrolPts.Num() < 2 || PatrolLen <= 0) return FVector(0, 0, PI / 2);
+	S = FMath::Fmod(FMath::Fmod(S, PatrolLen) + PatrolLen, PatrolLen);
+	for (int32 i = 0; i + 1 < PatrolPts.Num(); i++)
+	{
+		const FVector2D A = PatrolPts[i], B = PatrolPts[i + 1];
+		const float L = FVector2D::Distance(A, B);
+		if (S <= PatrolS0[i] + L) { const float K = L > 0 ? (S - PatrolS0[i]) / L : 0.f; return FVector(A.X + (B.X - A.X) * K, A.Y + (B.Y - A.Y) * K, FMath::Atan2(B.Y - A.Y, B.X - A.X)); }
+	}
+	const FVector2D A = PatrolPts[0], B = PatrolPts[1];
+	return FVector(A.X, A.Y, FMath::Atan2(B.Y - A.Y, B.X - A.X));
+}
+
+FVector ABSGame::PatrolPos(const FBSBanshee& U) const
+{
+	const FVector P = PatrolAt(U.S);
+	return FVector(P.X - FMath::Sin(P.Z) * U.Off, P.Y + FMath::Cos(P.Z) * U.Off, P.Z);
+}
+
 bool ABSGame::CallVikings()
 {
 	if (VikingCd > 0) { Toast(TEXT("Vikings are rearming")); return false; }
@@ -1986,7 +2023,7 @@ bool ABSGame::CallVikings()
 	for (int32 i = 0; i < BSDefs::VikingCount; i++)
 	{
 		const FVector2D Post = StrikePosts[i % StrikePosts.Num()];
-		FBSBanshee V; V.Post = FVector2D(Post.X * 1.2f, Post.Y + 2); V.X = Post.X * 0.6f; V.Y = (Mode == EBSMode::Lane ? -18.f : -34.f) - i * 1.2f;
+		FBSBanshee V; V.S = i * 2.2f; V.Off = i % 2 ? 0.9f : -0.9f; V.Post = FVector2D(Post.X * 1.2f, Post.Y + 2); V.X = Post.X * 0.6f; V.Y = (Mode == EBSMode::Lane ? -18.f : -34.f) - i * 1.2f;
 		V.Z = BSDefs::VikingFly + 1.5f; V.Yaw = PI / 2; V.Cd = 0.4f + i * 0.2f;
 		V.Actor = AcquireModel(TEXT("vikingfighter"));
 		if (V.Actor) { V.Actor->SetTeamColor(TerranColor); V.Actor->Play(WalkNames, true); }
@@ -2006,16 +2043,18 @@ void ABSGame::UpdateVikings(float Dt)
 		V.T += Dt;
 		if (V.State == FBSBanshee::In)
 		{
-			const FVector D = FVector(V.Post.X, V.Post.Y, BSDefs::VikingFly) - FVector(V.X, V.Y, V.Z);
-			if (D.Size() > 0.2f) { const FVector Mv = D.GetSafeNormal() * FMath::Min(D.Size(), BSDefs::VikingSpeed * Dt); V.X += Mv.X; V.Y += Mv.Y; V.Z += Mv.Z; V.Yaw = FMath::Atan2(D.Y, D.X); }
+			const FVector Pp = PatrolPos(V), D = FVector(Pp.X, Pp.Y, BSDefs::VikingFly) - FVector(V.X, V.Y, V.Z);
+			if (D.Size() > 0.3f) { const FVector Mv = D.GetSafeNormal() * FMath::Min(D.Size(), BSDefs::VikingSpeed * Dt); V.X += Mv.X; V.Y += Mv.Y; V.Z += Mv.Z; V.Yaw = FMath::Atan2(D.Y, D.X); }
 			else { V.State = FBSBanshee::Hover; V.T = 0; }
 		}
 		else if (V.State == FBSBanshee::Hover)
 		{
-			// A lazy figure-of-eight round the post, turning to engage.
-			V.X = V.Post.X + FMath::Sin(V.T * 0.8f + i) * 1.2f; V.Y = V.Post.Y + FMath::Sin(V.T * 1.6f + i) * 0.6f; V.Z = BSDefs::VikingFly + 0.2f * FMath::Sin(V.T * 2 + i);
+			// Ranging round the patrol loop, turning to engage whatever flies within reach.
+			V.S += BSDefs::VikingPatrol * Dt;
+			const FVector Pp = PatrolPos(V);
+			V.X += (Pp.X - V.X) * FMath::Min(1.f, 4 * Dt); V.Y += (Pp.Y - V.Y) * FMath::Min(1.f, 4 * Dt); V.Z = BSDefs::VikingFly + 0.2f * FMath::Sin(V.T * 2 + i);
 			TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(V.X, V.Y, BSDefs::VikingRange, [](const FBSEnemy& E) { return E.Def->bFlying; });
-			if (L.Num()) V.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(V.Yaw, FMath::Atan2(L[0]->Y - V.Y, L[0]->X - V.X)), -4 * Dt, 4 * Dt);
+			V.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(V.Yaw, L.Num() ? FMath::Atan2(L[0]->Y - V.Y, L[0]->X - V.X) : Pp.Z), -4 * Dt, 4 * Dt);
 			V.Cd -= Dt * (V.AcidUntil > Time ? 0.7f : 1.f);
 			if (V.Cd <= 0 && L.Num())
 			{
@@ -2046,7 +2085,8 @@ void ABSGame::UpdateVikings(float Dt)
 	}
 }
 
-// Wraith squadron: three wraiths sweep figures-of-eight over the lane, burst lasers on ground zerg, Gemini missiles at air.
+// Wraith squadron: three wraiths range round the patrol loop, burst lasers on ground zerg, Gemini missiles at air; fired
+// upon, a wraith cloaks for a while (see DamageDefender).
 bool ABSGame::CallWraiths()
 {
 	if (WraithCd > 0) { Toast(TEXT("Wraiths are rearming")); return false; }
@@ -2055,7 +2095,7 @@ bool ABSGame::CallWraiths()
 	for (int32 i = 0; i < BSDefs::WraithCount; i++)
 	{
 		const FVector2D Post = StrikePosts[(i + 1) % StrikePosts.Num()];
-		FBSBanshee W; W.Post = FVector2D(Post.X * 1.3f, Post.Y + 4); W.X = Post.X * 0.6f; W.Y = (Mode == EBSMode::Lane ? -18.f : -34.f) - i * 1.2f;
+		FBSBanshee W; W.S = 30 + i * 2.6f; W.Off = (i - 1) * 1.0f; W.Post = FVector2D(Post.X * 1.3f, Post.Y + 4); W.X = Post.X * 0.6f; W.Y = (Mode == EBSMode::Lane ? -18.f : -34.f) - i * 1.2f;
 		W.Z = BSDefs::WraithFly + 1.5f; W.Yaw = PI / 2; W.Cd = 0.3f + i * 0.2f; W.Cd2 = 0.5f + i * 0.2f;
 		W.Actor = AcquireModel(TEXT("wraith"));
 		if (W.Actor) { W.Actor->SetTeamColor(TerranColor); W.Actor->Play(WalkNames, true); }
@@ -2074,18 +2114,21 @@ void ABSGame::UpdateWraiths(float Dt)
 	{
 		FBSBanshee& W = *Wraiths[i];
 		W.T += Dt;
+		// Cloaked when fired upon (DamageDefender); it fades back in when the cloak runs out.
+		if (W.CloakUntil > 0 && Time > W.CloakUntil) { W.CloakUntil = 0; if (W.Actor) W.Actor->SetTint(FLinearColor::White); PlaySound(TEXT("cloakOff"), 0.4f); }
 		if (W.State == FBSBanshee::In)
 		{
-			const FVector D = FVector(W.Post.X, W.Post.Y, BSDefs::WraithFly) - FVector(W.X, W.Y, W.Z);
-			if (D.Size() > 0.2f) { const FVector Mv = D.GetSafeNormal() * FMath::Min(D.Size(), BSDefs::WraithSpeed * Dt); W.X += Mv.X; W.Y += Mv.Y; W.Z += Mv.Z; W.Yaw = FMath::Atan2(D.Y, D.X); }
+			const FVector Pp = PatrolPos(W), D = FVector(Pp.X, Pp.Y, BSDefs::WraithFly) - FVector(W.X, W.Y, W.Z);
+			if (D.Size() > 0.3f) { const FVector Mv = D.GetSafeNormal() * FMath::Min(D.Size(), BSDefs::WraithSpeed * Dt); W.X += Mv.X; W.Y += Mv.Y; W.Z += Mv.Z; W.Yaw = FMath::Atan2(D.Y, D.X); }
 			else { W.State = FBSBanshee::Hover; W.T = 0; }
 		}
 		else if (W.State == FBSBanshee::Hover)
 		{
-			// A wide figure-of-eight round the post, banking into the turns; it turns to face whatever it shoots.
-			const float Nx = W.Post.X + FMath::Sin(W.T * 0.9f + i * 2) * 2.6f, Ny = W.Post.Y + FMath::Sin(W.T * 1.8f + i * 2) * 1.3f;
-			const float Heading = FMath::Atan2(Ny - W.Y, Nx - W.X);
-			W.X = Nx; W.Y = Ny; W.Z = BSDefs::WraithFly + 0.25f * FMath::Sin(W.T * 2 + i);
+			// Ranging round the patrol loop, banking into the turns; it turns to face whatever it shoots.
+			W.S += BSDefs::WraithPatrol * Dt;
+			const FVector Pp = PatrolPos(W);
+			const float Heading = Pp.Z;
+			W.X += (Pp.X - W.X) * FMath::Min(1.f, 4 * Dt); W.Y += (Pp.Y - W.Y) * FMath::Min(1.f, 4 * Dt); W.Z = BSDefs::WraithFly + 0.25f * FMath::Sin(W.T * 2 + i);
 			TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(W.X, W.Y, BSDefs::WraithRange, Any);
 			TSharedPtr<FBSEnemy> GroundE, AirE;
 			for (const TSharedPtr<FBSEnemy>& E : L) { if (E->Def->bFlying) { if (!AirE) AirE = E; } else if (!GroundE) GroundE = E; }
@@ -2287,7 +2330,8 @@ void ABSGame::UpdateMatrices()
 bool ABSGame::LaunchNuke()
 {
 	if (NukeCd > 0) { Toast(TEXT("Nuke silo reloading")); return false; }
-	if (Minerals < BSDefs::NukeCost) { Toast(TEXT("Not enough minerals")); return false; }
+	const int32 Cost = NukeCost();
+	if (Minerals < Cost) { Toast(TEXT("Not enough minerals")); return false; }
 	auto Any = [](const FBSEnemy& E) { return E.Alive(); };
 	TSharedPtr<FBSEnemy> Pick; int32 PickN = 0;
 	for (const TSharedPtr<FBSEnemy>& E : Enemies)
@@ -2297,7 +2341,7 @@ bool ABSGame::LaunchNuke()
 		if (N > PickN) { PickN = N; Pick = E; }
 	}
 	if (!Pick) { Toast(TEXT("No target clear of the bunker")); return false; }
-	Minerals -= BSDefs::NukeCost; NukeCd = BSDefs::NukeCooldown;
+	Minerals -= Cost; NukeCd = BSDefs::NukeCooldown * NukeCut();
 	FBSNuke N; N.X = Pick->X; N.Y = Pick->Y;
 	N.Fall = PlayFx(TEXT("nukeFalling"), FVector(N.X, N.Y, 14), 0, 1.4f);
 	Nukes.Add(N);
@@ -2452,6 +2496,9 @@ void ABSGame::StartWave()
 		const float Chance = FMath::Min(BSOverlords::ChanceMax, BSOverlords::Chance + BSOverlords::ChanceGrow * (Wv - BSOverlords::From));
 		for (int32 i = 0; i < (Wv >= BSOverlords::Second ? 2 : 1); i++) if (FMath::FRand() < Chance) SpawnQueue.Add({ Rnd(2.f, FMath::Max(2.f, Spread)), TEXT("overlordDrop"), 0.f });
 	}
+	// Overseers come looking for cloaked ghosts.
+	if (Ghosts.Num() && Wv >= BSOverseers::From)
+		for (int32 i = 0; i < BSOverseers::Base + FMath::FloorToInt(BSOverseers::PerGhost * Ghosts.Num()); i++) SpawnQueue.Add({ Rnd(1.f, FMath::Max(1.f, Spread * 0.6f)), TEXT("overseer"), 0.f });
 	SpawnQueue.Sort([](const FBSSpawn& A, const FBSSpawn& B) { return A.T < B.T; });
 	Tele.Spawned = Added;
 	SpawnTimer = 0;
@@ -2671,7 +2718,7 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 	if (At) { X = At->X + Rnd(-0.6f, 0.6f); Y = At->Y + Rnd(-0.6f, 0.6f); }
 	else if (D->bTransport) { X = bLane ? SideS * 23 : FMath::Cos(Ar) * 27; Y = bLane ? Rnd(-3, 6) : FMath::Sin(Ar) * 27; }          // overlords come in from a flank
 	else if (D->bNydus) { const float R = Rnd(5.5f, 8); X = bLane ? SideS * Rnd(2.5f, 4.5f) : FMath::Cos(Ar) * R; Y = bLane ? Rnd(-8.5f, -7) : FMath::Sin(Ar) * R; }   // behind our lines
-	else if (D->bCreeper || D->bWatcher) { X = bLane ? SideS * Rnd(10, 18) : FMath::Cos(Ar) * 29; Y = bLane ? Rnd(30, 34) : FMath::Sin(Ar) * 29; }   // creep overlords and watchers drift in from afar
+	else if (D->bCreeper || D->bWatcher || D->bDetector) { X = bLane ? SideS * Rnd(10, 18) : FMath::Cos(Ar) * 29; Y = bLane ? Rnd(30, 34) : FMath::Sin(Ar) * 29; }   // creep overlords and watchers drift in from afar
 	else if (Mode == EBSMode::Lane)
 	{
 		const int32 Side = FMath::RoundToInt(Ang);         // 0 north, 1 north-east, 2 north-west
@@ -2746,6 +2793,7 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 			E->Drop = bLane ? FVector2D(Rnd(-2.5f, 2.5f), Rnd(6, 14)) : FVector2D(FMath::Cos(A2) * Rnd(7, 11), FMath::Sin(A2) * Rnd(7, 11));
 		}
 	}
+	if (D->bDetector) E->Exit = FVector2D(X, Y);
 	if (D->bWatcher)             // a vantage point out of the bunker's reach: over the plateaus and mesa, or the arena's rim
 	{
 		const float A3 = FMath::FRand() * 2 * PI;
@@ -2807,6 +2855,308 @@ void ABSGame::UpdateOverlord(const TSharedPtr<FBSEnemy>& EP, float Dt)
 	const float S = FMath::Min(Dd, E.Def->Speed * Dt);
 	E.X += Dx / Dd * S; E.Y += Dy / Dd * S;
 	E.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(E.Yaw, FMath::Atan2(Dy, Dx)), -2 * Dt, 2 * Dt);
+	PlayEnemyAnim(E, TEXT("walk"));
+}
+
+// ---- Reapers and ghosts (armoury special infantry) ----------------------------------------------------------------
+void ABSGame::KillSpecial(const TSharedPtr<FBSSpecial>& O)
+{
+	O->bDead = true;
+	(O->bGhost ? Ghosts : Reapers).Remove(O);
+	ReleaseModel(O->Actor); O->Actor = nullptr;
+	const float Gz = BSTerrain::Height(O->X, O->Y);
+	Corpse(O->bGhost ? TEXT("ghostDeath") : TEXT("reaperDeath"), O->X, O->Y, Gz, O->Yaw, 3.5f, 1, true);
+	Toast(O->bGhost ? TEXT("Ghost down") : TEXT("Reaper down"));
+	Floater(O->X, O->Y, Gz + 2.5f, TEXT("KIA"), FLinearColor(1, 0.42f, 0.35f));
+}
+
+// Reapers drop in behind the bunker and take a spot just ahead of it.
+bool ABSGame::AddReaper()
+{
+	const bool bLane = Mode == EBSMode::Lane;
+	if (Reapers.Num() >= BSDefs::ReaperMax) { Toast(TEXT("No room for more")); return false; }
+	if (Minerals < BSDefs::ReaperCost) { Toast(TEXT("Not enough minerals")); return false; }
+	Minerals -= BSDefs::ReaperCost;
+	TArray<FVector2D> Homes;
+	for (int32 i = 0; i < BSDefs::ReaperMax; i++) Homes.Add(bLane ? FVector2D(-2.5f + i, 2.2f) : FVector2D(FMath::Cos(i * PI / 3) * 3.6f, FMath::Sin(i * PI / 3) * 3.6f));
+	const FVector2D* Free = Homes.FindByPredicate([this](const FVector2D& H) { return !Reapers.ContainsByPredicate([&H](const TSharedPtr<FBSSpecial>& O) { return O->Home == H; }); });
+	TSharedPtr<FBSSpecial> R = MakeShared<FBSSpecial>();
+	R->Home = Free ? *Free : Homes[0]; R->X = R->Home.X; R->Y = bLane ? -9.f : -12.f;
+	R->Hp = R->MaxHp = BSDefs::ReaperHp; R->Kd = Rnd(2, 5);
+	R->Actor = AcquireModel(TEXT("reaper"));
+	if (R->Actor) { R->Actor->SetTeamColor(TerranColor); R->Actor->SetSim(R->X, R->Y, BSTerrain::Height(R->X, R->Y), R->Yaw); }
+	Reapers.Add(R);
+	Toast(TEXT("Reaper inbound"));
+	return true;
+}
+
+// Hit and run: harass the nearest ground zerg near our lines from pistol range, back off from anything that closes
+// while reloading, lob a KD8 charge into a pack now and then, and jump-pack straight over the cliffs either way.
+void ABSGame::UpdateReapers(float Dt)
+{
+	const bool bLane = Mode == EBSMode::Lane;
+	const TArray<TSharedPtr<FBSSpecial>> Snapshot = Reapers;
+	for (const TSharedPtr<FBSSpecial>& RP : Snapshot)
+	{
+		FBSSpecial& R = *RP;
+		if (R.bDead) continue;
+		R.Cd -= Dt; R.Kd -= Dt;
+		if (Time - R.HitAt > BSDefs::ReaperRegenAfter) R.Hp = FMath::Min(R.MaxHp, R.Hp + BSDefs::ReaperRegen * Dt);   // combat drugs
+		TSharedPtr<FBSEnemy> Tg, NearE; float Td = 1e9f, Near = 1e9f;
+		for (const TSharedPtr<FBSEnemy>& E : Enemies)
+		{
+			if (!E->Alive() || E->Def->bFlying || E->Def->bUntouchable || E->bBurrowed) continue;
+			const float Dd = FMath::Sqrt(Dist2(R.X, R.Y, E->X, E->Y));
+			if (Dd < Near) { Near = Dd; NearE = E; }
+			if (Dd < Td && FMath::Sqrt(E->X * E->X + E->Y * E->Y) < BSDefs::ReaperHunt) { Td = Dd; Tg = E; }
+		}
+		if (Tg && R.Cd <= 0 && Td - Tg->Radius <= BSDefs::ReaperRange) { ReaperFire(R, Tg); R.Cd = BSDefs::ReaperCd; R.Kite = Time + 0.7f; }
+		if (R.Kd <= 0) R.Kd = ThrowKD8(R) ? BSDefs::Kd8Cd : 0.5f;
+		// Hurt: pull back home to heal, unless something is on top of it. Otherwise run while reloading, close to pistol
+		// range, or hold and shoot.
+		float Gx = R.Home.X, Gy = R.Home.Y;
+		const bool bHurt = R.Hp < R.MaxHp * BSDefs::ReaperFallBack, bClose = NearE && Near < BSDefs::ReaperKite;
+		if (bClose && (bHurt || R.Cd > 0.2f || R.Kite > Time))
+		{
+			const float A = FMath::Atan2(R.Y - NearE->Y, R.X - NearE->X);
+			Gx = R.X + FMath::Cos(A) * 2; Gy = R.Y + FMath::Sin(A) * 2;
+		}
+		else if (!bHurt && Tg && Td - Tg->Radius > BSDefs::ReaperRange * 0.9f)
+		{
+			const float A = FMath::Atan2(R.Y - Tg->Y, R.X - Tg->X), Rr = BSDefs::ReaperRange * 0.85f + Tg->Radius;
+			Gx = Tg->X + FMath::Cos(A) * Rr; Gy = Tg->Y + FMath::Sin(A) * Rr;
+		}
+		else if (!bHurt && Tg) { Gx = R.X; Gy = R.Y; }
+		if (bLane) { Gx = FMath::Clamp(Gx, -18.f, 18.f); Gy = FMath::Clamp(Gy, -10.f, 28.f); }
+		const float Dx = Gx - R.X, Dy = Gy - R.Y, Dd = FMath::Sqrt(Dx * Dx + Dy * Dy), Z0 = BSTerrain::Height(R.X, R.Y);
+		if (Dd > 0.1f)
+		{
+			const float S = FMath::Min(Dd, BSDefs::ReaperSpeed * Dt);
+			R.X += Dx / Dd * S; R.Y += Dy / Dd * S;
+			if (R.Kite <= Time || !Tg) R.Yaw = FMath::Atan2(Dy, Dx);
+			const float Z1 = BSTerrain::Height(R.X, R.Y);
+			if (BSTerrain::Slope(R.X, R.Y) > 1.05f && FMath::Abs(Z1 - Z0) > 1e-3f)       // over a cliff face: the jump pack
+			{
+				if (R.Anim != TEXT("jump")) { PlayFx(TEXT("reaperJump"), FVector(R.X, R.Y, Z0), R.Yaw); R.Anim = TEXT("jump"); if (R.Actor) R.Actor->Play(TEXT("jump"), true); }
+				R.JumpUntil = Time + 0.2f;
+			}
+			else if (R.Anim == TEXT("jump") && Time > R.JumpUntil) { PlayFx(TEXT("reaperLand"), FVector(R.X, R.Y, Z1), R.Yaw); R.Anim.Reset(); }
+			if (R.Anim != TEXT("walk") && R.Anim != TEXT("jump")) { R.Anim = TEXT("walk"); if (R.Actor) R.Actor->Play(WalkNames, true, 1.6f); }
+		}
+		else if (R.Anim == TEXT("walk") || (R.Anim == TEXT("jump") && Time > R.JumpUntil) || (R.Anim == TEXT("attack") && R.Cd < BSDefs::ReaperCd - 0.5f))
+		{
+			R.Anim = TEXT("stand"); if (R.Actor) R.Actor->Play(StandNames, true);
+		}
+		if (R.Actor) R.Actor->SetSim(R.X, R.Y, BSTerrain::Height(R.X, R.Y), R.Yaw);
+	}
+}
+
+// Two pistol shots (one from each hand): extra damage to light zerg, plus infantry weapons and Ultra-Capacitors.
+void ABSGame::ReaperFire(FBSSpecial& R, const TSharedPtr<FBSEnemy>& E)
+{
+	const float Dmg = BSDefs::ReaperDmg + (E->Def->bLight ? BSDefs::ReaperDmgLight : 0.f) + Up.Weapons + Cards.FindRef(TEXT("capacitors"));
+	R.Yaw = FMath::Atan2(E->Y - R.Y, E->X - R.X);
+	const float Z = BSTerrain::Height(R.X, R.Y), Hz = E->Z + E->Def->Height * 0.5f, Cs = FMath::Cos(R.Yaw), Sn = FMath::Sin(R.Yaw);
+	for (int32 k = 0; k < BSDefs::ReaperShots; k++)
+	{
+		const float Side = k ? -0.22f : 0.22f;
+		const FVector Muzzle(R.X + Cs * 0.4f - Sn * Side, R.Y + Sn * 0.4f + Cs * Side, Z + 0.75f), Hit(E->X + Rnd(-0.2f, 0.2f), E->Y + Rnd(-0.2f, 0.2f), Hz);
+		if (!PlayFx(TEXT("reaperLaunch"), Muzzle, R.Yaw, 1, k * 0.12f)) AddFx(EBSFxKind::Tracer, Muzzle, Hit, 0.08f, 0.04f, FLinearColor(1, 0.8f, 0.45f), 18);
+		PlayFx(TEXT("reaperImpact"), Hit, R.Yaw + PI, 1, k * 0.12f + 0.03f);
+		HurtEnemy(E, Dmg);
+	}
+	if (R.Anim != TEXT("walk") && R.Anim != TEXT("jump")) { R.Anim = TEXT("attack"); if (R.Actor) R.Actor->Play(TEXT("attack"), false, 1.4f); }
+	PlaySound(TEXT("reaperFire"), 0.35f, 0.1f);
+}
+
+// KD8 charge: lobbed into the thickest pack in reach; damage and a knock back for everything in the blast (Kd8Blast).
+bool ABSGame::ThrowKD8(FBSSpecial& R)
+{
+	TSharedPtr<FBSEnemy> Pick; int32 Bn = 0;
+	for (const TSharedPtr<FBSEnemy>& E : EnemiesInRange(R.X, R.Y, BSDefs::Kd8Range, [](const FBSEnemy& X) { return !X.Def->bFlying && !X.Def->bUntouchable; }))
+	{
+		const int32 N = EnemiesInRange(E->X, E->Y, BSDefs::Kd8Radius, [](const FBSEnemy& V) { return !V.Def->bFlying; }).Num();
+		if (N > Bn) { Bn = N; Pick = E; }
+	}
+	if (!Pick || Bn < BSDefs::Kd8MinPack) return false;
+	FBSProjectile P; P.Kind = EBSProjKind::Kd8; P.bFriendly = true;
+	P.From = FVector(R.X, R.Y, BSTerrain::Height(R.X, R.Y) + 1); P.To = FVector(Pick->X, Pick->Y, Pick->Z + 0.2f);
+	P.Dur = 0.45f; P.Arc = 1.2f; P.ImpactFx = TEXT("kd8Impact");
+	AddProjectileModel(P, nullptr, TEXT("kd8Missile"));
+	if (!P.Trail) AddProjectileVisual(P, FLinearColor(1, 0.7f, 0.3f), 0.18f);
+	Projectiles.Add(P);
+	R.Yaw = FMath::Atan2(Pick->Y - R.Y, Pick->X - R.X); R.Anim = TEXT("attack");
+	if (R.Actor) R.Actor->Play(TEXT("spell"), false);
+	PlaySound(TEXT("kd8Throw"), 0.5f);
+	return true;
+}
+
+void ABSGame::Kd8Blast(float X, float Y)
+{
+	for (const TSharedPtr<FBSEnemy>& E : EnemiesInRange(X, Y, BSDefs::Kd8Radius, [](const FBSEnemy& V) { return !V.Def->bFlying; }))
+	{
+		HurtEnemy(E, BSDefs::Kd8Dmg, true);
+		if (!E->Alive() || !E->Def->Boss.IsEmpty()) continue;
+		const float A = FMath::Atan2(E->Y - Y, E->X - X);
+		for (int32 k = 0; k < 8; k++) StepGround(E->X, E->Y, FMath::Cos(A) * BSDefs::Kd8Knock / 8, FMath::Sin(A) * BSDefs::Kd8Knock / 8);
+	}
+	PlaySound(TEXT("kd8Blast"), 0.6f);
+}
+
+// Ghost posts: in the lane over the two ramp tops, then on the cliffs over the stem; in the arena on the diagonals.
+TArray<FVector> ABSGame::GhostPosts() const
+{
+	if (Mode == EBSMode::Lane) return { FVector(11.8f, 9.4f, 1), FVector(-11.8f, 9.4f, -1), FVector(6.6f, 5.6f, 1), FVector(-6.6f, 5.6f, -1) };
+	TArray<FVector> Out;
+	for (const float A : { 45.f, 225.f, 135.f, 315.f }) Out.Add(FVector(FMath::Cos(FMath::DegreesToRadians(A)) * 7, FMath::Sin(FMath::DegreesToRadians(A)) * 7, 0));
+	return Out;
+}
+
+TArray<FVector2D> ABSGame::GhostRoute(const FBSSpecial& G) const
+{
+	if (Mode != EBSMode::Lane || BSTerrain::OnHigh(G.X, G.Y)) return { G.Home };
+	TArray<FVector2D> R = BSTerrain::LedgeRoute(G.Side);
+	R.Add(G.Home);
+	return R;
+}
+
+bool ABSGame::AddGhost()
+{
+	const bool bLane = Mode == EBSMode::Lane;
+	if (Ghosts.Num() >= BSDefs::GhostMax) { Toast(TEXT("No room for more")); return false; }
+	if (Minerals < BSDefs::GhostCost) { Toast(TEXT("Not enough minerals")); return false; }
+	const TArray<FVector> Posts = GhostPosts();
+	const FVector* Post = Posts.FindByPredicate([this](const FVector& P) { return !Ghosts.ContainsByPredicate([&P](const TSharedPtr<FBSSpecial>& O) { return O->Home == FVector2D(P.X, P.Y); }); });
+	if (!Post) { Toast(TEXT("No room for more")); return false; }
+	Minerals -= BSDefs::GhostCost;
+	TSharedPtr<FBSSpecial> G = MakeShared<FBSSpecial>();
+	G->bGhost = true; G->Home = FVector2D(Post->X, Post->Y); G->Side = FMath::RoundToInt(Post->Z);
+	G->X = bLane ? Post->Z * 3 : Post->X * 0.3f; G->Y = bLane ? -9.f : Post->Y * 0.3f - 4;
+	G->Hp = G->MaxHp = BSDefs::GhostHp;
+	G->Route = GhostRoute(*G);
+	G->Actor = AcquireModel(TEXT("ghost"));
+	if (G->Actor) { G->Actor->SetTeamColor(TerranColor); G->Actor->SetSim(G->X, G->Y, BSTerrain::Height(G->X, G->Y), G->Yaw); }
+	CloakTint(*G);
+	Ghosts.Add(G);
+	PlaySound(TEXT("cloakOn"), 0.5f);
+	Toast(TEXT("Ghost inbound, cloaked"));
+	return true;
+}
+
+void ABSGame::CloakTint(FBSSpecial& G) { if (G.Actor) G.Actor->SetTint(G.bDetected ? FLinearColor::White : FLinearColor(0.3f, 0.45f, 0.7f)); }
+
+// Ghosts: cloaked unless an overseer is near. Steady Targeting (a long aim, then one huge shot) on the biggest armoured
+// zerg in reach; otherwise the C-10 rifle on anything climbing to the high ground first.
+void ABSGame::UpdateGhosts(float Dt)
+{
+	const TArray<TSharedPtr<FBSSpecial>> Snapshot = Ghosts;
+	for (const TSharedPtr<FBSSpecial>& GP : Snapshot)
+	{
+		FBSSpecial& G = *GP;
+		if (G.bDead) continue;
+		const bool bDet = DetectedAt(G.X, G.Y);
+		if (bDet != G.bDetected)
+		{
+			G.bDetected = bDet; CloakTint(G);
+			if (bDet) { Toast(TEXT("Ghost detected!")); Floater(G.X, G.Y, BSTerrain::Height(G.X, G.Y) + 2.5f, TEXT("DETECTED"), FLinearColor(1, 0.42f, 0.35f)); }
+			PlaySound(bDet ? TEXT("cloakOff") : TEXT("cloakOn"), 0.5f);
+		}
+		G.Cd -= Dt; G.SnipeCd -= Dt;
+		const float Z = BSTerrain::Height(G.X, G.Y), Range = BSDefs::GhostRange + (BSTerrain::OnHigh(G.X, G.Y) ? 1.f : 0.f);
+		bool bBusy = false;
+		if (G.bChannel)
+		{
+			const TSharedPtr<FBSEnemy> E = G.Channel.Pin();
+			if (!E || !E->Alive() || FMath::Sqrt(Dist2(G.X, G.Y, E->X, E->Y)) > BSDefs::SnipeRange + 2) { G.bChannel = false; G.Channel.Reset(); }
+			else if (Time >= G.ChannelUntil)
+			{
+				const float Hz = E->Z + E->Def->Height * 0.5f;
+				AddFx(EBSFxKind::Tracer, FVector(G.X, G.Y, Z + 1.0f), FVector(E->X, E->Y, Hz), 0.3f, 0.05f, FLinearColor(0.55f, 0.85f, 1), 20);
+				PlayFx(TEXT("snipeImpact"), FVector(E->X, E->Y, Hz), 0, 1.3f);
+				PlaySound(TEXT("snipeHit"), 0.6f);
+				Floater(E->X, E->Y, E->Z + E->Def->Height + 1, TEXT("SNIPED"), FLinearColor(0.6f, 0.84f, 1));
+				HurtEnemy(E, BSDefs::SnipeDmg + Up.Weapons);
+				G.bChannel = false; G.Channel.Reset(); G.SnipeCd = BSDefs::SnipeCd; G.Anim.Reset();
+			}
+			else { bBusy = true; G.Yaw = FMath::Atan2(E->Y - G.Y, E->X - G.X); }
+		}
+		if (!bBusy && G.SnipeCd <= 0)
+		{
+			TSharedPtr<FBSEnemy> Pick;
+			for (const TSharedPtr<FBSEnemy>& E : EnemiesInRange(G.X, G.Y, BSDefs::SnipeRange, [](const FBSEnemy& V) { return !V.Def->bUntouchable && !V.Def->bTumor && (V.Def->bArmored || V.MaxHp >= BSDefs::SnipeMinHp); }))
+				if (!Pick || E->Hp > Pick->Hp) Pick = E;
+			if (Pick)
+			{
+				G.bChannel = true; G.Channel = Pick; G.ChannelUntil = Time + BSDefs::SnipeChannel; bBusy = true;
+				G.Yaw = FMath::Atan2(Pick->Y - G.Y, Pick->X - G.X); G.Anim = TEXT("spell");
+				if (G.Actor) G.Actor->Play(TEXT("spell a"), false);
+				PlaySound(TEXT("snipeFire"), 0.6f);
+			}
+			else G.SnipeCd = 0.5f;
+		}
+		if (!bBusy && G.Cd <= 0)
+		{
+			const TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(G.X, G.Y, Range, [](const FBSEnemy& V) { return !V.Def->bUntouchable; });
+			TSharedPtr<FBSEnemy> Tg;
+			for (const TSharedPtr<FBSEnemy>& E : L) if (BSTerrain::OnHigh(E->X, E->Y) || E->bHighRoute) { Tg = E; break; }
+			if (!Tg && L.Num()) Tg = L[0];
+			if (Tg)
+			{
+				G.Cd = BSDefs::GhostCd; G.Hold = Time + 0.4f;
+				G.Yaw = FMath::Atan2(Tg->Y - G.Y, Tg->X - G.X);
+				const float Cs = FMath::Cos(G.Yaw), Sn = FMath::Sin(G.Yaw), Hz = Tg->Z + Tg->Def->Height * 0.5f;
+				const FVector Muzzle(G.X + Cs * 0.55f, G.Y + Sn * 0.55f, Z + 0.8f), Hit(Tg->X, Tg->Y, Hz);
+				if (!PlayFx(TEXT("ghostLaunch"), Muzzle, G.Yaw)) AddFx(EBSFxKind::Tracer, Muzzle, Hit, 0.08f, 0.04f, FLinearColor(0.7f, 0.9f, 1), 18);
+				PlayFx(TEXT("ghostImpact"), Hit, G.Yaw + PI);
+				HurtEnemy(Tg, BSDefs::GhostDmg + (Tg->Def->bLight ? BSDefs::GhostDmgLight : 0.f) + Up.Weapons + Cards.FindRef(TEXT("capacitors")));
+				G.Anim = TEXT("attack"); if (G.Actor) G.Actor->Play(TEXT("attack"), false);
+				PlaySound(TEXT("ghostFire"), 0.35f, 0.1f);
+			}
+			else G.Cd = 0.1f;
+		}
+		// Back to the post if something moved it (an abduction), then hold there.
+		if (!G.Route.Num() && FMath::Sqrt(Dist2(G.X, G.Y, G.Home.X, G.Home.Y)) > 0.6f) G.Route = GhostRoute(G);
+		if (!bBusy && Time > G.Hold && G.Route.Num())
+		{
+			const float Dx = G.Route[0].X - G.X, Dy = G.Route[0].Y - G.Y, Dd = FMath::Sqrt(Dx * Dx + Dy * Dy);
+			if (Dd < 0.3f) G.Route.RemoveAt(0);
+			else
+			{
+				const float S = FMath::Min(Dd, BSDefs::GhostSpeed * Dt);
+				StepGround(G.X, G.Y, Dx / Dd * S, Dy / Dd * S);
+				G.Yaw = FMath::Atan2(Dy, Dx);
+				if (G.Anim != TEXT("walk")) { G.Anim = TEXT("walk"); if (G.Actor) G.Actor->Play(WalkNames, true, 1.2f); }
+			}
+		}
+		else if (G.Anim == TEXT("walk") || (G.Anim == TEXT("attack") && Time > G.Hold)) { G.Anim = TEXT("stand"); if (G.Actor) G.Actor->Play(StandNames, true); }
+		if (G.Actor) G.Actor->SetSim(G.X, G.Y, BSTerrain::Height(G.X, G.Y), G.Yaw);
+	}
+}
+
+bool ABSGame::DetectedAt(float X, float Y) const
+{
+	for (const TSharedPtr<FBSEnemy>& E : Enemies)
+		if (E->Def->bDetector && E->Alive() && Dist2(E->X, E->Y, X, Y) < BSOverseers::Detect * BSOverseers::Detect) return true;
+	return false;
+}
+
+// Overseer: flies to the nearest ghost and hangs just behind it (on the swarm's side), revealing it; with no ghost left,
+// it flies back out.
+void ABSGame::UpdateOverseer(const TSharedPtr<FBSEnemy>& EP, float Dt)
+{
+	FBSEnemy& E = *EP;
+	TSharedPtr<FBSSpecial> Near; float Gd = 1e18f;
+	for (const TSharedPtr<FBSSpecial>& O : Ghosts) if (!O->bDead) { const float Dd = Dist2(E.X, E.Y, O->X, O->Y); if (Dd < Gd) { Gd = Dd; Near = O; } }
+	const FVector2D G = Near ? FVector2D(Near->X, Near->Y + 1.2f) : E.Exit;
+	const float Dx = G.X - E.X, Dy = G.Y - E.Y, Dd = FMath::Sqrt(Dx * Dx + Dy * Dy);
+	if (!Near && Dd < 0.5f) { Despawn(EP); return; }
+	if (Dd > 0.05f)
+	{
+		const float S = FMath::Min(Dd, E.Def->Speed * Dt);
+		E.X += Dx / Dd * S; E.Y += Dy / Dd * S;
+		E.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(E.Yaw, FMath::Atan2(Dy, Dx)), -3 * Dt, 3 * Dt);
+	}
+	E.Z = E.Def->Fly + 0.2f * FMath::Sin(Time * 1.3f + E.X);
 	PlayEnemyAnim(E, TEXT("walk"));
 }
 
@@ -2896,9 +3246,10 @@ void ABSGame::BroodlingHit(const FBSTarget& T)
 	case FBSTarget::Mech: if (auto P = T.MechRef.Pin()) { Hp = P->Hp; Armor = P->Def->Armor; } break;
 	case FBSTarget::Trooper: if (auto P = T.TrooperRef.Pin()) Hp = P->Hp; break;
 	case FBSTarget::Scv: if (auto P = T.ScvRef.Pin()) Hp = P->Hp; break;
+	case FBSTarget::Reaper: case FBSTarget::Ghost: if (auto P = T.SpecialRef.Pin()) Hp = P->Hp; break;
 	default: return;
 	}
-	const bool bKill = T.Kind == FBSTarget::Trooper || T.Kind == FBSTarget::Scv;
+	const bool bKill = T.Kind == FBSTarget::Trooper || T.Kind == FBSTarget::Scv || T.Kind == FBSTarget::Reaper || T.Kind == FBSTarget::Ghost;
 	const float X = T.X, Y = T.Y, Gz = BSTerrain::Height(X, Y);
 	if (!PlayFx(TEXT("broodSpellImpact"), FVector(X, Y, Gz + 0.3f), 0))
 		AddFx(EBSFxKind::Blast, FVector(X, Y, Gz + 0.05f), FVector::ZeroVector, 0.4f, 0.9f, FLinearColor(0.6f, 1, 0.25f), 6);
@@ -3000,7 +3351,7 @@ bool ABSGame::WaveAlive() const
 	const float Reach = BSDefs::FindInfantry(TEXT("marine"))->Range + BSDefs::BunkerRangeBonus + BSDefs::BunkerHalfSize + (Up.bHiSec ? BSDefs::HiSecRange : 0.f)
 		+ (Up.bRails ? BSDefs::RailsRange : 0.f) + (Mode == EBSMode::Arena ? 1.f : 0.f);
 	for (const TSharedPtr<FBSEnemy>& E : Enemies)
-		if (!E->Def->bTumor && !E->Def->bCreeper && !E->Def->bAmbient && !(E->Def->bFlying && E->bAttacking && FMath::Sqrt(Dist2(0, 0, E->X, E->Y)) - E->Radius > Reach)) return true;
+		if (!E->Def->bTumor && !E->Def->bCreeper && !E->Def->bAmbient && !E->Def->bDetector && !(E->Def->bFlying && E->bAttacking && FMath::Sqrt(Dist2(0, 0, E->X, E->Y)) - E->Radius > Reach)) return true;
 	return false;
 }
 
@@ -3177,12 +3528,16 @@ void ABSGame::CastSpell(FBSEnemy& E, const FBSTarget& T)
 	if (E.Actor) E.Actor->Play(TEXT("spell"), false);
 	if (D->Spell == TEXT("abduct"))
 	{
-		// Yank the nearest trooper outside, goliath or thor out of position toward the viper.
-		TSharedPtr<FBSTrooper> BestT; TSharedPtr<FBSMech> BestM; float Bd = (D->Range + 1) * (D->Range + 1);
+		// Yank the nearest trooper outside, reaper, ghost (one an overseer has revealed), goliath or thor out of position
+		// toward the viper.
+		TSharedPtr<FBSTrooper> BestT; TSharedPtr<FBSMech> BestM; TSharedPtr<FBSSpecial> BestS; float Bd = (D->Range + 1) * (D->Range + 1);
 		for (const TSharedPtr<FBSTrooper>& M : Squad) if (!M->bDead && Dist2(E.X, E.Y, M->X, M->Y) < Bd) { Bd = Dist2(E.X, E.Y, M->X, M->Y); BestT = M; }
 		for (const TSharedPtr<FBSMech>& M : Mechs) if (!M->bDead && M->Def->Key != TEXT("odin") && Dist2(E.X, E.Y, M->X, M->Y) < Bd) { Bd = Dist2(E.X, E.Y, M->X, M->Y); BestM = M; BestT.Reset(); }
-		if (!BestT && !BestM) { E.Cd = 1; return; }
-		const float Ox = BestT ? BestT->X : BestM->X, Oy = BestT ? BestT->Y : BestM->Y, Oz = BSTerrain::Height(Ox, Oy) + 1;
+		for (const TArray<TSharedPtr<FBSSpecial>>* L : { &Reapers, &Ghosts })
+			for (const TSharedPtr<FBSSpecial>& M : *L)
+				if (!M->bDead && (!M->bGhost || M->bDetected) && Dist2(E.X, E.Y, M->X, M->Y) < Bd) { Bd = Dist2(E.X, E.Y, M->X, M->Y); BestS = M; BestT.Reset(); BestM.Reset(); }
+		if (!BestT && !BestM && !BestS) { E.Cd = 1; return; }
+		const float Ox = BestT ? BestT->X : BestM ? BestM->X : BestS->X, Oy = BestT ? BestT->Y : BestM ? BestM->Y : BestS->Y, Oz = BSTerrain::Height(Ox, Oy) + 1;
 		const float A = FMath::Atan2(Oy - E.Y, Ox - E.X);
 		AddFx(EBSFxKind::Tracer, FVector(E.X, E.Y, E.Z), FVector(Ox, Oy, Oz), 0.6f, 0.06f, FLinearColor(0.55f, 0.25f, 1.f), 14);
 		PlayFx(TEXT("viperTongueImpact"), FVector(Ox, Oy, Oz), A);
@@ -3195,7 +3550,7 @@ void ABSGame::CastSpell(FBSEnemy& E, const FBSTarget& T)
 			if (!BSTerrain::Walkable(X, Y) || FMath::Abs(BSTerrain::Height(X, Y) - Z0) > 0.5f || (Mode == EBSMode::Lane && FMath::Abs(X) > 21)) break;
 			Tx = X; Ty = Y;
 		}
-		FBSAbduct Ab2; Ab2.Trooper = BestT; Ab2.Mech = BestM; Ab2.Fx = Ox; Ab2.Fy = Oy; Ab2.Tx = Tx; Ab2.Ty = Ty;
+		FBSAbduct Ab2; Ab2.Trooper = BestT; Ab2.Mech = BestM; Ab2.Special = BestS; Ab2.Fx = Ox; Ab2.Fy = Oy; Ab2.Tx = Tx; Ab2.Ty = Ty;
 		Abductions.Add(Ab2);
 		PlaySound(TEXT("viperAbduct"), 0.7f);
 		Floater(Ox, Oy, Oz + 1, TEXT("ABDUCTED"), FLinearColor(0.75f, 0.55f, 1.f));
@@ -3250,9 +3605,9 @@ void ABSGame::UpdateSpells(float Dt)
 		FBSAbduct& A = Abductions[i];
 		A.T += Dt;
 		const float K = FMath::Clamp(A.T / 0.6f, 0.f, 1.f);
-		TSharedPtr<FBSTrooper> Tr = A.Trooper.Pin(); TSharedPtr<FBSMech> Me = A.Mech.Pin();
-		if ((Tr && Tr->bDead) || (Me && Me->bDead) || (!Tr && !Me)) { Abductions.RemoveAt(i); continue; }
-		float& X = Tr ? Tr->X : Me->X; float& Y = Tr ? Tr->Y : Me->Y;
+		TSharedPtr<FBSTrooper> Tr = A.Trooper.Pin(); TSharedPtr<FBSMech> Me = A.Mech.Pin(); TSharedPtr<FBSSpecial> Sp = A.Special.Pin();
+		if ((Tr && Tr->bDead) || (Me && Me->bDead) || (Sp && Sp->bDead) || (!Tr && !Me && !Sp)) { Abductions.RemoveAt(i); continue; }
+		float& X = Tr ? Tr->X : Me ? Me->X : Sp->X; float& Y = Tr ? Tr->Y : Me ? Me->Y : Sp->Y;
 		X = A.Fx + (A.Tx - A.Fx) * K; Y = A.Fy + (A.Ty - A.Fy) * K;
 		if (K >= 1) { if (Me) Me->bReady = false; Abductions.RemoveAt(i); }        // a mech walks back to its post
 	}
@@ -3274,7 +3629,7 @@ void ABSGame::BuildAirTargets()
 			AirTargets.Add(T);
 		}
 	for (const TSharedPtr<FBSBanshee>& W : Wraiths)
-		if (!W->bDead && W->State != FBSBanshee::In)
+		if (!W->bDead && W->State != FBSBanshee::In && !(W->CloakUntil > 0 && !DetectedAt(W->X, W->Y)))     // cloaked unless an overseer sees it
 		{
 			FBSTarget T; T.Kind = FBSTarget::Air; T.AirRef = W; T.AirType = FBSTarget::Wraith; T.X = W->X; T.Y = W->Y; T.Z = W->Z; T.Radius = 0.6f; T.bLight = true;
 			AirTargets.Add(T);
@@ -3373,6 +3728,18 @@ void ABSGame::BuildTargets()
 		FBSTarget T; T.Kind = FBSTarget::Mech; T.MechRef = M; T.X = M->X; T.Y = M->Y; T.Radius = M->Def->Radius; T.bArmored = true;
 		Targets.Add(T);
 	}
+	for (const TSharedPtr<FBSSpecial>& R : Reapers)
+	{
+		if (R->bDead) continue;
+		FBSTarget T; T.Kind = FBSTarget::Reaper; T.SpecialRef = R; T.X = R->X; T.Y = R->Y; T.Radius = R->Radius; T.bLight = true;
+		Targets.Add(T);
+	}
+	for (const TSharedPtr<FBSSpecial>& G : Ghosts)
+	{
+		if (G->bDead || !G->bDetected) continue;           // cloaked unless an overseer sees it
+		FBSTarget T; T.Kind = FBSTarget::Ghost; T.SpecialRef = G; T.X = G->X; T.Y = G->Y; T.Radius = G->Radius;
+		Targets.Add(T);
+	}
 	for (const TSharedPtr<FBSStructure>& S : Structures)
 	{
 		if (S->bDead) continue;
@@ -3434,6 +3801,12 @@ void ABSGame::DamageDefender(const FBSTarget& T, float Dmg)
 			Squad.Remove(M);
 		}
 	}
+	else if (T.Kind == FBSTarget::Reaper || T.Kind == FBSTarget::Ghost)
+	{
+		TSharedPtr<FBSSpecial> O = T.SpecialRef.Pin();
+		O->Hp -= FMath::Max(0.5f, Dmg); O->Flash = 1; O->HitAt = Time;
+		if (O->Hp <= 0 && !O->bDead) KillSpecial(O);
+	}
 	else if (T.Kind == FBSTarget::Mech)
 	{
 		TSharedPtr<FBSMech> M = T.MechRef.Pin();
@@ -3451,6 +3824,12 @@ void ABSGame::DamageDefender(const FBSTarget& T, float Dmg)
 		TSharedPtr<FBSBanshee> A = T.AirRef.Pin();
 		A->Hp -= FMath::Max(0.5f, Dmg - (T.AirType == FBSTarget::Vessel ? BSDefs::VesselArmor : 0.f)); A->Flash = 1;
 		if (A->Hp <= 0 && !A->bDead) KillAir(T);
+		else if (T.AirType == FBSTarget::Wraith && A->CloakUntil <= 0 && Time >= A->CloakReady)
+		{
+			A->CloakUntil = Time + BSDefs::WraithCloakDur; A->CloakReady = A->CloakUntil + BSDefs::WraithCloakCd;
+			if (A->Actor) A->Actor->SetTint(FLinearColor(0.3f, 0.45f, 0.7f));
+			PlaySound(TEXT("cloakOn"), 0.4f, 0.3f);
+		}
 		else if (T.AirType == FBSTarget::Vessel)
 		{
 			A->HitAt = Time;
@@ -3629,6 +4008,8 @@ void ABSGame::Step(float Dt)
 	UpdateVikings(Dt);
 	UpdateWraiths(Dt);
 	UpdateVessel(Dt);
+	UpdateReapers(Dt);
+	UpdateGhosts(Dt);
 	UpdateNukes(Dt);
 	UpdatePods(Dt);
 	UpdateProjectiles(Dt);
@@ -3691,6 +4072,7 @@ void ABSGame::UpdateEnemies(float Dt)
 		if (D->bTumor) { UpdateTumor(EP, Dt); continue; }
 		if (D->bCreeper) { UpdateCreeper(EP, Dt); continue; }
 		if (D->bWatcher) { UpdateWatcher(EP, Dt); continue; }
+		if (D->bDetector) { UpdateOverseer(EP, Dt); continue; }
 		if (D->bTumors && QueenCreep(E, Dt)) continue;
 		E.Retarget -= Dt;
 		const TArray<FBSTarget>& Pool = D->bAntiAir ? AirTargets : Targets;       // scourge and devourers hunt Terran air
@@ -4311,6 +4693,11 @@ void ABSGame::UpdateProjectiles(float Dt)
 				if (!bImpactFx) AddFx(EBSFxKind::Flash, Done.To, Done.To, 0.15f, 0.5f, FLinearColor(1, 0.8f, 0.5f), 10);
 			}
 			else if (Done.Kind == EBSProjKind::Yamato) YamatoImpact(Done.To, Done.Dmg);
+			else if (Done.Kind == EBSProjKind::Kd8)
+			{
+				Kd8Blast(Done.To.X, Done.To.Y);
+				if (!bImpactFx) EmitExplosion(FVector(Done.To.X, Done.To.Y, Done.To.Z + 0.2f), BSDefs::Kd8Radius, FLinearColor(1, 0.7f, 0.3f), FLinearColor(0.7f, 0.25f, 0.05f), 10);
+			}
 		}
 		else
 		{
@@ -4426,6 +4813,8 @@ void ABSGame::UpdateVisuals(float Dt)
 		if (bStimmed || M->bStimLook) { M->Actor->SetTeamColor(bStimmed ? StimColor : TerranColor); M->bStimLook = bStimmed; }
 	}
 	for (auto& Mc : Mechs) { Mc->Flash = FMath::Max(0.f, Mc->Flash - Dt * 4); if (Mc->Actor) Mc->Actor->SetHitFlash(Mc->Flash * 0.3f); }
+	for (auto& Sp : Reapers) { Sp->Flash = FMath::Max(0.f, Sp->Flash - Dt * 4); if (Sp->Actor) Sp->Actor->SetHitFlash(Sp->Flash * 0.3f); }
+	for (auto& Sp : Ghosts) { Sp->Flash = FMath::Max(0.f, Sp->Flash - Dt * 4); if (Sp->Actor) Sp->Actor->SetHitFlash(Sp->Flash * 0.3f); }
 	for (auto& St : Structures) { St->Flash = FMath::Max(0.f, St->Flash - Dt * 4); if (St->Actor) St->Actor->SetHitFlash(St->Flash * 0.3f); }
 
 	UpdateParticles(Dt);
