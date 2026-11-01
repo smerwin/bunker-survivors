@@ -295,9 +295,11 @@ namespace BSDefs
 	constexpr float MutationCd = 20, MutationRadius = 9, MutationDur = 8; constexpr int32 MutationMin = 4;
 	constexpr float BanesCd = 16; constexpr int32 BanesCount = 6;
 	constexpr float FuryDur = 3; constexpr int32 FuryEvery = 8;
-	// Corpses lie for up to CorpseHold s (their death sequence, at least 3 s), sinking away over the last CorpseSink;
-	// past CorpseCap of them the oldest go early.
-	constexpr float CorpseHold = 7, CorpseSink = 1.2f; constexpr int32 CorpseCap = 120;
+	// A corpse plays its death until the body has fallen (CorpseFall: seconds, measured per death model), lies CorpseLie s,
+	// then sinks away over CorpseSink s. SC2's death sequences run ten seconds, but the body is still for nearly all of it.
+	// Past CorpseCap of them the oldest go early.
+	constexpr float CorpseLie = 0.4f, CorpseSink = 0.7f; constexpr int32 CorpseCap = 60;
+	float CorpseFall(const FString& Key, float Hold);
 }
 
 // Sound keys -> exported sound files (S_<key>_<n> in /Game/SC2/Sounds).

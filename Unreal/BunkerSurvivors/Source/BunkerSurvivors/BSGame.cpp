@@ -4171,9 +4171,8 @@ void ABSGame::Corpse(const FString& Key, float X, float Y, float Z, float Yaw, f
 	PlayFx(Key, FVector(X, Y, FMath::Max(Z, Gz)), Yaw, Scale);
 	ABSModelActor* A = AcquireModel(Key);
 	if (!A) return;
-	// Corpses are darkened and kept low so living units always read on top of the carnage.
-	A->SetTeamColor((bTerran ? TerranColor : ZergColor) * 0.35f);
-	A->SetScalarParam(TEXT("EmissiveStrength"), 0.25f);
+	// Corpses keep SC2's own lighting; they only draw behind the living so live units always read on top of the carnage.
+	A->SetTeamColor(bTerran ? TerranColor : ZergColor);
 	A->SetScalarParam(TEXT("DepthPush"), 180.f);       // 1.8 m behind: live zerg always draw on top
 	A->SetScale(Scale);
 	A->SetSim(X, Y, FMath::Min(Z, Gz), Yaw);
@@ -4186,9 +4185,7 @@ void ABSGame::Corpse(const FString& Key, float X, float Y, float Z, float Yaw, f
 	FBSCorpse Cp;
 	Cp.Actor = A; Cp.X = X; Cp.Y = Y; Cp.Z = FMath::Min(Z, Gz); Cp.Yaw = Yaw;
 	Cp.bSink = !Key.StartsWith(TEXT("bunker"));
-	// SC2's death sequences run up to ten seconds: the body falls, then lies there. Hold it most of that, then sink it away
-	// over the last CorpseSink s (a collapsed body is barely ankle-high, so any sooner and it just vanishes).
-	Cp.Hold = Cp.bSink ? FMath::Clamp(Len > 0 ? Len : BSDefs::CorpseHold, 3.f, BSDefs::CorpseHold) : FMath::Max(Hold, FMath::Min(Len, 8.f));
+	Cp.Hold = Cp.bSink ? BSDefs::CorpseFall(Key, Hold) + BSDefs::CorpseLie + BSDefs::CorpseSink : FMath::Max(Hold, FMath::Min(Len, 8.f));
 	// Baneling chunks fade out in SC2 through visibility tracks we do not import; drop them right after the burst.
 	if (Key.StartsWith(TEXT("baneling"))) { Cp.Hold = 0.45f; Cp.bVanish = true; Cp.bSink = false; }
 	if (Z > 0.5f) Cp.Hold = FMath::Max(Cp.Hold, 2.f);      // flyers fall from the sky
@@ -5096,7 +5093,7 @@ void ABSGame::UpdateVisuals(float Dt)
 		if (Cp.bSink && Cp.Actor)
 		{
 			const float K = FMath::Clamp(1 - (Cp.Hold - Cp.T) / BSDefs::CorpseSink, 0.f, 1.f);
-			Cp.Actor->SetSim(Cp.X, Cp.Y, Cp.Z - 0.9f * K * K, Cp.Yaw);
+			Cp.Actor->SetSim(Cp.X, Cp.Y, Cp.Z - 1.1f * K * (0.4f + 0.6f * K), Cp.Yaw);
 		}
 	}
 	// Big waves leave a field of bodies: past the cap, the oldest start their sink now.

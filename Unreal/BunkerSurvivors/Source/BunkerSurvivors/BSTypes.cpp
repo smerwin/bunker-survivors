@@ -385,4 +385,12 @@ namespace BSDefs
 	const FBSInfantryDef* FindInfantry(const FString& Key) { return Infantry().FindByPredicate([&](const FBSInfantryDef& D) { return D.Key == Key; }); }
 	const TArray<FBSUpgradeDef>& Upgrades() { static TArray<FBSUpgradeDef> V = MakeUpgrades(); return V; }
 	const FBSUpgradeDef* FindUpgrade(const FString& Key) { return Upgrades().FindByPredicate([&](const FBSUpgradeDef& D) { return D.Key == Key; }); }
+	float CorpseFall(const FString& Key, float Hold)
+	{
+		static const TPair<const TCHAR*, float> Falls[] = { {TEXT("zergling"), 2.4f}, {TEXT("wingling"), 2.4f}, {TEXT("ultralisk"), 3}, {TEXT("queen"), 2.5f},
+			{TEXT("broodqueen"), 1.6f}, {TEXT("overlord"), 2.6f}, {TEXT("overseer"), 2.8f}, {TEXT("guardian"), 2}, {TEXT("defiler"), 2}, {TEXT("creeptumor"), 2.8f},
+			{TEXT("devourer"), 1}, {TEXT("hydralisk"), 0.8f}, {TEXT("roach"), 0.8f}, {TEXT("lurker"), 0.8f}, {TEXT("broodling"), 0.8f}, {TEXT("kerrigan"), 5}, {TEXT("leviathan"), 5} };
+		for (const auto& F : Falls) if (Key.StartsWith(F.Key)) return F.Value;
+		return FMath::Clamp(Hold - 2, 1.5f, 3.f);
+	}
 }

@@ -19,9 +19,14 @@ window.BS = window.BS || {};
   // what it does to a tank or mech (troopers and SCVs die outright).
   const BROOD_PRIORITY = { tank: 4, mech: 3, trooper: 2, scv: 1 };
   const BROOD_SPELL_DMG = 120;
-  // Corpses lie for up to CORPSE_HOLD s, sinking away over the last CORPSE_SINK; past CORPSE_CAP of them (scaled down on
-  // phones) the oldest go early.
-  const CORPSE_HOLD = 7, CORPSE_SINK = 1.2, CORPSE_CAP = 120;
+  // A corpse plays its death until the body has fallen (CORPSE_FALL: seconds, measured per death model, by key prefix),
+  // lies CORPSE_LIE s, then sinks away over CORPSE_SINK s. SC2's death sequences run ten seconds, but the body is still
+  // for nearly all of it. Past CORPSE_CAP corpses (scaled down on phones) the oldest go early.
+  const CORPSE_LIE = 0.4, CORPSE_SINK = 0.7, CORPSE_CAP = 60;
+  const CORPSE_FALL = [['zergling', 2.4], ['wingling', 2.4], ['ultralisk', 3], ['queen', 2.5], ['broodqueen', 1.6], ['overlord', 2.6],
+    ['overseer', 2.8], ['guardian', 2], ['defiler', 2], ['creeptumor', 2.8], ['devourer', 1], ['hydralisk', 0.8], ['roach', 0.8],
+    ['lurker', 0.8], ['broodling', 0.8], ['kerrigan', 5], ['leviathan', 5]];
+  const corpseFall = (key, hold) => { const f = CORPSE_FALL.find(([p]) => key.startsWith(p)); return f ? f[1] : clamp(hold - 2, 1.5, 3); };
   // Mech weapon bones and their rest-pose positions (model space: x right, y up, z forward) for the fallback.
   // Where a soldier's weapon fires from mid-attack (its Ref_Weapon bone): metres forward, to its left, and up.
   const RIFLE_MUZZLE = { marine: [0.44, -0.05, 0.46], firebat: [0.82, -0.27, 0.67], marauder: [0.51, -0.36, 0.7], infested: [0.35, -0.22, 0.47] };
@@ -2524,9 +2529,7 @@ window.BS = window.BS || {};
       if (scale) h.setScale(scale);
       const c = { h, t: 0, x, y, z, yaw, sink: !/^bunker/.test(key), hold: hold || 3.5 };
       const len = h.model ? h.playDeath(false) : (h.playDeath(false), 0);   // still attaching its model: length unknown
-      // SC2's death sequences run up to ten seconds: the body falls, then lies there. Hold it most of that, then sink
-      // it away over the last CORPSE_SINK s (a collapsed body is barely ankle-high, so any sooner and it just vanishes).
-      c.hold = c.sink ? clamp(len || CORPSE_HOLD, 3, CORPSE_HOLD) : Math.max(hold, Math.min(len || 8, 8));
+      c.hold = c.sink ? corpseFall(key, hold || 3.5) + CORPSE_LIE + CORPSE_SINK : Math.max(hold, Math.min(len || 8, 8));
       if (z > 0.5) c.hold = Math.max(c.hold, 2);
       // Baneling chunks fade out in SC2 through visibility tracks the viewer does not apply; drop them after the burst.
       if (/^baneling/.test(key)) { c.hold = 0.45; c.sink = false; }
@@ -3151,7 +3154,7 @@ window.BS = window.BS || {};
         const c = this.corpses[i];
         c.t += dt;
         if (c.t > c.hold) { c.h.release(); this.corpses.splice(i, 1); continue; }
-        if (c.sink) { const k = clamp(1 - (c.hold - c.t) / CORPSE_SINK, 0, 1); c.h.setPos(c.x, c.y, c.z - 0.9 * k * k); }
+        if (c.sink) { const k = clamp(1 - (c.hold - c.t) / CORPSE_SINK, 0, 1); c.h.setPos(c.x, c.y, c.z - 1.1 * k * (0.4 + 0.6 * k)); }
       }
       // Big waves leave a field of bodies: past the cap, the oldest start their sink now.
       const cap = Math.round(CORPSE_CAP * (BS.perfScale || 1));
