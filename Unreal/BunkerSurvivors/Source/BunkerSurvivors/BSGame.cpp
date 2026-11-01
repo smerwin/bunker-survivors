@@ -1,4 +1,5 @@
 #include "BSGame.h"
+#include "Algo/IndexOf.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "Misc/FileHelper.h"
@@ -2553,7 +2554,8 @@ void ABSGame::StartWave()
 	if (Wv % 5 == 0) { List.Add(Wv >= 15 ? TEXT("ultralisk") : TEXT("roach")); List.Add(TEXT("roach")); }
 	// On top of the budget: a zergling swarm that snowballs (4 at wave 1, ~30 by wave 8, ~75 by wave 15, ~100 by wave 20).
 	auto Sq = [](float X) { return 2 + 1.2f * X + 0.3f * X * X; };
-	const int32 Swarm = FMath::RoundToInt(Wv <= BSDefs::SwarmKnee ? Sq(Wv) : FMath::Min<float>(BSDefs::SwarmMax, Sq(BSDefs::SwarmKnee) + BSDefs::SwarmPerWave * (Wv - BSDefs::SwarmKnee)));
+	const int32 Swarm = FMath::RoundToInt((Wv <= BSDefs::SwarmKnee ? Sq(Wv) : FMath::Min<float>(BSDefs::SwarmMax, Sq(BSDefs::SwarmKnee) + BSDefs::SwarmPerWave * (Wv - BSDefs::SwarmKnee)))
+		* BSDefs::LadderAt(BSDefs::LadderSwarm, Rung, 1.f));
 	if (bHard && Wv % 10 == 0 && Wv >= 20) { List.Add(TEXT("ultralisk")); List.Add(TEXT("ultralisk")); }
 	for (int32 i = List.Num() - 1; i > 0; i--) List.Swap(i, FMath::RandRange(0, i));
 
@@ -2583,9 +2585,9 @@ void ABSGame::StartWave()
 		const float T = 0.5f + Rnd(0.f, Spread);
 		const float Ang = PackAng(0.55f);
 		// Late game (lane mode): some of the swarm are winged zerglings that hop straight over the mesa, a few more with
-		// every tech card past the one that brings them.
+		// every tech card past the one that brings them (on the first rungs of the ladder, a share of their own).
 		const int32 WlLate = BSDefs::FindZerg(TEXT("wingling"))->Late;
-		const float Wl = Mode == EBSMode::Lane && Tier >= WlLate ? FMath::Min(0.4f, 0.1f * (Tier - WlLate + 1)) : 0.f;
+		const float Wl = Mode != EBSMode::Lane ? 0.f : FMath::Max(BSDefs::LadderAt(BSDefs::LadderWinglings, Rung, 0.f), Tier >= WlLate ? FMath::Min(0.4f, 0.1f * (Tier - WlLate + 1)) : 0.f);
 		for (int32 k = 0; k < N; k++) { SpawnQueue.Add({ T + k * 0.04f, FMath::FRand() < Wl ? TEXT("wingling") : TEXT("zergling"), Ang }); Added++; }
 		Left -= N;
 	}
@@ -2633,6 +2635,10 @@ void ABSGame::StartWave()
 	{
 		if (Ms.Wave != Wv || bFinale) continue;
 		TArray<FString> Items; FString(Ms.Zerg).ParseIntoArray(Items, TEXT(","));
+		// (A named assault only once the ladder has opened every strain it brings.)
+		const bool bOpen = !Items.ContainsByPredicate([this](const FString& It) { FString K, Nstr; It.Split(TEXT(":"), &K, &Nstr); return !ZergOpen(K); })
+			&& (!Ms.Nydus || ZergOpen(TEXT("nydus"))) && (!Ms.Pods || ZergOpen(TEXT("overlordDrop")));
+		if (!bOpen) continue;
 		for (const FString& It : Items)
 		{
 			FString K, Nstr; It.Split(TEXT(":"), &K, &Nstr);
@@ -2647,6 +2653,11 @@ void ABSGame::StartWave()
 	}
 	// The ladder: only the strains this rung has met (the finale's Kerrigan and leviathan come whatever the rung).
 	SpawnQueue.RemoveAll([this](const FBSSpawn& S) { return !ZergOpen(S.Type); });
+	// The zerglings' evolution, announced as it happens.
+	const int32 PlateLv = Algo::IndexOf(BSLingEvo::PlatingWaves, Wv) + 1;
+	if (Wv == BSLingEvo::BoostWave) Toast(TEXT("Zerglings evolve: Metabolic Boost"));
+	if (PlateLv) Toast(FString::Printf(TEXT("Zerglings evolve: Melee Attacks and Carapace level %d"), PlateLv));
+	if (Wv == BSLingEvo::AdrenalWave) Toast(TEXT("Zerglings evolve: Adrenal Glands"));
 	if (bFinale) StartFinale();
 }
 
@@ -3027,9 +3038,39 @@ void ABSGame::BossDown(FBSEnemy& E)
 	Shake = 1;
 }
 
+// A zergling closing on the bunker in the lane takes a spot of its own on a ring round it (any side, the back too),
+// working round at a little distance, then in; there it bites (and whatever stands near is fair game on the way).
+FVector2D ABSGame::SurroundGoal(FBSEnemy& E)
+{
+	const float R = BSDefs::BunkerHalfSize + E.Radius + 0.25f, Out = R + 1.4f;        // the bunker stands at the origin
+	if (!E.bRing) { E.bRing = true; E.Ring = FMath::Atan2(E.Y, E.X) + Rnd(-1, 1) * PI; }
+	const float A = FMath::Atan2(E.Y, E.X), Da = FMath::FindDeltaAngleRadians(A, E.Ring);
+	if (FMath::Abs(Da) > 0.35f) { const float S = A + FMath::Sign(Da) * FMath::Min(FMath::Abs(Da), 0.6f); return FVector2D(FMath::Cos(S) * Out, FMath::Sin(S) * Out); }
+	const FVector2D G(FMath::Cos(E.Ring) * R, FMath::Sin(E.Ring) * R);
+	if (Dist2(G.X, G.Y, E.X, E.Y) < 0.25f) E.bRingDone = true;
+	return G;
+}
+
+const FBSZergDef* ABSGame::ZergDef(const FString& Type)
+{
+	const FBSZergDef* Base = BSDefs::FindZerg(Type);
+	if (!Base || !BSLingEvo::Evolves(Type)) return Base;
+	const bool bBoost = Wave >= BSLingEvo::BoostWave, bAdrenal = Wave >= BSLingEvo::AdrenalWave;
+	int32 Plating = 0;
+	for (const int32 W : BSLingEvo::PlatingWaves) Plating += Wave >= W;
+	const FString Key = FString::Printf(TEXT("%s/%d/%d/%d"), *Type, bBoost ? 1 : 0, Plating, bAdrenal ? 1 : 0);
+	if (const TUniquePtr<FBSZergDef>* Have = EvoDefs.Find(Key)) return Have->Get();
+	TUniquePtr<FBSZergDef> D = MakeUnique<FBSZergDef>(*Base);
+	D->Speed *= bBoost ? BSLingEvo::BoostSpeed : 1.f;
+	D->Dmg += Plating * BSLingEvo::PlatingDmg;
+	D->Armor += Plating * BSLingEvo::PlatingArmor;
+	D->Cd *= bAdrenal ? BSLingEvo::AdrenalCd : 1.f;
+	return EvoDefs.Add(Key, MoveTemp(D)).Get();
+}
+
 TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const FVector2D* At)
 {
-	const FBSZergDef* D = BSDefs::FindZerg(Type);
+	const FBSZergDef* D = ZergDef(Type);
 	if (!D) return nullptr;
 	float X, Y;
 	const bool bLane = Mode == EBSMode::Lane;
@@ -4551,7 +4592,9 @@ void ABSGame::UpdateEnemies(float Dt)
 				else E.UnburrowT = 0;
 			}
 		}
-		const bool bCanAttack = Reach <= Range + (bHigh ? 1.f : 0.f) && !(D->bBurrows && (!E.bBurrowed || E.BurrowT > 0)) && !(E.Route.Num() && E.bHighRoute);
+		// Zerglings in the lane spread round the bunker (SurroundGoal) before they bite it.
+		const bool bRing = D->bSurround && Mode == EBSMode::Lane && T.Kind == FBSTarget::Bunker && !E.bRingDone && Dd < 9;
+		const bool bCanAttack = !bRing && Reach <= Range + (bHigh ? 1.f : 0.f) && !(D->bBurrows && (!E.bBurrowed || E.BurrowT > 0)) && !(E.Route.Num() && E.bHighRoute);
 		if (bCanAttack)
 		{
 			E.bAttacking = true;
@@ -4635,6 +4678,7 @@ void ABSGame::UpdateEnemies(float Dt)
 			PlayEnemyAnim(E, TEXT("walk"));
 			// Head for the next waypoint of the route through the Y, then straight for the target.
 			float Gx = T.X, Gy = T.Y;
+			if (bRing && !E.Route.Num()) { const FVector2D G = SurroundGoal(E); Gx = G.X; Gy = G.Y; }
 			if (E.Route.Num())
 			{
 				Gx = E.Route[0].X; Gy = E.Route[0].Y;
@@ -5350,23 +5394,29 @@ void ABSGame::AutoPlayImpl()
 	if (Bot == TEXT("mech"))
 	{
 		// Tanks first, SCVs to keep them alive, vehicle upgrades; the bunker keeps its starting marines.
-		if (Tanks.Num() < TankMax) { if (Minerals >= TankCost()) DropTank(); return; }
+		if (UnitOpen(TEXT("tank")) && Tanks.Num() < TankMax) { if (Minerals >= TankCost()) DropTank(); return; }
 		if (UpgradeAvailable(TEXT("hisec")) && Minerals >= 200) { BuyUpgrade(TEXT("hisec")); return; }
-		if (Scvs.Num() < 3 && Minerals >= 50) { AddScv(); return; }
+		if (UnitOpen(TEXT("scv")) && Scvs.Num() < 3 && Minerals >= 50) { AddScv(); return; }
 		if (UpgradeAvailable(TEXT("vehicle")) && Minerals >= CostOfUpgrade(TEXT("vehicle"))) { BuyUpgrade(TEXT("vehicle")); return; }
 		if (UpgradeAvailable(TEXT("plating")) && Minerals >= CostOfUpgrade(TEXT("plating"))) { BuyUpgrade(TEXT("plating")); return; }
-		if (N < Bunker.Slots && Minerals >= 100) { AddInfantry(TEXT("marauder")); return; }
+		if (N < Bunker.Slots && Minerals >= 100) { AddInfantry(UnitOpen(TEXT("marauder")) ? TEXT("marauder") : TEXT("marine")); return; }
 		return;
 	}
-	// Balanced commander (the default, also used for demos).
+	// Balanced commander (the default, also used for demos). Whatever the ladder has not opened yet it does without.
 	const int32 InfantryN = N;
 	int32 Firebats = 0; for (auto& U : Bunker.Units) if (U.Def->Key == TEXT("firebat")) Firebats++;
+	const bool bTanks = UnitOpen(TEXT("tank"));
 	if (InfantryN < 3 && Minerals >= 50) { AddInfantry(TEXT("marine")); return; }
 	if (!Up.bStim && Minerals >= 100) { BuyUpgrade(TEXT("stim")); return; }
-	if (InfantryN >= 4 && Tanks.Num() < 1) { if (Minerals >= TankCost()) DropTank(); return; }   // save up for the first tank
-	if (InfantryN < Bunker.Slots && Minerals >= 100) { AddInfantry(Firebats < 1 ? TEXT("firebat") : (InfantryN % 2 ? TEXT("marauder") : TEXT("marine"))); return; }
+	if (bTanks && InfantryN >= 4 && Tanks.Num() < 1) { if (Minerals >= TankCost()) DropTank(); return; }   // save up for the first tank
+	if (InfantryN < Bunker.Slots && Minerals >= 100)
+	{
+		const TCHAR* Want = Firebats < 1 ? TEXT("firebat") : (InfantryN % 2 ? TEXT("marauder") : TEXT("marine"));
+		AddInfantry(UnitOpen(Want) ? Want : TEXT("marine"));
+		return;
+	}
 	if (Up.Weapons < 1 && Minerals >= 100) { BuyUpgrade(TEXT("weapons")); return; }
-	if (Scvs.Num() < 2 && Minerals >= 50) { AddScv(); return; }
+	if (UnitOpen(TEXT("scv")) && Scvs.Num() < 2 && Minerals >= 50) { AddScv(); return; }
 	if (!Up.bNeosteel && Minerals >= 150) { BuyUpgrade(TEXT("neosteel")); return; }
 	if (Tanks.Num() < FMath::Min(TankMax, 2) && Minerals >= TankCost()) { DropTank(); return; }
 	if (UpgradeAvailable(TEXT("weapons")) && Minerals >= CostOfUpgrade(TEXT("weapons"))) { BuyUpgrade(TEXT("weapons")); return; }

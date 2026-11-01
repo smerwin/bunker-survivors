@@ -25,7 +25,7 @@ namespace
 			D.Variants = { TEXT("zerglingRaptor"), TEXT("zerglingSwarmling"), TEXT("zerglingPrimal") };      // winged ones are the hoppers below
 			D.VariantFrom = 4; D.VariantStep = 4;
 			D.ImpactFx = TEXT("zerglingImpact");
-			D.Hp = 30; D.Dmg = 5; D.Cd = 0.497f; D.Range = 0.1f; D.Speed = 4.13f; D.Radius = 0.375f; D.bLight = true;
+			D.Hp = 30; D.Dmg = 5; D.Cd = 0.497f; D.Range = 0.1f; D.Speed = 4.13f; D.Radius = 0.375f; D.bLight = true; D.bSurround = true;
 			D.Bounty = 4; D.Budget = 2; D.Unlock = 1; D.Weight = 12; D.HitFrac = 0.45f; D.AttackAnims = { TEXT("attack"), TEXT("attack 01") };
 			D.SoundAttack = TEXT("zerglingAttack"); D.SoundDeath = TEXT("zerglingDeath"); D.Height = 0.8f;
 		}
@@ -87,7 +87,7 @@ namespace
 		{
 			FBSZergDef& D = Add(TEXT("wingling"), TEXT("Winged Zergling"), TEXT("wingling"), TEXT("winglingDeath"), TEXT("btn-unit-zerg-zergling"));
 			D.ImpactFx = TEXT("zerglingImpact");
-			D.Hp = 35; D.Dmg = 5; D.Cd = 0.4f; D.Range = 0.1f; D.Speed = 5.6f; D.Radius = 0.375f; D.bLight = true; D.bHops = true;
+			D.Hp = 35; D.Dmg = 5; D.Cd = 0.4f; D.Range = 0.1f; D.Speed = 5.6f; D.Radius = 0.375f; D.bLight = true; D.bHops = true; D.bSurround = true;
 			D.Bounty = 5; D.Budget = 2; D.Late = 2; D.Weight = 5; D.HitFrac = 0.45f; D.AttackAnims = { TEXT("attack"), TEXT("attack 01") };
 			D.SoundAttack = TEXT("zerglingAttack"); D.SoundDeath = TEXT("zerglingDeath"); D.Height = 0.8f;
 		}
@@ -368,7 +368,7 @@ namespace
 	TArray<FBSLadderRung> MakeLadder()
 	{
 		return {
-			{ TEXT("Marines"), TEXT("Zerglings"), { TEXT("marine") }, { TEXT("zergling") } },
+			{ TEXT("Marines"), TEXT("Zerglings and winglings"), { TEXT("marine") }, { TEXT("zergling"), TEXT("wingling") } },
 			{ TEXT("Firebats"), TEXT("Hydralisks"), { TEXT("firebat") }, { TEXT("hydralisk") } },
 			{ TEXT("Marauders"), TEXT("Roaches"), { TEXT("marauder") }, { TEXT("roach") } },
 			{ TEXT("SCVs"), TEXT("Banelings"), { TEXT("scv") }, { TEXT("baneling") } },
@@ -379,7 +379,7 @@ namespace
 			{ TEXT("Vikings and wraiths"), TEXT("Brood lords and guardians"), { TEXT("vikings"), TEXT("wraiths") }, { TEXT("broodlord"), TEXT("guardian") } },
 			{ TEXT("Ghosts and the nuke"), TEXT("Brood queens and defilers"), { TEXT("ghost"), TEXT("nuke") }, { TEXT("broodqueen"), TEXT("defiler"), TEXT("overseer") } },
 			{ TEXT("Science vessel and the Yamato"), TEXT("Vipers, devourers and scourge"), { TEXT("vessel"), TEXT("yamato") }, { TEXT("viper"), TEXT("devourer"), TEXT("scourge") } },
-			{ TEXT("Thors"), TEXT("Creep, drops and nydus worms"), { TEXT("thor") }, { TEXT("wingling"), TEXT("queen"), TEXT("overlordCreep"), TEXT("overlord"), TEXT("overlordDrop"), TEXT("nydus") } },
+			{ TEXT("Thors"), TEXT("Creep, drops and nydus worms"), { TEXT("thor") }, { TEXT("queen"), TEXT("overlordCreep"), TEXT("overlord"), TEXT("overlordDrop"), TEXT("nydus") } },
 			{ TEXT("The battlecruiser and the Odin"), TEXT("The full swarm"), { TEXT("bc"), TEXT("odin") }, {} },
 		};
 	}

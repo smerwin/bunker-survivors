@@ -44,6 +44,8 @@ struct FBSZergDef
 	// Kerrigan: nothing aims at her or hurts her (you hold on until the Hyperion comes), and she makes for the bunker.
 	bool bUntouchable = false, bPreferBunker = false;
 	float Bombard = 0;                // leviathan bile: splash radius of each shot
+	// Zerglings in the lane spread round the bunker (ABSGame::SurroundGoal) before they bite it.
+	bool bSurround = false;
 };
 
 // Creep: a coarse grid (Cell metres) of coverage 0..1 that grows where a source reaches and slowly fades (lingers) where
@@ -164,6 +166,13 @@ namespace BSDefs
 	const FBSPerkDef* FindPerk(const FString& Id);
 	const TArray<FBSLadderRung>& Ladder();
 	constexpr int32 LadderWaves = 3;
+	// The zergling swarm on top of each wave's budget, times LadderSwarm[rung] on the first rungs (they have little else
+	// to throw); the cap on zerg alive at once, times LadderAlive[rung]; and in the lane LadderWinglings[rung] of that swarm
+	// are winglings, hopping straight down the middle over the mesa. Past the end of each: x1 (no winglings).
+	constexpr float LadderSwarm[] = { 3, 2.5f, 2, 1.6f, 1.3f, 1.15f };
+	constexpr float LadderAlive[] = { 1.5f, 1.35f, 1.2f, 1.1f };
+	constexpr float LadderWinglings[] = { 0.3f, 0.25f, 0.2f, 0.15f, 0.1f };
+	template <int32 N> float LadderAt(const float (&A)[N], int32 Rung, float Past) { return Rung >= 0 && Rung < N ? A[Rung] : Past; }
 	// Shop cards that only make sense with a unit the ladder has not opened yet (that unit's id, else empty).
 	FString LadderCardNeeds(const FString& CardId);
 
@@ -317,6 +326,17 @@ namespace BSDefs
 	// Past CorpseCap of them the oldest go early.
 	constexpr float CorpseLie = 0.4f, CorpseSink = 0.7f; constexpr int32 CorpseCap = 60;
 	float CorpseFall(const FString& Key, float Hold);
+}
+
+// Zerglings (and winglings) evolve as a run goes on, as in StarCraft II: Metabolic Boost from BoostWave (speed x
+// BoostSpeed), +PlatingDmg melee attack and +PlatingArmor carapace at each of PlatingWaves, then Adrenal Glands from
+// AdrenalWave (attack cooldown x AdrenalCd). New zerglings hatch with whatever the swarm has. Port of BS.LING_EVO.
+namespace BSLingEvo
+{
+	constexpr int32 BoostWave = 4, AdrenalWave = 14;
+	constexpr float BoostSpeed = 1.35f, AdrenalCd = 0.7f, PlatingDmg = 1, PlatingArmor = 1;
+	constexpr int32 PlatingWaves[] = { 7, 12, 17, 22, 27, 32 };
+	inline bool Evolves(const FString& Key) { return Key == TEXT("zergling") || Key == TEXT("wingling"); }
 }
 
 // Sound keys -> exported sound files (S_<key>_<n> in /Game/SC2/Sounds).
