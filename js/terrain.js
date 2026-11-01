@@ -87,11 +87,61 @@ window.BS = window.BS || {};
     return Math.hypot(height(x + e, y) - height(x - e, y), height(x, y + e) - height(x, y - e)) / (2 * e);
   }
 
+  const FX0 = -16, FY0 = -8, FS = 0.25, FNX = 129, FNY = 153;
+  const NB = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  let flow = null;
+  function flowField() {
+    if (flow) return flow;
+    flow = new Float32Array(FNX * FNY).fill(Infinity);
+    const q = [], at = k => [FX0 + (k % FNX) * FS, FY0 + Math.floor(k / FNX) * FS];
+    for (let k = 0; k < flow.length; k++) { const [x, y] = at(k); if (Math.hypot(x, y + 1.5) < 2.5 && slopeFast(x, y) < 1.05) { flow[k] = 0; q.push(k); } }
+    // Backwards from the pad: a cell is one further away than a neighbour it can step to.
+    for (let h = 0; h < q.length; h++) {
+      const k = q[h], i = k % FNX, j = Math.floor(k / FNX), [bx, by] = at(k);
+      for (const [di, dj] of NB) {
+        const a = i + di, b = j + dj;
+        if (a < 0 || b < 0 || a >= FNX || b >= FNY) continue;
+        const n = b * FNX + a;
+        if (flow[n] !== Infinity) continue;
+        const [ax, ay] = at(n);
+        if (!BS.Terrain.clearPath(ax, ay, bx, by, 0.06)) continue;
+        flow[n] = flow[k] + 1; q.push(n);
+      }
+    }
+    return flow;
+  }
+
   BS.Terrain = {
     active: false, H, height: heightFast, heightExact: height, slope: slopeFast, lowSdf, ramps: RAMPS, arm: ARM,
     setMode(mode) { this.active = mode === 'lane'; },
     // Ground units cannot climb cliff faces (the ramps are gentle enough to walk).
     walkable(x, y) { return !this.active || slopeFast(x, y) < 1.05; },
+    // Infantry can also scramble down a cliff face (never up one): a step is fine if it lands somewhere walkable or lower.
+    passable(ax, ay, bx, by) { return !this.active || slopeFast(bx, by) < 1.05 || heightFast(bx, by) < heightFast(ax, ay) - 1e-3; },
+    clearPath(ax, ay, bx, by, step = 0.25) {
+      if (!this.active) return true;
+      const n = Math.ceil(Math.hypot(bx - ax, by - ay) / step);
+      let px = ax, py = ay;
+      for (let i = 1; i <= n; i++) { const x = ax + (bx - ax) * i / n, y = ay + (by - ay) * i / n; if (!this.passable(px, py, x, y)) return false; px = x; py = y; }
+      return true;
+    },
+    // Which way home for infantry that cannot walk straight there (round a cliff corner, off a plateau): a unit vector
+    // down a breadth-first distance field to the pad round the bunker, built once over the lane on a 25 cm grid.
+    homeFlow(x, y) {
+      if (!this.active) return null;
+      const F = flowField(), i = Math.round((x - FX0) / FS), j = Math.round((y - FY0) / FS);
+      if (i < 0 || j < 0 || i >= FNX || j >= FNY) return null;
+      let best = null, bd = Infinity;
+      for (const [di, dj] of NB) {
+        const a = i + di, b = j + dj;
+        if (a < 0 || b < 0 || a >= FNX || b >= FNY) continue;
+        const d = F[b * FNX + a] + (di && dj ? 0.4 : 0), cx = FX0 + a * FS, cy = FY0 + b * FS;
+        if (d < bd && this.clearPath(x, y, cx, cy, 0.06)) { bd = d; best = [cx - x, cy - y]; }
+      }
+      if (!best) return null;
+      const l = Math.hypot(best[0], best[1]) || 1;
+      return [best[0] / l, best[1] / l];
+    },
     onHigh(x, y) { return this.active && heightFast(x, y) > H * 0.6; },
     // Waypoints for a ground unit spawning at (x, y): down an arm into the stem, or up a ramp to a perch.
     route(x, y, high) {

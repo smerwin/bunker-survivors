@@ -294,14 +294,19 @@ window.BS = window.BS || {};
     // she joins at wave 14, and stays rare: never more than max of her on the field (see Game.startWave).
     broodqueen: { name: 'Brood Queen', model: 'broodqueen', death: 'broodqueenDeath', hp: 120, armor: 1, dmg: 0, cd: 9, range: 9, speed: 3.8, radius: 0.75, flying: true, fly: 4, spell: 'broodling', bounty: 45, budget: 14, unlock: 14, max: 2, weight: 0.6, hitFrac: 0, soundDeath: 'broodqueenDeath', height: 1.4 },
     // Not bought from the wave budget: special events scheduled by startWave.
-    overlord: { name: 'Overlord', model: 'overlord', death: 'overlordDeath', hp: 400, armor: 1, dmg: 0, cd: 1, range: 0, speed: 3, radius: 1.0, armored: true, flying: true, fly: 4.2, transport: true, bounty: 25, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2 },
+    overlord: { name: 'Overlord', model: 'overlord', death: 'overlordDeath', hp: 400, armor: 1, dmg: 0, cd: 1, range: 0, speed: 3, radius: 1.0, armored: true, flying: true, fly: 4.2, transport: true, bounty: 25, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2, uncounted: true },
+    // Overlords from wave 3 (BS.OVERLORDS): watchers hang over the field glaring at the bunker (they never attack or hold up
+    // the end of a wave); drop overlords unload zerg up the lane, worse ones as the waves go on. No overlord counts toward
+    // the alive cap.
+    overlordWatch: { name: 'Overlord', model: 'overlordCreep', death: 'overlordCreepDeath', hp: 200, armor: 1, dmg: 0, cd: 1, range: 0, speed: 1.6, radius: 1.0, armored: true, flying: true, fly: 5.4, watcher: true, ambient: true, uncounted: true, bounty: 15, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2 },
+    overlordDrop: { name: 'Overlord', model: 'overlord', death: 'overlordDeath', hp: 250, armor: 1, dmg: 0, cd: 1, range: 0, speed: 2.6, radius: 1.0, armored: true, flying: true, fly: 4.2, transport: true, front: true, uncounted: true, bounty: 15, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2 },
     nydus: { name: 'Nydus Worm', model: 'nydus', death: null, hp: 450, armor: 1, dmg: 0, cd: 1, range: 0, speed: 0, radius: 1.3, armored: true, nydus: true, bounty: 60, budget: 0, unlock: 999, weight: 0, hitFrac: 0, height: 3 },
     broodling: { name: 'Broodling', model: 'broodling', death: 'broodlingDeath', scale: 0.75, hp: 30, armor: 0, dmg: 4, cd: 0.46, range: 0.1, speed: 4.13, radius: 0.25, light: true, life: 8, bounty: 1, budget: 0, unlock: 999, weight: 0, hitFrac: 0.45, attackSeq: /^attack/i, soundDeath: 'broodlingDeath', height: 0.5, impactFx: 'zerglingImpact' },
     // Creep (see BS.CREEP): queens walk with the waves planting creep tumors; tumors spread creep and bud one more
     // tumor each; overlords drift over the field generating creep beneath them.
     queen: { name: 'Queen', model: 'queen', death: 'queenDeath', hp: 175, armor: 1, dmg: 8, cd: 0.71, range: 5, speed: 2.4, radius: 0.875, tumors: true, bounty: 30, budget: 0, unlock: 999, weight: 0, hitFrac: 0.3, attackSeq: /^attack$/i, projectile: 'spine', soundDeath: 'queenDeath', height: 1.8 },
     creeptumor: { name: 'Creep Tumor', model: 'creeptumor', death: 'creeptumorDeath', hp: 50, armor: 0, dmg: 0, cd: 1, range: 0, speed: 0, radius: 0.5, tumor: true, bounty: 3, budget: 0, unlock: 999, weight: 0, hitFrac: 0, height: 0.6 },
-    overlordCreep: { name: 'Overlord', model: 'overlordCreep', death: 'overlordCreepDeath', hp: 200, armor: 0, dmg: 0, cd: 1, range: 0, speed: 1.4, radius: 1.0, armored: true, flying: true, fly: 4.8, creeper: true, bounty: 20, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2 },
+    overlordCreep: { name: 'Overlord', model: 'overlordCreep', death: 'overlordCreepDeath', hp: 200, armor: 0, dmg: 0, cd: 1, range: 0, speed: 1.4, radius: 1.0, armored: true, flying: true, fly: 4.8, creeper: true, bounty: 20, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2, uncounted: true },
     // The finale (see Game.startFinale): bosses keep their own hit points (no late-wave toughening) and always spawn,
     // whatever the alive cap. Kerrigan casts Leaping Strike and Apocalypse and is untouchable (nothing aims at her or hurts
     // her: you hold on until the Hyperion comes) and makes for the bunker; the leviathan bombards (bombard = splash radius) and spawns mutalisks.
@@ -314,6 +319,18 @@ window.BS = window.BS || {};
   // none does. Zerg ground units on creep move faster (SC2: +30%). Firebat flames burn it back and scorch the ground for
   // a while, and singe tumors. Queens join from fromWave, creep overlords two waves later. The swarm may keep more tumors
   // alive each wave (base + perWave per creep wave, up to max), so the creep spreads further as the waves go on.
+  // Overlords from wave from: watchers (watch[0] a wave, plus watch[1] every 10 waves, at most max), each staying life
+  // seconds; and drops (chance per wave, plus chanceGrow a wave up to chanceMax; a second one from second) unloading up
+  // the lane n zerg picked from the latest of the cargo tiers the wave has reached.
+  BS.OVERLORDS = { from: 3, watch: [0.7, 0.4], max: 3, life: [25, 45], chance: 0.35, chanceGrow: 0.02, chanceMax: 0.8, second: 15,
+    cargo: [
+      { from: 3, n: 4, units: ['zergling'] },
+      { from: 8, n: 4, units: ['zergling', 'zergling', 'baneling'] },
+      { from: 14, n: 3, units: ['baneling', 'roach', 'hydralisk'] },
+      { from: 22, n: 4, units: ['roach', 'hydralisk', 'infested'] },
+      { from: 30, n: 1, units: ['ultralisk'] },
+    ] };
+
   BS.CREEP = {
     cell: 1, update: 0.25, on: 0.35, grow: 0.6, decay: 0.012, speed: 1.3, fromWave: 8,
     tumor: { radius: 4.5, growth: 0.45, spread: 12, hop: [3, 4.5], base: 4, perWave: 3, max: 30, minBunker: 6, gap: 2 },

@@ -24,6 +24,7 @@ window.BS = window.BS || {};
       $('shopCards').onclick = ev => { const el = ev.target.closest('[data-c]'); if (el) game.buyCard(+el.dataset.c); };
       $('shopReroll').onclick = () => game.reroll();
       $('shopGo').onclick = () => game.closeShop();
+      $('shopPeek').onclick = () => { const p = $('shop').classList.toggle('peek'); $('shopPeek').textContent = p ? 'SHOP' : 'ARMOURY'; };
     }
 
     // Sky view <-> bunker view. The bunker itself is hidden while we look out of it.
@@ -185,11 +186,12 @@ window.BS = window.BS || {};
     // The shop between waves (Game.endWave): the offered cards, reroll, next wave. Rebuilt only when something changes.
     refreshShop() {
       const g = this.g, s = g.shop;
-      if (this.cache.shopOn !== !!s) { this.cache.shopOn = !!s; $('shop').classList.toggle('hidden', !s); }
+      if (this.cache.shopOn !== !!s) { this.cache.shopOn = !!s; $('shop').classList.toggle('hidden', !s); $('shop').classList.remove('peek'); $('shopPeek').textContent = 'ARMOURY'; }
       if (!s) return;
       this.set('shopTitle', 'WAVE ' + s.wave + ' CLEARED');
       this.set('shopBonus', [s.bonus ? '+' + s.bonus + ' CLEAR BONUS' : 'WAVE HELD', s.interest ? '+' + s.interest + ' INTEREST' : ''].filter(Boolean).join('   '));
       const m = Math.floor(g.minerals);
+      this.set('shopMinerals', m + ' MINERALS');
       const key = s.offers.map(o => o.id + (o.bought ? '!' : '')).join(',') + '|' + s.offers.map(o => g.minerals >= g.cardCost(g.card(o.id))).join('');
       if (this.cache.shopCards !== key) {
         this.cache.shopCards = key;
@@ -264,7 +266,7 @@ window.BS = window.BS || {};
       const sq = document.getElementById('squad').getBoundingClientRect(), top = sq.bottom + 16, bottom = H - 270;
       const cam = r.cam;
       for (const e of g.enemies) {
-        if (e.def.tumor) continue;                 // creep tumors stay put: not a threat to point at
+        if (e.def.tumor || e.def.ambient) continue;   // creep tumors stay put, ambient overlords never attack: not threats to point at
         let ang;
         if (cam.fp && !r.inFront(e.x, e.y, 0)) {
           // Behind the eye: point by bearing (right, left, or down for straight behind).

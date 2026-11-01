@@ -186,10 +186,20 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #shop .btns button { height: 44px; }
 #shop .hint, #hyperion .hint { margin: 10px 0 0; font: 400 12px var(--body); color: var(--muted); }
 #shopReroll.poor { color: var(--red); }
+#shopPeek, .shopMinerals { display: none; }
 @media (max-width: 560px) {
-  #shop { padding-top: calc(118px + var(--safe-t)); }
-  #shop .card { max-height: calc(100% - 330px); }
-  #shopCards { grid-template-columns: 1fr; gap: 7px; }
+  /* Phones: the shop takes the whole screen, the offers scrolling between a fixed header and the buttons. ARMOURY folds
+     it into a bar under the command bar so troops, tanks and turrets can still be bought between waves. */
+  #shop { padding: 0; align-items: stretch; background: none; z-index: 6; }
+  #shop .card { width: 100%; max-height: none; height: 100%; display: flex; flex-direction: column; border-radius: 0; border: none; overflow: hidden;
+    padding: calc(16px + var(--safe-t)) 14px calc(12px + var(--safe-b)); background: rgba(7, 11, 16, 0.97); }
+  #shopCards { grid-template-columns: 1fr; gap: 7px; flex: 1; overflow-y: auto; align-content: start; overscroll-behavior: contain; padding: 2px; }
+  .shopMinerals { display: block; margin: -6px 0 10px; font: 700 13px var(--body); letter-spacing: 0.08em; color: var(--cyan); }
+  #shopPeek { display: block; flex: 0.8; }
+  #shop .btns button { font-size: 12px; letter-spacing: 0.06em; }
+  #shop.peek .card { position: absolute; top: calc(166px + var(--safe-t)); left: 10px; right: 10px; width: auto; height: auto; padding: 8px; border-radius: 14px; border: 1px solid var(--hair); }
+  #shop.peek h2, #shop.peek .shopBonus, #shop.peek .shopMinerals, #shop.peek #shopCards, #shop.peek .hint, #shop.peek #shopReroll { display: none; }
+  #shop.peek .btns { margin-top: 0; }
   .offer { display: grid; grid-template-columns: 44px 1fr auto; grid-template-rows: auto auto auto; column-gap: 10px; row-gap: 1px; align-items: center; text-align: left; padding: 8px 10px; }
   .offer img { width: 44px; height: 44px; grid-row: 1 / span 3; }
   .offer .rar { grid-column: 2; }
