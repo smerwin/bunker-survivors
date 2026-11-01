@@ -293,7 +293,7 @@ window.BS = window.BS || {};
   // hitFrac: fraction of the attack cooldown at which the damage lands (synced with the animation).
   // variants: strain/skin models mixed in for variety; impactFx: SC2 effect where a melee blow lands.
   BS.ZERG = {
-    zergling: { name: 'Zergling', model: 'zergling', death: 'zerglingDeath', hp: 30, armor: 0, dmg: 5, cd: 0.497, range: 0.1, speed: 4.13, radius: 0.375, light: true, bounty: 4, budget: 2, unlock: 1, weight: 12, hitFrac: 0.45, attackSeq: /^attack/i, soundAttack: 'zerglingAttack', soundDeath: 'zerglingDeath', height: 0.8,
+    zergling: { name: 'Zergling', model: 'zergling', death: 'zerglingDeath', surround: true, hp: 30, armor: 0, dmg: 5, cd: 0.497, range: 0.1, speed: 4.13, radius: 0.375, light: true, bounty: 4, budget: 2, unlock: 1, weight: 12, hitFrac: 0.45, attackSeq: /^attack/i, soundAttack: 'zerglingAttack', soundDeath: 'zerglingDeath', height: 0.8,
       variants: ['zerglingRaptor', 'zerglingSwarmling', 'zerglingPrimal'], variantFrom: 4, variantStep: 4, impactFx: 'zerglingImpact' },
     baneling: { name: 'Baneling', model: 'baneling', death: 'banelingDeath', hp: 30, armor: 0, dmg: 16, dmgLight: 19, dmgStructure: 80, cd: 1, range: 0.25, speed: 3.5, radius: 0.375, light: true, suicide: true, splash: 2.2, bounty: 10, budget: 4, unlock: 3, weight: 5, soundDeath: 'banelingDeath', height: 0.8,
       variants: ['banelingSplitter', 'banelingHunter', 'banelingPrimal'] },
@@ -312,7 +312,7 @@ window.BS = window.BS || {};
       variants: ['broodlordEx1', 'broodlordPrimal'] },
     // Late game: these join the waves once high tech starts unlocking (late = how many tech cards must be unlocked);
     // the more cards, the more of them. See Game.startWave. Winged zerglings only in lane mode, hopping the mesa.
-    wingling: { name: 'Winged Zergling', model: 'wingling', death: 'winglingDeath', hp: 35, armor: 0, dmg: 5, cd: 0.4, range: 0.1, speed: 5.6, radius: 0.375, light: true, hops: true, bounty: 5, budget: 2, unlock: 1, late: 2, weight: 5, hitFrac: 0.45, attackSeq: /^attack/i, soundAttack: 'zerglingAttack', soundDeath: 'zerglingDeath', height: 0.8, impactFx: 'zerglingImpact' },
+    wingling: { name: 'Winged Zergling', model: 'wingling', death: 'winglingDeath', surround: true, hp: 35, armor: 0, dmg: 5, cd: 0.4, range: 0.1, speed: 5.6, radius: 0.375, light: true, hops: true, bounty: 5, budget: 2, unlock: 1, late: 2, weight: 5, hitFrac: 0.45, attackSeq: /^attack/i, soundAttack: 'zerglingAttack', soundDeath: 'zerglingDeath', height: 0.8, impactFx: 'zerglingImpact' },
     guardian: { name: 'Guardian', model: 'guardian', death: 'guardianDeath', hp: 150, armor: 2, dmg: 20, cd: 2, range: 9, speed: 2.2, radius: 1.0, armored: true, flying: true, fly: 3.8, prefer: 'mech', bounty: 60, budget: 20, unlock: 16, late: 1, weight: 0.25, hitFrac: 0.4, attackSeq: /^attack$/i, projectile: 'guardian', soundAttack: 'guardianFire', height: 1.4 },
     devourer: { name: 'Devourer', model: 'devourer', death: 'devourerDeath', hp: 250, armor: 2, dmg: 15, cd: 2, range: 6, speed: 2.8, radius: 1.0, armored: true, flying: true, fly: 4.4, antiAir: true, acid: 6, bounty: 60, budget: 18, unlock: 1, late: 2, weight: 1.2, hitFrac: 0.4, attackSeq: /^attack$/i, projectile: 'spores', soundDeath: 'devourerDeath', height: 1.4 },
     scourge: { name: 'Scourge', model: 'scourge', death: 'scourgeDeath', scale: 1.3, hp: 25, armor: 0, dmg: 110, cd: 1, range: 0.2, speed: 6.5, radius: 0.4, light: true, flying: true, fly: 4.6, antiAir: true, suicide: true, bounty: 8, budget: 3, unlock: 1, late: 2, weight: 2.5, hitFrac: 0, height: 0.6 },
@@ -611,7 +611,7 @@ window.BS = window.BS || {};
   // cards (by card id); zerg: BS.ZERG keys. Anything not listed is there from the start. The Hyperion still comes at
   // 30 minutes and Kerrigan at 28 whatever the rung: early runs simply fall sooner.
   BS.LADDER = [
-    { t: 'Marines', z: 'Zerglings', terran: ['marine'], zerg: ['zergling'] },
+    { t: 'Marines', z: 'Zerglings and winglings', terran: ['marine'], zerg: ['zergling', 'wingling'] },
     { t: 'Firebats', z: 'Hydralisks', terran: ['firebat'], zerg: ['hydralisk'] },
     { t: 'Marauders', z: 'Roaches', terran: ['marauder'], zerg: ['roach'] },
     { t: 'SCVs', z: 'Banelings', terran: ['scv'], zerg: ['baneling'] },
@@ -622,10 +622,19 @@ window.BS = window.BS || {};
     { t: 'Vikings and wraiths', z: 'Brood lords and guardians', terran: ['vikings', 'wraiths'], zerg: ['broodlord', 'guardian'] },
     { t: 'Ghosts and the nuke', z: 'Brood queens and defilers', terran: ['ghost', 'nuke'], zerg: ['broodqueen', 'defiler', 'overseer'] },
     { t: 'Science vessel and the Yamato', z: 'Vipers, devourers and scourge', terran: ['vessel', 'yamato'], zerg: ['viper', 'devourer', 'scourge'] },
-    { t: 'Thors', z: 'Creep, drops and nydus worms', terran: ['thor'], zerg: ['wingling', 'queen', 'overlordCreep', 'overlord', 'overlordDrop', 'nydus'] },
+    { t: 'Thors', z: 'Creep, drops and nydus worms', terran: ['thor'], zerg: ['queen', 'overlordCreep', 'overlord', 'overlordDrop', 'nydus'] },
     { t: 'The battlecruiser and the Odin', z: 'The full swarm', terran: ['bc', 'odin'], zerg: [] },
   ];
   BS.LADDER_WAVES = 3;
+  // The zergling swarm on top of each wave's budget, times this on the first rungs (they have little else to throw).
+  BS.LADDER_SWARM = [3, 2.5, 2, 1.6, 1.3, 1.15];
+  // ...and the cap on zerg alive at once, times this.
+  BS.LADDER_ALIVE = [1.5, 1.35, 1.2, 1.1];
+  // ...and in the lane this share of that swarm are winglings, hopping straight down the middle over the mesa.
+  BS.LADDER_WINGLINGS = [0.3, 0.25, 0.2, 0.15, 0.1];
+  // Zerglings evolve as a run goes on, as in StarCraft II: Metabolic Boost (speed x), +1 melee attack and +1 carapace at
+  // each of the plating waves, then Adrenal Glands (attack cooldown x). New zerglings hatch with whatever the swarm has.
+  BS.LING_EVO = { types: ['zergling', 'wingling'], boost: { wave: 4, speed: 1.35 }, plating: { waves: [7, 12, 17, 22, 27, 32], dmg: 1, armor: 1 }, adrenal: { wave: 14, cd: 0.7 } };
   // Shop cards that only make sense with a unit the ladder has not opened yet.
   BS.LADDER_CARD_NEEDS = { incinerator: 'firebat', concussive: 'marauder', scvrepair: 'scv', mule: 'scv', rotors: 'strike' };
 

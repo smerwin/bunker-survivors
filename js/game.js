@@ -1535,7 +1535,7 @@ window.BS = window.BS || {};
       for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
       // On top of the budget: a zergling swarm that snowballs (4 at wave 1, ~30 by wave 8, ~75 by wave 15).
       const sq = x => 2 + 1.2 * x + 0.3 * x * x;
-      const swarm = Math.round(w <= WV.swarmKnee ? sq(w) : Math.min(WV.swarmMax, sq(WV.swarmKnee) + WV.swarmPerWave * (w - WV.swarmKnee)));
+      const swarm = Math.round((w <= WV.swarmKnee ? sq(w) : Math.min(WV.swarmMax, sq(WV.swarmKnee) + WV.swarmPerWave * (w - WV.swarmKnee))) * (BS.LADDER_SWARM[this.rung] || 1));
       // Lane packs pick an approach: mostly true north, the rest sweeping in from the north-east and north-west.
       const packAng = flank => this.mode === 'lane' ? (Math.random() < flank ? (Math.random() < 0.5 ? 1 : 2) : 0) : Math.random() * Math.PI * 2;
       const spread = this.waveLen - 8;
@@ -1547,7 +1547,7 @@ window.BS = window.BS || {};
         const n = Math.min(left, 6 + Math.floor(Math.random() * 11)), t = 0.5 + rnd(0, spread), ang = packAng(0.55);
         // Late game (lane mode): some of the swarm are winged zerglings that hop straight over the mesa, a few more with
         // every tech card past the one that brings them.
-        const wl = this.mode === 'lane' && tier >= BS.ZERG.wingling.late ? Math.min(0.4, 0.1 * (tier - BS.ZERG.wingling.late + 1)) : 0;
+        const wl = this.mode !== 'lane' ? 0 : Math.max(BS.LADDER_WINGLINGS[this.rung] || 0, tier >= BS.ZERG.wingling.late ? Math.min(0.4, 0.1 * (tier - BS.ZERG.wingling.late + 1)) : 0);
         for (let k = 0; k < n; k++) this.spawnQueue.push({ t: t + k * 0.04, type: Math.random() < wl ? 'wingling' : 'zergling', ang });
         left -= n;
       }
@@ -1584,7 +1584,9 @@ window.BS = window.BS || {};
       this.spawnTimer = 0; this.waveTimer = this.waveLen;
       this.minerals += 20 + 8 * w;
       this.waveBanner = { text: 'WAVE ' + w + (w % 5 === 0 ? '  //  HEAVY ASSAULT' : ''), t: this.time };
-      const ms = !finale && WV.milestones[w];
+      // (A named assault only once the ladder has opened every strain it brings.)
+      const ms0 = !finale && WV.milestones[w];
+      const ms = ms0 && Object.keys(ms0.zerg || {}).every(k => this.zergOpen(k)) && (!ms0.nydus || this.zergOpen('nydus')) && (!ms0.pods || this.zergOpen('overlordDrop')) ? ms0 : null;
       if (ms) {
         for (const [k, n] of Object.entries(ms.zerg || {})) for (let i = 0; i < n; i++) this.spawnQueue.push({ t: 3 + rnd(0, spread * 0.6), type: k, ang: packAng(0.4) });
         for (let i = 0; i < (ms.nydus || 0); i++) this.spawnQueue.push({ t: 5 + i * 4, type: 'nydus', ang: 0 });
@@ -1596,6 +1598,11 @@ window.BS = window.BS || {};
       }
       // The ladder: only the strains this rung has met (the finale's queen and leviathan come whatever the rung).
       this.spawnQueue = this.spawnQueue.filter(s => this.zergOpen(s.type));
+      // The zerglings' evolution, announced as it happens.
+      const E = BS.LING_EVO, lv = E.plating.waves.indexOf(w) + 1;
+      if (w === E.boost.wave) this.toast('Zerglings evolve: Metabolic Boost');
+      if (lv) this.toast('Zerglings evolve: Melee Attacks and Carapace level ' + lv);
+      if (w === E.adrenal.wave) this.toast('Zerglings evolve: Adrenal Glands');
       if (finale) this.startFinale();
     }
 
@@ -1885,10 +1892,22 @@ window.BS = window.BS || {};
     aliveCount() { let n = 0; for (const e of this.enemies) if (!e.def.uncounted) n++; return n; }
     maxAlive() {
       const W = BS.WAVES, a = this.hard ? W.aliveHard : W.alive, k = clamp((this.wave - W.aliveFrom) / (W.aliveBy - W.aliveFrom), 0, 1);
-      return Math.round((a[0] + (a[1] - a[0]) * k) * (BS.perfScale || 1));
+      return Math.round((a[0] + (a[1] - a[0]) * k) * (BS.perfScale || 1) * (BS.LADDER_ALIVE[this.rung] || 1));
+    }
+    // Zerglings as evolved by this wave (BS.LING_EVO); every other strain as it comes.
+    lingEvo(w = this.wave) {
+      const E = BS.LING_EVO;
+      return { speed: w >= E.boost.wave ? E.boost.speed : 1, up: E.plating.waves.filter(x => w >= x).length, cd: w >= E.adrenal.wave ? E.adrenal.cd : 1 };
+    }
+    zergDef(type) {
+      const base = BS.ZERG[type];
+      if (!BS.LING_EVO.types.includes(type)) return base;
+      const v = this.lingEvo(), key = type + '/' + v.speed + '/' + v.up + '/' + v.cd, c = this.evoDefs || (this.evoDefs = {});
+      return c[key] || (c[key] = Object.assign({}, base, { speed: base.speed * v.speed, dmg: base.dmg + v.up * BS.LING_EVO.plating.dmg,
+        armor: base.armor + v.up * BS.LING_EVO.plating.armor, cd: base.cd * v.cd }));
     }
     spawnEnemy(type, ang, at) {
-      const d = BS.ZERG[type];
+      const d = this.zergDef(type);
       let x, y;
       const lane = this.mode === 'lane', side = Math.random() < 0.5 ? -1 : 1, ar = Math.random() * Math.PI * 2;
       if (at) { x = at[0] + rnd(-0.6, 0.6); y = at[1] + rnd(-0.6, 0.6); }
@@ -2872,7 +2891,9 @@ window.BS = window.BS || {};
             } else e.unburrowT = 0;
           }
         }
-        const canAttack = reach <= range + (high ? 1 : 0) && !(d.burrows && (!e.burrowed || e.burrowT > 0)) && !(e.route && e.route.length && e.highRoute);
+        // Zerglings in the lane spread round the bunker (surroundGoal) before they bite it.
+        const ring = d.surround && this.mode === 'lane' && t.kind === 'bunker' && !e.ringDone && dd < 9;
+        const canAttack = !ring && reach <= range + (high ? 1 : 0) && !(d.burrows && (!e.burrowed || e.burrowT > 0)) && !(e.route && e.route.length && e.highRoute);
         if (canAttack) {
           e.attacking = true;
           e.yaw = Math.atan2(dy, dx);
@@ -2906,6 +2927,7 @@ window.BS = window.BS || {};
           this.playAnim(e, 'walk');
           // Head for the next waypoint of the route through the Y, then straight for the target.
           let gx = t.x, gy = t.y;
+          if (ring && !(e.route && e.route.length)) [gx, gy] = this.surroundGoal(e);
           if (e.route && e.route.length) {
             [gx, gy] = e.route[0];
             if (Math.hypot(gx - e.x, gy - e.y) < 0.9) { e.route.shift(); if (!e.route.length && e.highRoute) e.perched = true; }
@@ -2931,6 +2953,17 @@ window.BS = window.BS || {};
           if (e.perched) this.playAnim(e, 'stand');
         }
       }
+    }
+    // A zergling closing on the bunker in the lane takes a spot of its own on a ring round it (any side, the back too),
+    // working round at a little distance, then in; there it bites (and whatever stands near is fair game on the way).
+    surroundGoal(e) {
+      const b = this.bunker, R = T().bunker.halfSize + e.radius + 0.25, out = R + 1.4;
+      if (e.ring === undefined) e.ring = Math.atan2(e.y - b.y, e.x - b.x) + rnd(-1, 1) * Math.PI;
+      const a = Math.atan2(e.y - b.y, e.x - b.x), da = angDelta(a, e.ring);
+      if (Math.abs(da) > 0.35) { const s = a + Math.sign(da) * Math.min(Math.abs(da), 0.6); return [b.x + Math.cos(s) * out, b.y + Math.sin(s) * out]; }
+      const gx = b.x + Math.cos(e.ring) * R, gy = b.y + Math.sin(e.ring) * R;
+      if (Math.hypot(gx - e.x, gy - e.y) < 0.5) e.ringDone = true;
+      return [gx, gy];
     }
     enemyShot(e, t, cd) {
       const d = e.def;
