@@ -412,6 +412,7 @@ public:
 	int32 UpgradeLevel(const FString& Id) const;
 	FString DebugState() const;
 	void DebugSpawn(const FString& Type, float X, float Y) { const FVector2D At(X, Y); SpawnEnemy(Type, 0, &At); }
+	void DebugEndRun(bool bEvacuated) { if (bEvacuated) Evacuate(); else GameOver(); }
 	// Zerg against the alive cap: overlords are not attackers and do not count.
 	int32 AliveCount() const { int32 N = 0; for (const TSharedPtr<FBSEnemy>& E : Enemies) N += !E->Def->bUncounted; return N; }
 	int32 MaxAlive() const

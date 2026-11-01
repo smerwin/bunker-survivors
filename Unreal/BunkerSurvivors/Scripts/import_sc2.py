@@ -96,7 +96,8 @@ FLATN = "/Engine/EngineMaterials/DefaultNormal"
 
 
 def build_unit_material(path, name, two_sided):
-    """Lit SC2 unit material: diffuse alpha is the team-colour mask; HitFlash brightens on damage."""
+    """Lit SC2 unit material: diffuse alpha is the team-colour mask; HitFlash brightens on damage; Tint multiplies the
+    colour (white = none; cloaked ghosts and wraiths go dark blue)."""
     m = new_material(path, name)
     m.set_editor_property("two_sided", two_sided)
     m.set_editor_property("used_with_skeletal_mesh", True)
@@ -109,12 +110,15 @@ def build_unit_material(path, name, two_sided):
     mel.connect_material_expressions(d, "RGB", lerp, "A")
     mel.connect_material_expressions(boost, "", lerp, "B")
     mel.connect_material_expressions(d, "A", lerp, "Alpha")
-    mel.connect_material_property(lerp, "", unreal.MaterialProperty.MP_BASE_COLOR)
+    tintp = vector(m, "Tint", -250, 150, (1.0, 1.0, 1.0, 1))
+    tinted = binop(m, unreal.MaterialExpressionMultiply, lerp, "", tintp, "", -100, -50)
+    mel.connect_material_property(tinted, "", unreal.MaterialProperty.MP_BASE_COLOR)
     n = tex_param(m, "Normal", -900, 350, FLATN, unreal.MaterialSamplerType.SAMPLERTYPE_NORMAL)
     mel.connect_material_property(n, "RGB", unreal.MaterialProperty.MP_NORMAL)
     e = tex_param(m, "Emissive", -900, 650, BLACK)
     es = scalar(m, "EmissiveStrength", -900, 900, 2.0)
-    em = binop(m, unreal.MaterialExpressionMultiply, e, "RGB", es, "", -600, 700)
+    em0 = binop(m, unreal.MaterialExpressionMultiply, e, "RGB", es, "", -600, 700)
+    em = binop(m, unreal.MaterialExpressionMultiply, em0, "", tintp, "", -475, 700)
     flash = scalar(m, "HitFlash", -900, 1000, 0.0)
     flashcol = vector(m, "HitFlashColor", -900, 1100, (1.0, 0.85, 0.7, 1))
     fl = binop(m, unreal.MaterialExpressionMultiply, flash, "", flashcol, "", -600, 950)

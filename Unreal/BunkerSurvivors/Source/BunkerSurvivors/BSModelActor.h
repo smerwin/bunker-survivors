@@ -32,8 +32,7 @@ public:
 	void SetScale(float S);
 	void SetTeamColor(const FLinearColor& C);
 	void SetHitFlash(float Amount);
-	// Cloak look (ghosts, wraiths). M_SC2Unit has no tint parameter, so a tint other than white shows as a faint glow of
-	// that colour through HitFlash / HitFlashColor (white clears it).
+	// Cloak look (ghosts, wraiths): multiplies the unit materials' colour through their Tint parameter (white clears it).
 	void SetTint(const FLinearColor& C);
 	void SetScalarParam(FName Name, float Value);
 	void SetSwipe(bool bShow);           // weapon swipe trails (additive layers), shown only mid-attack
@@ -51,7 +50,7 @@ public:
 	UPROPERTY(VisibleAnywhere) TObjectPtr<USkeletalMeshComponent> Mesh;
 
 	float HitFlash = 0.f;
-	float TintGlow = 0.f;
+	FLinearColor Tint = FLinearColor::White;
 
 private:
 	const FBSModel* Model = nullptr;

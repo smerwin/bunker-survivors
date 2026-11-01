@@ -98,7 +98,8 @@ void ABSGameMode::StartGame(EBSMode Mode)
 			else Game->DebugSpawn(Items[i], (i - (Items.Num() - 1) * 0.5f) * 2.5f, 13.f);
 		}
 	}
-	// Debug lineup: -BSShowcase=zergling,bunker:stand,scv:walk spawns models in a row in front of the bunker.
+	// Debug lineup: -BSShowcase=zergling,bunker:stand,scv:walk spawns models in a row in front of the bunker; a trailing !
+	// on the name shows the cloak tint (ghost!:stand).
 	FString Showcase;
 	if (FParse::Value(Cmd, TEXT("BSShowcase="), Showcase, false))
 	{
@@ -108,10 +109,12 @@ void ABSGameMode::StartGame(EBSMode Mode)
 			FString Key = Items[i], Anim;
 			Items[i].Split(TEXT(":"), &Key, &Anim);
 			if (Key.IsEmpty()) Key = Items[i];
+			const bool bCloak = Key.RemoveFromEnd(TEXT("!"));
 			const FBSModel* M = Assets->Model(Key);
 			if (!M) { UE_LOG(LogTemp, Warning, TEXT("Showcase: no model %s"), *Key); continue; }
 			ABSModelActor* A = GetWorld()->SpawnActor<ABSModelActor>();
 			A->SetModel(M);
+			if (bCloak) A->SetTint(FLinearColor(0.3f, 0.45f, 0.7f));
 			float ShowYaw = -90; FParse::Value(Cmd, TEXT("BSShowcaseYaw="), ShowYaw);
 			A->SetSim((i - (Items.Num() - 1) * 0.5f) * 4.f, 4.f, 0, FMath::DegreesToRadians(ShowYaw));
 			const float Len = Anim.IsEmpty() ? 0.f : A->Play(Anim, true);
@@ -211,6 +214,16 @@ void ABSGameMode::Tick(float Dt)
 			Game->BuildStructure(false);              // sensor tower, for the radar
 		}
 		UE_LOG(LogTemp, Display, TEXT("BSTechMax unlocked=%d mechs=%d bc=%d"), Game->TechUnlocked.Num(), Game->Mechs.Num(), Game->Bc.IsValid() ? 1 : 0);
+	}
+	// -BSEndScreen: end the run a few seconds in with big kill and score counts (game-over card layout shots);
+	// -BSEndScreenLost shows the bunker-lost card instead of the evacuation.
+	static bool bEndScreenDone = false;
+	if (Game && Game->bStarted && !bEndScreenDone && !Game->bOver && Game->Time > 6.f && FParse::Param(FCommandLine::Get(), TEXT("BSEndScreen")))
+	{
+		bEndScreenDone = true;
+		Game->Kills = 10810;
+		Game->Score = 614942.f - Game->Kills * 10 - Game->Wave * 250;
+		Game->DebugEndRun(!FParse::Param(FCommandLine::Get(), TEXT("BSEndScreenLost")));
 	}
 	// -BSTestSquad: exercise the outside squad, turrets, sensor tower, magnetic rails, lethal stim and the hovering air strike.
 	static int32 SquadStep = 0;

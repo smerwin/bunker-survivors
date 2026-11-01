@@ -34,6 +34,7 @@ void ABSModelActor::SetModel(const FBSModel* InModel)
 {
 	Model = InModel;
 	Mids.Reset();
+	Tint = FLinearColor::White;     // fresh material instances start untinted
 	if (!Model || !Model->Mesh) return;
 	Mesh->SetSkeletalMesh(Model->Mesh);
 	for (int32 i = 0; i < Mesh->GetNumMaterials(); i++)
@@ -87,16 +88,14 @@ void ABSModelActor::SetHitFlash(float Amount)
 {
 	if (FMath::IsNearlyEqual(Amount, HitFlash, 0.01f)) return;
 	HitFlash = Amount;
-	for (UMaterialInstanceDynamic* M : Mids) if (M) M->SetScalarParameterValue(TEXT("HitFlash"), FMath::Max(Amount, TintGlow));
+	for (UMaterialInstanceDynamic* M : Mids) if (M) M->SetScalarParameterValue(TEXT("HitFlash"), Amount);
 }
 
 void ABSModelActor::SetTint(const FLinearColor& C)
 {
-	const bool bWhite = C.Equals(FLinearColor::White, 0.01f);
-	TintGlow = bWhite ? 0.f : 0.45f;
-	const FLinearColor Col = bWhite ? FLinearColor(1.0f, 0.85f, 0.7f) : C;     // HitFlashColor's default (import_sc2.py)
-	for (UMaterialInstanceDynamic* M : Mids)
-		if (M) { M->SetVectorParameterValue(TEXT("HitFlashColor"), Col); M->SetScalarParameterValue(TEXT("HitFlash"), FMath::Max(HitFlash, TintGlow)); }
+	if (C.Equals(Tint, 0.002f)) return;
+	Tint = C;
+	for (UMaterialInstanceDynamic* M : Mids) if (M) M->SetVectorParameterValue(TEXT("Tint"), C);
 }
 
 void ABSModelActor::SetScalarParam(FName Name, float Value)

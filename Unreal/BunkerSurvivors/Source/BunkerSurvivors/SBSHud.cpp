@@ -25,6 +25,8 @@
 #include "Misc/ConfigCacheIni.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
+#include "Engine/Texture2D.h"
+#include "TextureResource.h"
 
 // =====================================================================================================
 // Design tokens
@@ -205,6 +207,122 @@ namespace D
 		FSlateDrawElement::MakeText(Out, L + 1, G.ToPaintGeometry(Sz, FSlateLayoutTransform(P)), S, F, ESlateDrawEffect::None, Col);
 	}
 
+	// Embossed display text (big titles, the wave banner): a dark edge below with a soft shadow, a faint lit edge above.
+	void EText(FSlateWindowElementList& Out, int32 L, const FGeometry& G, const FString& S, const FSlateFontInfo& F, FVector2f Pos, const FLinearColor& Col, float Align = 0.f)
+	{
+		const FVector2f Sz = Measure(S, F);
+		const FVector2f P(Pos.X - Sz.X * Align, Pos.Y);
+		auto Ghost = [&](FVector2f Off, const FLinearColor& Gc) { FSlateDrawElement::MakeText(Out, L, G.ToPaintGeometry(Sz, FSlateLayoutTransform(P + Off)), S, F, ESlateDrawEffect::None, Gc); };
+		const FLinearColor Shade = C::A(FLinearColor::Black, Col.A);
+		Ghost(FVector2f(-1, 2), C::A(Shade, 0.16f)); Ghost(FVector2f(1, 2), C::A(Shade, 0.16f)); Ghost(FVector2f(0, 3), C::A(Shade, 0.2f));
+		Ghost(FVector2f(0, 1), C::A(Shade, 0.85f));
+		Ghost(FVector2f(0, -1), C::A(FLinearColor::White, 0.12f * Col.A));
+		FSlateDrawElement::MakeText(Out, L + 1, G.ToPaintGeometry(Sz, FSlateLayoutTransform(P)), S, F, ESlateDrawEffect::None, Col);
+	}
+
+	// ---- Wear: a weathered, gently sandblasted finish for the big panels --------------------------------------------
+	// One 256px tile generated at startup, seamless (everything wraps): fine light sand grain, faint long diagonal
+	// scratches and small dark pits with a lit rim on their lower-right edge (tiny impact craters). RGB is the colour and
+	// alpha the strength; it is tiled at one texel per screen pixel whatever the UI scale.
+	constexpr int32 GritSize = 256;
+	UTexture2D* GritTexture()
+	{
+		static UTexture2D* Tex = nullptr;
+		static bool bTried = false;
+		if (bTried) return Tex;
+		bTried = true;
+		const int32 N = GritSize;
+		auto Wrap = [N](float V) { return V - N * FMath::RoundToFloat(V / N); };       // toroidal offset in [-N/2, N/2]
+		auto Idx = [N](int32 X, int32 Y) { return ((Y % N + N) % N) * N + ((X % N + N) % N); };
+		TArray<FLinearColor> Px; Px.Init(FLinearColor::Transparent, N * N);
+		auto Over = [](FLinearColor& Dst, const FLinearColor& Col, float A)
+		{
+			if (A <= 0.f) return;
+			const float Oa = A + Dst.A * (1 - A);
+			Dst = FLinearColor((Col.R * A + Dst.R * Dst.A * (1 - A)) / Oa, (Col.G * A + Dst.G * Dst.A * (1 - A)) / Oa, (Col.B * A + Dst.B * Dst.A * (1 - A)) / Oa, Oa);
+		};
+		FRandomStream Rs(1977);
+		// Sand grain: sparse, since any lift averages out to a grey wash over the dark glass.
+		for (FLinearColor& P : Px) Over(P, FLinearColor::White, FMath::Clamp((Rs.FRand() - 0.72f) * 0.4f, 0.f, 0.11f));
+		// Scratches, mostly running up to the right.
+		for (int32 k = 0; k < 16; k++)
+		{
+			const FVector2f S0(Rs.FRand() * N, Rs.FRand() * N);
+			const float Ang = -0.3f + Rs.FRandRange(-0.12f, 0.12f), Len = Rs.FRandRange(24.f, 120.f), Str = Rs.FRandRange(0.05f, 0.12f);
+			const FVector2f Dir(FMath::Cos(Ang), FMath::Sin(Ang));
+			for (int32 y = 0; y < N; y++)
+				for (int32 x = 0; x < N; x++)
+				{
+					const float Dx = Wrap(x - S0.X), Dy = Wrap(y - S0.Y);
+					const float T = Dx * Dir.X + Dy * Dir.Y;
+					if (T < 0 || T > Len) continue;
+					const float Dist = FMath::Abs(Dx * Dir.Y - Dy * Dir.X);
+					if (Dist < 1.f) Over(Px[y * N + x], FLinearColor::White, Str * (1 - Dist) * FMath::Sqrt(FMath::Sin(PI * T / Len)));
+				}
+		}
+		// Pits: mostly tiny, a few up to ~5px across, slightly oval.
+		TArray<float> Pit; Pit.Init(0.f, N * N);
+		for (int32 k = 0; k < 180; k++)
+		{
+			const FVector2f Ctr(Rs.FRand() * N, Rs.FRand() * N);
+			const float R = 0.45f + 2.f * FMath::Pow(Rs.FRand(), 2.5f), E = Rs.FRandRange(0.7f, 1.3f);
+			const int32 Ext = FMath::CeilToInt(R * 1.4f) + 1;
+			for (int32 y = FMath::FloorToInt(Ctr.Y) - Ext; y <= FMath::FloorToInt(Ctr.Y) + Ext; y++)
+				for (int32 x = FMath::FloorToInt(Ctr.X) - Ext; x <= FMath::FloorToInt(Ctr.X) + Ext; x++)
+				{
+					const float Dx = (x + 0.5f - Ctr.X) * E, Dy = (y + 0.5f - Ctr.Y) / E;
+					float& P = Pit[Idx(x, y)];
+					P = FMath::Max(P, FMath::Clamp(R - FMath::Sqrt(Dx * Dx + Dy * Dy) + 0.5f, 0.f, 1.f));
+				}
+		}
+		for (int32 y = 0; y < N; y++)
+			for (int32 x = 0; x < N; x++)
+			{
+				const float P = Pit[y * N + x], Rim = Pit[Idx(x - 1, y - 1)] * (1 - P);
+				Over(Px[y * N + x], FLinearColor::White, 0.45f * Rim);
+				Over(Px[y * N + x], FLinearColor(0.f, 0.02f, 0.04f), 0.7f * P);
+			}
+		Tex = UTexture2D::CreateTransient(N, N, PF_B8G8R8A8, TEXT("BSGrit"));
+		if (!Tex) return nullptr;
+		Tex->SRGB = true;
+		Tex->Filter = TF_Bilinear;
+		Tex->AddressX = TA_Wrap; Tex->AddressY = TA_Wrap;
+		Tex->NeverStream = true;
+		auto& Mip = Tex->GetPlatformData()->Mips[0];
+		FColor* Dst = static_cast<FColor*>(Mip.BulkData.Lock(LOCK_READ_WRITE));
+		for (int32 i = 0; i < N * N; i++) Dst[i] = Px[i].ToFColor(true);
+		Mip.BulkData.Unlock();
+		Tex->UpdateResource();
+		Tex->AddToRoot();      // lives as long as the game; the HUD's Slate brush points at it
+		return Tex;
+	}
+	const FSlateBrush* GritBrush()
+	{
+		static FSlateBrush B;
+		static bool bInit = false;
+		if (!bInit)
+		{
+			bInit = true;
+			B.DrawAs = ESlateBrushDrawType::Image;
+			B.Tiling = ESlateBrushTileType::Both;
+			B.ImageSize = FVector2D(GritSize, GritSize);
+			if (UTexture2D* T = GritTexture()) B.SetResourceObject(T); else B.DrawAs = ESlateBrushDrawType::NoDrawType;
+		}
+		return &B;
+	}
+	// The grit tile over a panel, kept inside its rounded corners (inset 0.3R keeps the rectangle's corners inside the arcs).
+	void Grit(FSlateWindowElementList& Out, int32 L, const FGeometry& G, FVector2f Pos, FVector2f Size, float R, float Strength = 1.f)
+	{
+		const FSlateBrush* B = GritBrush();
+		if (B->DrawAs == ESlateBrushDrawType::NoDrawType || Strength <= 0) return;
+		const float In = R * 0.3f;
+		const FVector2f P = Pos + FVector2f(In, In), S = Size - FVector2f(In, In) * 2;
+		if (S.X <= 0 || S.Y <= 0) return;
+		// Tiles count in local units, so draw at the pixel scale: a local size of S * scale shrunk back by 1 / scale.
+		const float K = FMath::Max(GMeasureScale, 0.1f);
+		FSlateDrawElement::MakeBox(Out, L, G.ToPaintGeometry(S * K, FSlateLayoutTransform(1.f / K, P)), B, ESlateDrawEffect::None, FLinearColor(1, 1, 1, Strength));
+	}
+
 	void Circle(FSlateWindowElementList& Out, int32 L, const FGeometry& G, FVector2f Ctr, float R, const FLinearColor& Col, float Thick = 1.f, int32 Seg = 40, float From = 0, float To = 2 * PI)
 	{
 		FPts P;
@@ -276,6 +394,40 @@ namespace D
 	}
 
 	FString Int(float V) { return FString::FromInt(FMath::FloorToInt(V)); }
+
+	// 10810 -> "10,810".
+	FString Thousands(int64 V)
+	{
+		FString Digits = FString::Printf(TEXT("%lld"), V < 0 ? -V : V), R;
+		for (int32 i = 0; i < Digits.Len(); i++)
+		{
+			if (i > 0 && (Digits.Len() - i) % 3 == 0) R.AppendChar(',');
+			R.AppendChar(Digits[i]);
+		}
+		return V < 0 ? TEXT("-") + R : R;
+	}
+
+	// A little 3D: a faint lit inner top edge and a darker inner bottom edge.
+	void Bevel(FSlateWindowElementList& Out, int32 L, const FGeometry& G, FVector2f Pos, FVector2f Size, float R, float Strength = 1.f)
+	{
+		const FPts P = RoundedPath(Pos + FVector2f(1, 1), Size - FVector2f(2, 2), FMath::Max(0.f, R - 1));
+		FPts Top, Bottom;
+		for (int32 i = 21; i < 28; i++) Top.Add(P[i]);
+		for (int32 i = 0; i < 7; i++) Top.Add(P[i]);
+		for (int32 i = 7; i < 21; i++) Bottom.Add(P[i]);
+		Lines(Out, L, G, Top, C::A(FLinearColor::White, 0.08f * Strength), 1.f);
+		Lines(Out, L, G, Bottom, C::A(FLinearColor::Black, 0.3f * Strength), 1.5f);
+	}
+
+	// A large worn panel: soft drop shadow, the fill, then (one layer up) the grit and the bevel.
+	void Panel(FSlateWindowElementList& Out, int32 L, const FGeometry& G, FVector2f Pos, FVector2f Size, float R, const FLinearColor& Col, float GritK = 0.5f)
+	{
+		for (int32 i = 1; i <= 3; i++)
+			RFill(Out, L, G, Pos + FVector2f(-i * 0.5f, 1.f + i), Size + FVector2f(i, 0), R + i * 0.5f, C::A(FLinearColor::Black, 0.05f * Col.A));
+		RFill(Out, L, G, Pos, Size, R, Col);
+		Grit(Out, L + 1, G, Pos, Size, R, GritK * Col.A);
+		Bevel(Out, L + 1, G, Pos, Size, R, 0.8f);
+	}
 }
 
 // =====================================================================================================
@@ -334,12 +486,14 @@ TSharedRef<SWidget> SBSHud::MakeButton(const FString& Label, bool bPrimary, TFun
 		if (bPrimary)
 		{
 			D::RFill(Out, L, G, P, S - FVector2f(0, 2), 12, bHover ? FLinearColor(0.55f, 0.92f, 1.f) : C::Cyan);
+			D::Bevel(Out, L, G, P, S - FVector2f(0, 2), 12, 1.5f);
 			D::Text(Out, L + 1, G, Label, D::Label(12), FVector2f(S.X * 0.5f, P.Y + 13), C::Dark, 0.5f);
 		}
 		else
 		{
 			D::RFill(Out, L, G, P, S - FVector2f(0, 2), 12, bHover ? C::GlassHi : C::A(C::Glass, 0.6f));
 			D::RLine(Out, L + 1, G, P, S - FVector2f(0, 2), 12, C::A(C::Cyan, bHover ? 0.9f : 0.45f), 1.f);
+			D::Bevel(Out, L + 1, G, P, S - FVector2f(0, 2), 12, 0.6f);
 			D::Text(Out, L + 2, G, Label, D::Label(12), FVector2f(S.X * 0.5f, P.Y + 13), C::Ink, 0.5f);
 		}
 	}, OnClick);
@@ -421,7 +575,7 @@ TSharedRef<SWidget> SBSHud::BuildCommandStrip()
 		const float W = G.GetLocalSize().X - 96;      // the two icon buttons sit to the right
 		const bool bWide = W > 460;
 		// Tapered glass strip with a cyan accent.
-		D::RFill(Out, L, G, FVector2f(0, 0), FVector2f(W, 50), 12, C::Glass);
+		D::Panel(Out, L, G, FVector2f(0, 0), FVector2f(W, 50), 12, C::Glass);
 		D::RLine(Out, L + 1, G, FVector2f(0, 0), FVector2f(W, 50), 12, C::Hair);
 		D::Rect(Out, L + 1, G, FVector2f(14, 0), FVector2f(36, 2), C::Cyan);
 
@@ -477,6 +631,7 @@ TSharedRef<SWidget> SBSHud::BuildCommandStrip()
 		return PaintedButton(FVector2D(42, 50), [this, bPause](const FGeometry& G, FSlateWindowElementList& Out, int32 L, bool bHover, bool bPress)
 		{
 			D::RFill(Out, L, G, FVector2f(0, 0), FVector2f(42, 50), 12, bHover ? C::GlassHi : C::Glass);
+			D::Bevel(Out, L, G, FVector2f(0, 0), FVector2f(42, 50), 12, 0.6f);
 			D::RLine(Out, L + 1, G, FVector2f(0, 0), FVector2f(42, 50), 12, bHover ? C::A(C::Cyan, 0.6f) : C::Hair);
 			const FLinearColor Col = bPress ? C::Cyan : C::Ink;
 			if (bPause) D::PauseGlyph(Out, L + 2, G, FVector2f(21, 25), Col);
@@ -536,7 +691,7 @@ TSharedRef<SWidget> SBSHud::BuildSquadCard()
 			const float Pct = FMath::Clamp(B.Hp / FMath::Max(1.f, B.MaxHp), 0.f, 1.f);
 			const bool bCritical = Pct < 0.25f && !B.bDead;
 			const float Pulse = bCritical ? 0.5f + 0.5f * FMath::Sin(NowS * 8) : 0.f;
-			D::RFill(Out, L, G, FVector2f(0, 0), S, 12, C::Glass);
+			D::Panel(Out, L, G, FVector2f(0, 0), S, 12, C::Glass);
 			D::RLine(Out, L + 1, G, FVector2f(0, 0), S, 12, bCritical ? C::A(C::Red, 0.4f + 0.5f * Pulse) : C::Hair, bCritical ? 1.5f : 1.f);
 			// Bunker badge.
 			UBSAssets* As = Gm->GetAssets();
@@ -903,7 +1058,7 @@ TSharedRef<SWidget> SBSHud::BuildStartScreen()
 			const FVector2f S((float)Size.X, (float)Size.Y), P(0, bPress ? 1.f : 0.f);
 			const bool bRec = bArena != Portrait();
 			const FLinearColor Acc = bArena ? C::Violet : C::Cyan;
-			D::RFill(Out, L, G, P, S, 16, bHover ? C::GlassHi : C::Glass);
+			D::Panel(Out, L, G, P, S, 16, bHover ? C::GlassHi : C::Glass);
 			D::RLine(Out, L + 1, G, P, S, 16, bHover ? C::A(Acc, 0.9f) : C::A(Acc, bRec ? 0.5f : 0.22f), bHover ? 1.5f : 1.f);
 			D::RFill(Out, L + 1, G, P + FVector2f(0, 22), FVector2f(3, S.Y - 44), 1.5f, Acc);
 			UBSAssets* As = GM.IsValid() ? GM->GetAssets() : nullptr;
@@ -946,8 +1101,8 @@ TSharedRef<SWidget> SBSHud::BuildStartScreen()
 		const FVector2f Tp = bPortrait ? FVector2f(S.X * 0.5f, S.Y * 0.07f) : FVector2f(56, S.Y * 0.12f);
 		const float Al = bPortrait ? 0.5f : 0.f;
 		const float LineH = D::Measure(TEXT("SURVIVORS"), Tf0).Y * 0.86f;
-		D::Text(Out, L + 1, G, TEXT("BUNKER"), Tf0, Tp, C::Ink, Al);
-		D::Text(Out, L + 1, G, TEXT("SURVIVORS"), Tf0, Tp + FVector2f(0, LineH), C::Cyan, Al);
+		D::EText(Out, L + 1, G, TEXT("BUNKER"), Tf0, Tp, C::Ink, Al);
+		D::EText(Out, L + 1, G, TEXT("SURVIVORS"), Tf0, Tp + FVector2f(0, LineH), C::Cyan, Al);
 		const FString Tag = TEXT("ONE FIRETEAM.  ONE BUNKER.  THE SWARM.");
 		const FSlateFontInfo Tf = D::Fit(Tag, [](float Sz) { return D::Label(Sz); }, 10, 7, MaxTitleW);
 		const float Ty = Tp.Y + LineH * 2.f + 18;
@@ -974,7 +1129,7 @@ TSharedRef<SWidget> SBSHud::BuildStartScreen()
 		return PaintedButton(Size, [this, Size](const FGeometry& G, FSlateWindowElementList& Out, int32 L, bool bHover, bool bPress)
 		{
 			const FVector2f S((float)Size.X, (float)Size.Y), P(0, bPress ? 1.f : 0.f);
-			D::RFill(Out, L, G, P, S, 14, bHover ? C::GlassHi : C::Glass);
+			D::Panel(Out, L, G, P, S, 14, bHover ? C::GlassHi : C::Glass);
 			D::RLine(Out, L + 1, G, P, S, 14, C::A(C::Amber, bHover ? 0.9f : 0.35f), bHover ? 1.5f : 1.f);
 			D::RFill(Out, L + 1, G, P + FVector2f(0, 12), FVector2f(3, S.Y - 24), 1.5f, C::Amber);
 			UBSAssets* As = GM.IsValid() ? GM->GetAssets() : nullptr;
@@ -1003,38 +1158,47 @@ TSharedRef<SWidget> SBSHud::BuildStartScreen()
 
 TSharedRef<SWidget> SBSHud::BuildModal(bool bGameOver)
 {
-	const float PanelH = bGameOver ? 280.f : 236.f;
-	auto Panel = SNew(SBSPaint).Size(FVector2D(340, PanelH)).Paint([this, bGameOver, PanelH](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
+	// Stats run one per row (label left, figure right, hairlines between) so big kill and score counts never collide.
+	// Game over: title, three rows, the best pill, vespene banked, any card unlocked, then the buttons.
+	const float PanelH = bGameOver ? 366.f : 286.f;
+	auto PanelW = [this]() { return FMath::Clamp((float)LocalSize.X - 32.f, 320.f, 380.f); };
+	auto Panel = SNew(SBSPaint).Size_Lambda([PanelW, PanelH]() { return FVector2D(PanelW(), PanelH); }).Paint([this, bGameOver, PanelH](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
 	{
 		ABSGame* Gm = Game(); if (!Gm) return L;
-		const FVector2f S(340, PanelH);
-		D::RFill(Out, L, G, FVector2f(0, 0), S, 18, C::A(C::Dark, 0.94f));
+		constexpr float RowsTop = 66, RowH = 44;
+		const FVector2f S(G.GetLocalSize().X, PanelH);
+		D::Panel(Out, L, G, FVector2f(0, 0), S, 18, C::A(C::Dark, 0.94f));
 		const FLinearColor EndCol = Gm->bWon ? C::Green : C::Red;     // evacuated by the Hyperion, or overrun
 		D::RLine(Out, L + 1, G, FVector2f(0, 0), S, 18, bGameOver ? C::A(EndCol, 0.5f) : C::Hair);
 		D::Rect(Out, L + 1, G, FVector2f(S.X * 0.5f - 24, 0), FVector2f(48, 2), bGameOver ? EndCol : C::Cyan);
-		D::Text(Out, L + 2, G, bGameOver ? (Gm->bWon ? TEXT("EVACUATED") : TEXT("BUNKER LOST")) : TEXT("PAUSED"), D::Fit(TEXT("BUNKER LOST"), [](float Sz) { return D::Title(Sz); }, 26, 14, S.X - 36), FVector2f(S.X * 0.5f, 22), bGameOver ? EndCol : C::Ink, 0.5f);
-		const int32 Score = bGameOver ? Gm->FinalScore : FMath::RoundToInt(Gm->Score + Gm->Kills * 10 + Gm->Wave * 250);
+		D::EText(Out, L + 2, G, bGameOver ? (Gm->bWon ? TEXT("EVACUATED") : TEXT("BUNKER LOST")) : TEXT("PAUSED"), D::Fit(TEXT("BUNKER LOST"), [](float Sz) { return D::Title(Sz); }, 28, 14, S.X - 40), FVector2f(S.X * 0.5f, 18), bGameOver ? EndCol : C::Ink, 0.5f);
+		const int64 Score = bGameOver ? Gm->FinalScore : FMath::RoundToInt(Gm->Score + Gm->Kills * 10 + Gm->Wave * 250);
 		const TArray<TPair<FString, FString>> Stats = {
-			{ TEXT("WAVE"), FString::FromInt(Gm->Wave) }, { TEXT("KILLS"), FString::FromInt(Gm->Kills) }, { TEXT("SCORE"), FString::FromInt(Score) } };
+			{ TEXT("WAVE"), D::Thousands(Gm->Wave) }, { TEXT("KILLS"), D::Thousands(Gm->Kills) }, { TEXT("SCORE"), D::Thousands(Score) } };
+		const float Pad = 24;
 		for (int32 i = 0; i < Stats.Num(); i++)
 		{
-			const float ColW = (S.X - 24) / Stats.Num(), X = 12 + ColW * (i + 0.5f);
-			D::Text(Out, L + 2, G, Stats[i].Key, D::Label(8.5f), FVector2f(X, 72), C::Muted, 0.5f);
-			D::Text(Out, L + 2, G, Stats[i].Value, D::Fit(Stats[i].Value, [](float Sz) { return D::Num(Sz); }, 20, 11, ColW - 16), FVector2f(X, 86), C::Ink, 0.5f);
+			const float Y = RowsTop + i * RowH;
+			if (i > 0) D::Rect(Out, L + 2, G, FVector2f(Pad - 4, Y), FVector2f(S.X - 2 * Pad + 8, 1), C::Hair);
+			const FSlateFontInfo Lf = D::Label(9);
+			D::Text(Out, L + 2, G, Stats[i].Key, Lf, FVector2f(Pad, Y + RowH * 0.5f - D::Measure(Stats[i].Key, Lf).Y * 0.5f), C::Muted);
+			const FSlateFontInfo Vf = D::Fit(Stats[i].Value, [](float Sz) { return D::Num(Sz); }, 24, 12, S.X * 0.62f);
+			D::Text(Out, L + 2, G, Stats[i].Value, Vf, FVector2f(S.X - Pad, Y + RowH * 0.5f - D::Measure(Stats[i].Value, Vf).Y * 0.5f), C::Ink, 1.f);
 		}
 		if (bGameOver)
 		{
-			const FString B = Gm->bNewBest ? TEXT("NEW BEST") : FString::Printf(TEXT("BEST %d"), Gm->Best);
+			const float Y0 = RowsTop + Stats.Num() * RowH + 12;
+			const FString B = Gm->bNewBest ? TEXT("NEW BEST") : TEXT("BEST ") + D::Thousands(Gm->Best);
 			const FLinearColor Bc = Gm->bNewBest ? C::Amber : C::Muted;
 			const FVector2f Bs = D::Measure(B, D::Label(9));
-			D::RFill(Out, L + 2, G, FVector2f(S.X * 0.5f - Bs.X * 0.5f - 10, 124), FVector2f(Bs.X + 20, 20), 10, C::A(Bc, Gm->bNewBest ? 0.18f + 0.1f * FMath::Sin(NowS * 5) : 0.1f));
-			D::Text(Out, L + 3, G, B, D::Label(9), FVector2f(S.X * 0.5f, 127), Bc, 0.5f);
+			D::RFill(Out, L + 2, G, FVector2f(S.X * 0.5f - Bs.X * 0.5f - 10, Y0), FVector2f(Bs.X + 20, 20), 10, C::A(Bc, Gm->bNewBest ? 0.18f + 0.1f * FMath::Sin(NowS * 5) : 0.1f));
+			D::Text(Out, L + 3, G, B, D::Label(9), FVector2f(S.X * 0.5f, Y0 + 10 - Bs.Y * 0.5f), Bc, 0.5f);
 			// What the run banked at the Hyperion, and any card it unlocked.
 			const BSMeta::FRunResult& Mr = Gm->MetaResult;
-			D::Text(Out, L + 2, G, FString::Printf(TEXT("+%d VESPENE FOR THE HYPERION"), Mr.Gas), D::Label(9), FVector2f(S.X * 0.5f, 156), C::Green, 0.5f);
+			D::Text(Out, L + 2, G, FString::Printf(TEXT("+%d VESPENE FOR THE HYPERION"), Mr.Gas), D::Label(9), FVector2f(S.X * 0.5f, Y0 + 32), C::Green, 0.5f);
 			FString U;
 			for (const FBSCardDef* Cd : Mr.Unlocked) U += (U.IsEmpty() ? TEXT("NEW CARD: ") : TEXT(", ")) + BSMeta::CardName(*Cd).ToUpper();
-			if (!U.IsEmpty()) D::Text(Out, L + 2, G, U, D::Fit(U, [](float Sz) { return D::Label(Sz); }, 9, 6, S.X - 24), FVector2f(S.X * 0.5f, 174), C::Amber, 0.5f);
+			if (!U.IsEmpty()) D::Text(Out, L + 2, G, U, D::Fit(U, [](float Sz) { return D::Label(Sz); }, 9, 6, S.X - 24), FVector2f(S.X * 0.5f, Y0 + 50), C::Amber, 0.5f);
 		}
 		return L + 8;
 	});
@@ -1147,7 +1311,7 @@ TSharedRef<SWidget> SBSHud::BuildShop()
 		ABSGame* Gm = Game(); if (!Gm) return L;
 		const FVector2f S = FVector2f(G.GetLocalSize());
 		const FString T = FString::Printf(TEXT("WAVE %d CLEARED"), Gm->Shop.Wave);
-		D::Text(Out, L, G, T, D::Fit(T, [](float Sz) { return D::Title(Sz); }, 22, 13, S.X), FVector2f(S.X * 0.5f, 2), C::Ink, 0.5f);
+		D::EText(Out, L, G, T, D::Fit(T, [](float Sz) { return D::Title(Sz); }, 22, 13, S.X), FVector2f(S.X * 0.5f, 2), C::Ink, 0.5f);
 		FString B = Gm->Shop.Bonus ? FString::Printf(TEXT("+%d CLEAR BONUS"), Gm->Shop.Bonus) : FString(TEXT("WAVE HELD"));
 		if (Gm->Shop.Interest) B += FString::Printf(TEXT("   +%d INTEREST"), Gm->Shop.Interest);
 		D::Text(Out, L, G, B, D::Label(9), FVector2f(S.X * 0.5f, 46), C::Amber, 0.5f);
@@ -1180,7 +1344,8 @@ TSharedRef<SWidget> SBSHud::BuildShop()
 		return SNew(SBSPaint).Paint([Radius, Alpha](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
 		{
 			const FVector2f S = FVector2f(G.GetLocalSize());
-			if (Radius > 0) D::RFill(Out, L, G, FVector2f(0, 0), S, Radius, C::A(C::Dark, Alpha)); else D::Rect(Out, L, G, FVector2f(0, 0), S, C::A(C::Dark, Alpha));
+			if (Radius > 0) D::Panel(Out, L, G, FVector2f(0, 0), S, Radius, C::A(C::Dark, Alpha));
+			else { D::Rect(Out, L, G, FVector2f(0, 0), S, C::A(C::Dark, Alpha)); D::Grit(Out, L + 1, G, FVector2f(0, 0), S, 0, 0.35f * Alpha); }
 			if (Radius > 0) D::RLine(Out, L + 1, G, FVector2f(0, 0), S, Radius, C::Hair);
 			D::Rect(Out, L + 1, G, FVector2f(S.X * 0.5f - 24, 0), FVector2f(48, 2), C::Cyan);
 			return L + 2;
@@ -1292,7 +1457,7 @@ TSharedRef<SWidget> SBSHud::BuildHyperion()
 		.Paint([](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
 	{
 		const FVector2f S = FVector2f(G.GetLocalSize());
-		D::Text(Out, L, G, TEXT("HYPERION"), D::Title(24), FVector2f(S.X * 0.5f, 4), C::Ink, 0.5f);
+		D::EText(Out, L, G, TEXT("HYPERION"), D::Title(24), FVector2f(S.X * 0.5f, 4), C::Ink, 0.5f);
 		D::Text(Out, L, G, FString::Printf(TEXT("%d VESPENE"), BSMeta::Gas()), D::Label(11), FVector2f(S.X * 0.5f, 48), C::Green, 0.5f);
 		const FString H = TEXT("Every run banks vespene: one a wave cleared, five more every tenth wave, 25 if the Hyperion takes you off, half as much again in the arena.");
 		FString H1, H2; D::SplitTwo(H, H1, H2);
@@ -1341,7 +1506,7 @@ TSharedRef<SWidget> SBSHud::BuildHyperion()
 		+ SOverlay::Slot()[ SNew(SBSPaint).Paint([](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
 		{
 			const FVector2f S = FVector2f(G.GetLocalSize());
-			D::RFill(Out, L, G, FVector2f(0, 0), S, 18, C::A(C::Dark, 0.95f));
+			D::Panel(Out, L, G, FVector2f(0, 0), S, 18, C::A(C::Dark, 0.95f));
 			D::RLine(Out, L + 1, G, FVector2f(0, 0), S, 18, C::Hair);
 			D::Rect(Out, L + 1, G, FVector2f(S.X * 0.5f - 24, 0), FVector2f(48, 2), C::Amber);
 			return L + 2;
@@ -1460,7 +1625,7 @@ int32 SBSHud::PaintBanner(const FGeometry& G, FSlateWindowElementList& Out, int3
 		int32 Num = 0;
 		if (Main.StartsWith(TEXT("WAVE "))) { Num = FCString::Atoi(*Main.Mid(5)); Main = FString::Printf(TEXT("WAVE %02d"), Num); }
 		D::Text(Out, L + 2, G, Sub, D::Label(9.5f), FVector2f(S.X * 0.5f, Y + 12), C::A(Acc, Alpha), 0.5f);
-		D::Text(Out, L + 2, G, Main, D::Fit(Main, [](float Sz) { return D::Title(Sz); }, 30, 16, S.X - 40), FVector2f(S.X * 0.5f, Y + 28), C::A(C::Ink, Alpha), 0.5f);
+		D::EText(Out, L + 2, G, Main, D::Fit(Main, [](float Sz) { return D::Title(Sz); }, 30, 16, S.X - 40), FVector2f(S.X * 0.5f, Y + 28), C::A(C::Ink, Alpha), 0.5f);
 	}
 	return L + 4;
 }
