@@ -240,6 +240,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #start .modes { display: flex; flex-direction: column; gap: 14px; width: min(460px, 100%); margin: 0 auto; }
 .mode { display: flex; align-items: center; gap: 16px; padding: 14px 16px; text-align: left; border-left: 3px solid var(--cyan); position: relative; }
 .mode.arena { border-left-color: var(--violet); }
+.mode.resume { border-left-color: var(--gold, #f2c14e); }
+.mode.hidden { display: none; }
 .mode img { width: 66px; height: 66px; border-radius: 12px; border: 1px solid var(--hair); }
 .mode b { display: block; font: 500 20px var(--wide); letter-spacing: 0.03em; }
 .mode small { display: block; margin-top: 5px; font: 400 14px/1.3 var(--body); letter-spacing: 0; color: var(--ink); opacity: 0.8; text-transform: none; }

@@ -179,6 +179,10 @@ shop offers four random cards. Buy any you can afford (prices are in minerals), 
 time in the same visit), and hit NEXT WAVE. The armoury stays open while you shop. Keys: `1`-`5` buy, `X` rerolls,
 `Enter` or `Space` starts the next wave.
 
+Each shop is also a checkpoint (browser edition). If the browser throws the page away while it sits in the background,
+or the graphics context is lost, the start screen offers RESUME RUN: back to that shop with the same minerals, cards,
+troops, tanks, turrets and mechs. The zerg on the field, creep and the forward base start over.
+
 Rarer cards turn up later and less often: common from wave 1, rare from 3, epic from 8, legendary from 15. Every offer
 starts with a research card while there is research left, and research cards turn up twice as often as their rarity
 alone would give.
@@ -197,7 +201,7 @@ alone would give.
 | Concussive Shells | rare, 2 levels | Marauder grenades slow 1 s longer and do +4 to armoured zerg. |
 | Stabilizer Medpacks | rare, 2 levels | The medivac heals 60% faster. |
 | Fire-Suppression System | rare, 2 levels | The bunker regenerates 3 HP a second. |
-| Hyperflight Rotors | rare, 2 levels | Air strike: one more banshee and 25% faster refuelling. |
+| Hyperflight Rotors | rare, 2 levels | Air strike: one more banshee (in a second rank further up the lane) and 25% faster refuelling. |
 | Recruitment Drive | rare, 2 levels | Troopers cost 15% less. |
 | Spoils of War | rare, 3 levels | 10% interest on banked minerals at each shop (up to 50 a level). Unlocked by clearing wave 10. |
 | Ultra-Capacitors | common, endless | Infantry +1 damage a level. Turns up once Infantry Weapons is maxed. |
@@ -226,7 +230,7 @@ minerals for the first level (450 for the armor), 125 more for each one after.
 | Tactical Nuke (400) | A ghost calls a nuke on the densest pack clear of the bunker. 45 s to reload. |
 | Viking Wing (300) | Four fighters patrol overhead for 20 s, hunting air. |
 | Wraith Squadron (350) | Three wraiths sweep the lane for 20 s: burst lasers on ground zerg, missiles at air. 40 s to rearm. |
-| Science Vessel (400) | On station over the lane for 30 s: Irradiate on the densest pack (damage over time to everything around its target), and a Defensive Matrix (soaks 250 damage for 12 s) on the most battered of the bunker, tanks and mechs. 50 s to refit. |
+| Science Vessel (400) | On station over the lane for 30 s: Irradiate on the densest pack (damage over time to everything around its target), and a Defensive Matrix (soaks 250 damage for 12 s) on the most battered of the bunker, tanks and mechs. Fired upon, it pulls back behind the bunker and returns once it has gone 3 s unhit. 50 s to refit. |
 | Thor (600, up to 2) | Heavy walkers firing long-range from behind the bunker. |
 | Battlecruiser (1500) | Parks nose-south over the fork of the lane. As in StarCraft II, its laser batteries fire rapid amber bolts along six hardpoints (8 against ground, 5 against air), taking scourge (then devourers) first, a little beyond their usual range; missile pods fire at air only, and the Yamato charges at the bow for two seconds before it fires. |
 | Odin (2500) | Heavy artillery from behind the bunker. |

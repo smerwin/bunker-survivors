@@ -120,11 +120,11 @@ struct FBSStructure
 // Matrix) facing Aim until CastUntil, and goes Home when it leaves.
 struct FBSBanshee
 {
-	enum EState : uint8 { In, Hover, Out } State = In;
+	enum EState : uint8 { In, Hover, Out, Retreat } State = In;
 	FVector2D Post = FVector2D::ZeroVector, Home = FVector2D::ZeroVector;
-	float X = 0, Y = 0, Z = 0, Yaw = 0, Cd = 0, Cd2 = 0, T = 0, StandAt = 0, CastUntil = 0, Aim = 0;
+	float X = 0, Y = 0, Z = 0, Yaw = 0, Cd = 0, Cd2 = 0, T = 0, StandAt = 0, CastUntil = 0, Aim = 0, HitAt = 0;
 	float Hp = BSDefs::BansheeHp, MaxHp = BSDefs::BansheeHp, AcidUntil = 0, Flash = 0;
-	bool bDead = false;
+	bool bDead = false, bArrived = false;
 	ABSModelActor* Actor = nullptr;
 };
 
@@ -314,6 +314,7 @@ public:
 	FString CardDesc(const FBSCardDef& C) const;
 	int32 TroopCost(const FBSInfantryDef* D) const { return FMath::RoundToInt(D->Cost * (1 - 0.15f * CardLevel(TEXT("recruit")))); }
 	float TrooperHp(const FBSInfantryDef* D) const { return D->Hp + 10 * CardLevel(TEXT("shield")); }
+	TArray<FVector2D> StrikeFormation(int32 N) const;
 	float StrikeCooldown() const { return BSDefs::BansheeCooldown * (1 - 0.25f * CardLevel(TEXT("rotors"))); }
 	// High-tech reinforcements: shop cards put these in the armoury (see BSDefs::Tech).
 	TSet<FString> TechUnlocked;

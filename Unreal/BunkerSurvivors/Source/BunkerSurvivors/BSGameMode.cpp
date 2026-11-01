@@ -204,7 +204,7 @@ void ABSGameMode::Tick(float Dt)
 			Game->Minerals += 20000;
 			for (int32 i = 0; i < 4; i++) Game->BuyTech(TEXT("goliath"));
 			Game->BuyTech(TEXT("thor")); Game->BuyTech(TEXT("thor")); Game->BuyTech(TEXT("bc")); Game->BuyTech(TEXT("odin")); Game->BuyTech(TEXT("vikings"));
-			Game->BuyTech(TEXT("wraiths")); Game->BuyTech(TEXT("vessel"));
+			Game->BuyTech(TEXT("wraiths")); Game->BuyTech(TEXT("vessel")); Game->CallAirStrike();
 			Game->Minerals = FMath::Min(Game->Minerals, 1850);   // a normal-looking bank again (GrantAllTech banks a million)
 			Game->BuildStructure(false);              // sensor tower, for the radar
 		}

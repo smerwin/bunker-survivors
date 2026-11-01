@@ -1,4 +1,4 @@
-// Minimal DDS (DXT1/DXT3/DXT5) decoder and PNG encoder, used to turn SC2 button icons into PNGs.
+// Minimal DDS (DXT1/DXT3/DXT5, uncompressed RGB(A)) decoder and PNG encoder, used to turn SC2 button icons into PNGs.
 'use strict';
 const zlib = require('zlib');
 
@@ -8,6 +8,16 @@ function decodeDDS(buf) {
   const fourcc = buf.toString('latin1', 84, 88);
   const data = buf.subarray(128);
   const out = Buffer.alloc(width * height * 4);
+  if (buf.readUInt32LE(80) & 0x40) {
+    // Uncompressed (a few newer icons): channels picked out by the pixel format's bit masks.
+    const bpp = buf.readUInt32LE(88) >> 3, masks = [92, 96, 100, 104].map(o => buf.readUInt32LE(o)), alpha = buf.readUInt32LE(80) & 1;
+    const shift = m => { let s = 0; while (m && !(m & 1)) { m >>>= 1; s++; } return [s, m]; }, ch = masks.map(shift);
+    for (let i = 0; i < width * height; i++) {
+      let v = 0; for (let k = 0; k < bpp; k++) v |= data[i * bpp + k] << (8 * k); v >>>= 0;
+      for (let k = 0; k < 4; k++) { const [s, m] = ch[k]; out[i * 4 + k] = k === 3 && (!alpha || !m) ? 255 : m ? Math.round(((v >>> s) & m) * 255 / m) : 0; }
+    }
+    return { width, height, data: out };
+  }
   const bw = Math.max(1, (width + 3) >> 2), bh = Math.max(1, (height + 3) >> 2);
   const blockSize = fourcc === 'DXT1' ? 8 : 16;
   const c = [[0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255], [0, 0, 0, 255]];

@@ -544,7 +544,7 @@ void ABSGame::PlaySound(const FString& Key, float Vol, float MinGap)
 	if (USoundBase* S = Assets->Sound(Key)) UGameplayStatics::PlaySound2D(this, S, Vol, Rnd(0.96f, 1.04f));
 }
 
-void ABSGame::Toast(const FString& Msg) { LastToast = Msg; ToastSerial++; }
+void ABSGame::Toast(const FString& Msg) { LastToast = Msg; ToastSerial++; UE_LOG(LogTemp, Log, TEXT("BSToast: %s"), *Msg); }
 void ABSGame::Floater(float X, float Y, float Z, const FString& Text, const FLinearColor& C) { Floaters.Add({ FVector(X, Y, Z), Text, C, 0 }); }
 
 // ---- Player actions -------------------------------------------------------------------------------------
@@ -1193,6 +1193,22 @@ bool ABSGame::DropTank()
 	return true;
 }
 
+// Where each banshee of an n-strong strike hovers: the four posts, then (with Hyperflight Rotors) a second rank further
+// up the lane, or in the arena a wider ring, so no two share a spot.
+TArray<FVector2D> ABSGame::StrikeFormation(int32 N) const
+{
+	TArray<FVector2D> Posts;
+	if (Mode != EBSMode::Lane)
+	{
+		for (int32 i = 0; i < N; i++) { const float A = FMath::DegreesToRadians(45.f + i * 360.f / N); Posts.Add(FVector2D(FMath::Cos(A) * 7, FMath::Sin(A) * 7)); }
+		return Posts;
+	}
+	for (int32 i = 0; i < FMath::Min(N, StrikePosts.Num()); i++) Posts.Add(StrikePosts[i]);
+	const int32 M = N - Posts.Num();
+	for (int32 j = 0; j < M; j++) Posts.Add(FVector2D((j - (M - 1) / 2.f) * 4.4f, 9.f));
+	return Posts;
+}
+
 bool ABSGame::CallAirStrike()
 {
 	if (Ab.StrikeCd > 0) { Toast(TEXT("Air support is refuelling")); return false; }
@@ -1200,10 +1216,11 @@ bool ABSGame::CallAirStrike()
 	Minerals -= BSDefs::BansheeCost;
 	Ab.StrikeCd = StrikeCooldown();
 	const bool bLane = Mode == EBSMode::Lane;
-	for (int32 i = 0; i < BSDefs::BansheeCount + CardLevel(TEXT("rotors")); i++)
+	const TArray<FVector2D> Posts = StrikeFormation(BSDefs::BansheeCount + CardLevel(TEXT("rotors")));
+	for (int32 i = 0; i < Posts.Num(); i++)
 	{
 		FBSBanshee B;
-		B.Post = StrikePosts[i % StrikePosts.Num()];
+		B.Post = Posts[i];
 		B.X = B.Post.X * 0.5f; B.Y = (bLane ? -16.f : -34.f) - i * 1.2f; B.Z = BSDefs::BansheeFly + 1.5f; B.Yaw = PI / 2; B.Cd = 0.3f + i * 0.2f;
 		B.Actor = AcquireModel(TEXT("banshee"));
 		if (B.Actor) { B.Actor->SetTeamColor(TerranColor); B.Actor->Play(WalkNames, true); }
@@ -2134,12 +2151,19 @@ void ABSGame::UpdateVessel(float Dt)
 	if (!Vessel) return;
 	FBSBanshee& V = *Vessel;
 	V.T += Dt;
-	const FVector2D Goal = V.State == FBSBanshee::Out ? V.Home : V.Post;
+	const FVector2D Goal = V.State == FBSBanshee::Out ? V.Home : V.State == FBSBanshee::Retreat ? FVector2D(V.Post.X * 0.5f, BSDefs::VesselRetreatY) : V.Post;
 	const float Gz = V.State == FBSBanshee::Out ? BSDefs::VesselFly + 3 : BSDefs::VesselFly;
 	const FVector D = FVector(Goal.X, Goal.Y, Gz) - FVector(V.X, V.Y, V.Z);
 	const float Dd = D.Size();
-	if (Dd > 0.05f) { const FVector Mv = D / Dd * FMath::Min(Dd, (V.State == FBSBanshee::Hover ? 1.2f : BSDefs::VesselSpeed) * Dt); V.X += Mv.X; V.Y += Mv.Y; V.Z += Mv.Z; }
-	if (V.State == FBSBanshee::In && Dd < 0.3f) { V.State = FBSBanshee::Hover; V.T = 0; }
+	const float Sp = V.State == FBSBanshee::Hover ? 1.2f : V.State == FBSBanshee::Retreat ? BSDefs::VesselRetreatSpeed : BSDefs::VesselSpeed;
+	if (Dd > 0.05f) { const FVector Mv = D / Dd * FMath::Min(Dd, Sp * Dt); V.X += Mv.X; V.Y += Mv.Y; V.Z += Mv.Z; }
+	// The stay clock runs from first arrival on station, through any retreats.
+	if (V.State == FBSBanshee::In && Dd < 0.3f) { V.State = FBSBanshee::Hover; if (!V.bArrived) { V.bArrived = true; V.T = 0; } }
+	else if (V.State == FBSBanshee::Retreat)
+	{
+		if (V.T > BSDefs::VesselStay) { V.State = FBSBanshee::Out; Toast(TEXT("Science vessel withdrawing")); }
+		else if (Dd < 0.5f && Time - V.HitAt > BSDefs::VesselCalm) { V.State = FBSBanshee::In; Toast(TEXT("Science vessel returning")); }
+	}
 	else if (V.State == FBSBanshee::Hover)
 	{
 		if (V.T > BSDefs::VesselStay) { V.State = FBSBanshee::Out; V.T = 0; Toast(TEXT("Science vessel withdrawing")); }
@@ -2150,7 +2174,8 @@ void ABSGame::UpdateVessel(float Dt)
 		else if (V.CastUntil > 0) { V.CastUntil = 0; if (V.Actor) V.Actor->Play(StandNames, true); }
 	}
 	else if (V.State == FBSBanshee::Out && Dd < 0.5f) { ReleaseModel(V.Actor); Vessel.Reset(); return; }
-	if (V.State != FBSBanshee::Hover) V.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(V.Yaw, FMath::Atan2(D.Y, D.X)), -2 * Dt, 2 * Dt);
+	if (V.State == FBSBanshee::Retreat) V.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(V.Yaw, PI / 2), -2 * Dt, 2 * Dt);      // backs off, still facing the fight
+	else if (V.State != FBSBanshee::Hover) V.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(V.Yaw, FMath::Atan2(D.Y, D.X)), -2 * Dt, 2 * Dt);
 	if (V.Actor) V.Actor->SetSim(V.X, V.Y, V.Z + 0.15f * FMath::Sin(Time * 1.3f), V.Yaw);
 }
 
@@ -3201,7 +3226,7 @@ void ABSGame::BuildAirTargets()
 			FBSTarget T; T.Kind = FBSTarget::Air; T.AirRef = W; T.AirType = FBSTarget::Wraith; T.X = W->X; T.Y = W->Y; T.Z = W->Z; T.Radius = 0.6f; T.bLight = true;
 			AirTargets.Add(T);
 		}
-	if (Vessel && !Vessel->bDead && Vessel->State == FBSBanshee::Hover)
+	if (Vessel && !Vessel->bDead && (Vessel->State == FBSBanshee::Hover || Vessel->State == FBSBanshee::Retreat))
 	{
 		FBSTarget T; T.Kind = FBSTarget::Air; T.AirRef = Vessel; T.AirType = FBSTarget::Vessel; T.X = Vessel->X; T.Y = Vessel->Y; T.Z = Vessel->Z; T.Radius = 1.2f; T.bArmored = true;
 		AirTargets.Add(T);
@@ -3373,6 +3398,16 @@ void ABSGame::DamageDefender(const FBSTarget& T, float Dmg)
 		TSharedPtr<FBSBanshee> A = T.AirRef.Pin();
 		A->Hp -= FMath::Max(0.5f, Dmg - (T.AirType == FBSTarget::Vessel ? BSDefs::VesselArmor : 0.f)); A->Flash = 1;
 		if (A->Hp <= 0 && !A->bDead) KillAir(T);
+		else if (T.AirType == FBSTarget::Vessel)
+		{
+			A->HitAt = Time;
+			if (A->State == FBSBanshee::Hover)
+			{
+				A->State = FBSBanshee::Retreat; A->CastUntil = 0;
+				if (A->Actor) A->Actor->Play(StandNames, true);
+				Toast(TEXT("Science vessel under fire, pulling back"));
+			}
+		}
 	}
 	else if (T.Kind == FBSTarget::Structure)
 	{

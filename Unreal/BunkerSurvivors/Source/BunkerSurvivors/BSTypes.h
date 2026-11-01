@@ -178,6 +178,8 @@ namespace BSDefs
 	// tanks and mechs (absorbs MatrixHp damage for MatrixDur s).
 	constexpr float VesselHp = 200, VesselArmor = 1, VesselCooldown = 50, VesselStay = 30, VesselFly = 5.2f, VesselSpeed = 4, VesselScale = 1.f, VesselRange = 11;
 	constexpr int32 VesselCost = 400;
+	// Fired upon, the vessel pulls back behind the bunker and returns once it has gone VesselCalm seconds unhit.
+	constexpr float VesselRetreatY = -5, VesselRetreatSpeed = 6, VesselCalm = 3;
 	constexpr float IrradiateCd = 7, IrradiateDur = 6, IrradiateDps = 18, IrradiateRadius = 1.8f;
 	constexpr float MatrixCd = 10, MatrixHp = 250, MatrixDur = 12;
 	// Yamato strike: a Battlecruiser fires on the densest cluster.
