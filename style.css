@@ -288,22 +288,21 @@ button { font: inherit; color: inherit; cursor: pointer; }
   #squad { width: calc(100% - 136px); }
 }
 
-/* ---- Wear: a weathered, sandblasted finish over the whole UI ------------------------------------------------------
-   Panels and buttons carry fine grain, small pits with a lit lower rim (tiny impact craters) and faint scratches, plus a
-   bevel; display text is embossed and gently pitted. All generated SVG noise: no image files. */
+/* ---- Wear: a light weathering on the big panels ----------------------------------------------------------------
+   The command bar, squad card, modal cards and start-screen panels carry faint grain, a few small impact pits and the
+   odd scratch (a baked noise tile, at half strength) under a soft bevel. Headings are embossed; only the title is
+   sandblasted. Small controls stay clean. */
 :root {
-  --grit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E %3Cfilter id='g' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='3' stitchTiles='stitch'/%3E %3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0.9 0 0 0 -0.42'/%3E%3C/filter%3E %3Cfilter id='p' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.16' numOctaves='3' seed='11' stitchTiles='stitch' result='t'/%3E %3CfeColorMatrix in='t' values='0 0 0 0 0 0 0 0 0 0.02 0 0 0 0 0.04 -14 0 0 0 3.85' result='pit'/%3E %3CfeOffset in='pit' dx='1' dy='1' result='o'/%3E %3CfeColorMatrix in='o' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.28 0' result='rim'/%3E %3CfeMerge%3E%3CfeMergeNode in='rim'/%3E%3CfeMergeNode in='pit'/%3E%3C/feMerge%3E%3C/filter%3E %3Cfilter id='s' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.004 0.55' numOctaves='2' seed='5' stitchTiles='stitch'/%3E %3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 1.6 0 0 0 -1.02'/%3E%3C/filter%3E %3Crect width='100%' height='100%' filter='url(%23g)' opacity='0.5'/%3E %3Crect width='100%' height='100%' filter='url(%23s)' opacity='0.55' transform='rotate(-8 120 120)'/%3E %3Crect width='100%' height='100%' filter='url(%23p)' opacity='0.65'/%3E%3C/svg%3E");
+  --grit: url('grit.png');                    /* baked from SVG turbulence noise: drawn once, nothing to render at launch */
   --wear: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E %3Cfilter id='m' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='2' seed='21' stitchTiles='stitch'/%3E %3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 -16 0 0 0 12.6'/%3E%3C/filter%3E %3Crect width='100%' height='100%' filter='url(%23m)'/%3E%3C/svg%3E");
-  --bevel: inset 0 1px 0 rgba(255, 255, 255, 0.09), inset 0 -2px 0 rgba(0, 0, 0, 0.35), 0 3px 10px rgba(0, 0, 0, 0.35);
-  --emboss: 0 1px 0 rgba(0, 0, 0, 0.9), 0 2px 3px rgba(0, 0, 0, 0.55), 0 -1px 0 rgba(255, 255, 255, 0.1);
+  --bevel: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+  --emboss: 0 1px 0 rgba(0, 0, 0, 0.8), 0 2px 3px rgba(0, 0, 0, 0.4), 0 -1px 0 rgba(255, 255, 255, 0.08);
 }
-.glass, .btns button, .item, .offer, .mode, #hyperionBtn, .perk, .codex, #relink, .pill {
-  background-image: var(--grit); background-size: 240px 240px; box-shadow: var(--bevel);
+#topbar, #squad, .modal .card, .mode, #hyperionBtn { box-shadow: var(--bevel); isolation: isolate; }   /* the wear layer sits under their contents */
+.modal .card, #hyperionBtn { position: relative; }
+#topbar::after, #squad::after, .modal .card::after, .mode::after, #hyperionBtn::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: var(--grit); background-size: 240px 240px; opacity: 0.5;
 }
-.btns button.primary { background-image: var(--grit), linear-gradient(#b4f4ff, #86e2f5); background-size: 240px 240px, 100% 100%; }
-h1, h2, #banner, #topbar .stat b, .stats b, .mode b, .offer b, #hpText, #shopTitle, #overTitle, .btns button, .ability b, .item b {
-  text-shadow: var(--emboss);
-}
-h1, h2, #banner, #topbar .stat b, .stats b, .mode b, #overTitle {
-  -webkit-mask-image: var(--wear); mask-image: var(--wear); -webkit-mask-size: 180px 180px; mask-size: 180px 180px;
-}
+h1, h2, #banner, #overTitle { text-shadow: var(--emboss); }
+.title h1 { -webkit-mask-image: var(--wear); mask-image: var(--wear); -webkit-mask-size: 180px 180px; mask-size: 180px 180px; }
