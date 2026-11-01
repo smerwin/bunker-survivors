@@ -75,9 +75,10 @@ window.BS = window.BS || {};
         this.samSlots = [[-5.6, 1.2], [5.6, 1.2], [-3.6, -4.6]];
         this.sensorSlot = [3.6, -4.6];
         this.strikePosts = [[-3.4, 3.6], [3.4, 3.6], [-1.4, 6.4], [1.4, 6.4]];   // in view: covering both ledges and the stem
-        // High-tech walkers: goliaths at the bunker's shoulders; the thors and the odin are too big to stand in the lane
-        // without walling off the view, so they fire long-range from behind the bunker.
-        this.mechSlots = { goliath: [[-3.9, 1.6], [3.9, 1.6], [-2.3, 2.3], [2.3, 2.3]], thor: [[-5.0, -5.8], [5.0, -5.8]], odin: [[0, -10.5]] };
+        // High-tech walkers: goliaths and thors take the plateaus either side of the stem (up the arms' ramps, see
+        // mechRoute), clear of the lane and with the high ground's reach; the odin is too big for them and fires
+        // long-range from behind the bunker.
+        this.mechSlots = { goliath: [[-7.6, 3.2], [7.6, 3.2], [-9.4, 1.6], [9.4, 1.6]], thor: [[-9.6, -0.4], [9.6, -0.4]], odin: [[0, -10.5]] };
         // Forward base on the plateau east of the stem (see updateExpansion): the way up, the command center's site and
         // the SCV's spot beside it, the Odin, goliaths over the arm, and three ranks of troopers on the cliff edge over the stem.
         this.fwdRoute = BS.Terrain.ledgeRoute(1);
@@ -475,7 +476,7 @@ window.BS = window.BS || {};
     }
     beginExpansion() {
       // Anyone still on the way back down turns round where they are.
-      const send = (o, post) => { if (!o.fwd) o.leg = 0; o.fwd = post; o.back = false; };
+      const send = (o, post) => { if (!o.fwd) o.leg = 0; o.fwd = post; o.back = false; o.route = null; };
       send(this.mechs.find(m => m.kind === 'odin'), this.fwdOdin);
       this.mechs.filter(m => m.kind === 'goliath').forEach((m, i) => send(m, this.fwdGoliath[i % this.fwdGoliath.length]));
       const troopers = this.squad.filter(m => !m.dead && !m.boarding).sort((a, b) => (b.fwd ? 1 : 0) - (a.fwd ? 1 : 0)).slice(0, T().expand.troopers);
@@ -499,7 +500,7 @@ window.BS = window.BS || {};
       if (X.state === 'advance') {
         // Taken once the Odin stands at its post and (almost) nothing on the ground contests the plateau round it.
         const odin = this.mechs.find(m => m.kind === 'odin'), P = this.fwdPost;
-        const there = odin.fwd && !odin.back && odin.leg >= this.fwdRoute.length && dist(odin.x, odin.y, odin.fwd[0], odin.fwd[1]) < 0.5;
+        const there = odin.fwd && !odin.back && dist(odin.x, odin.y, odin.fwd[0], odin.fwd[1]) < 0.5;
         const foes = this.enemies.filter(e => e.hp > 0 && !e.def.flying && BS.Terrain.onHigh(e.x, e.y) && dist(e.x, e.y, P[0], P[1]) < T().expand.clear).length;
         if (there && foes <= 2) {
           X.t = 0;
@@ -805,6 +806,7 @@ window.BS = window.BS || {};
       const m = { kind, def: D, slot, x: slot[0], y: this.mode === 'lane' ? -9 : -14, yaw: Math.PI / 2, hp: D.hp, maxHp: D.hp, armor: D.armor, radius: D.radius,
         state: 'walking', cdG: 0.5, cdA: 0.5, dead: false, flash: 0, anim: '', aim: Math.PI / 2 };
       m.handle = this.r.spawn(kind, m.x, m.y, BS.Terrain.height(m.x, m.y), m.yaw).setTeam(1);
+      if (D.scale) m.handle.setScale(D.scale);
       this.mechs.push(m);
       this.toast(BS.TECH.find(c => c.id === kind).name + ' inbound');
       return true;
@@ -815,38 +817,27 @@ window.BS = window.BS || {};
         const D = m.def;
         let moving = false;
         if (m.fwd) {
-          // On the expedition to the high ground (updateExpansion): walk the route, guns firing on the move.
-          const g = this.fwdGoal(m);
-          if (!g) { m.fwd = null; m.back = false; m.state = 'walking'; }        // back down in the stem: on to its post
+          // On the expedition to the high ground (updateExpansion): walk there, guns firing on the move. Falling back,
+          // it heads home to its own post.
+          if (m.back) { m.fwd = null; m.back = false; m.state = 'walking'; m.route = null; }
           else {
             m.state = 'ready';                                                  // (even if a viper yanked it about)
-            const far = dist(m.x, m.y, g[0], g[1]);
-            if (far > 0.15) {
-              const [wx, wy] = this.roundBunker(m, g[0], g[1]), dx = wx - m.x, dy = wy - m.y, dd = Math.hypot(dx, dy) || 1, sp = Math.min(dd, D.speed * dt);
-              this.stepGround(m, dx / dd * sp, dy / dd * sp);
-              m.yaw += clamp(angDelta(m.yaw, Math.atan2(dy, dx)), -3 * dt, 3 * dt);
-              if (m.anim !== 'walk') { m.anim = 'walk'; m.handle.play(/^walk/i, true); }
-              moving = true;
-            } else if (m.anim === 'walk') { m.anim = 'stand'; m.handle.play(/^stand$/i, true); }
+            if (!m.route || (!m.route.length && dist(m.x, m.y, m.fwd[0], m.fwd[1]) > 0.5)) m.route = this.mechRoute(m, m.fwd);
+            moving = this.walkRoute(m, dt);
           }
         }
         if (m.state === 'walking') {
-          const [gx, gy] = this.roundBunker(m, m.slot[0], m.slot[1]);
-          const far = Math.hypot(m.slot[0] - m.x, m.slot[1] - m.y), dx = gx - m.x, dy = gy - m.y, dd = Math.hypot(dx, dy) || 1;
-          if (far > 0.15) {
-            const sp = Math.min(dd, D.speed * dt);
-            this.stepGround(m, dx / dd * sp, dy / dd * sp);
-            m.yaw += clamp(angDelta(m.yaw, Math.atan2(dy, dx)), -3 * dt, 3 * dt);
-            if (m.anim !== 'walk') { m.anim = 'walk'; m.handle.play(/^walk/i, true); }
-          } else { m.state = 'ready'; m.anim = 'stand'; m.handle.play(/^stand$/i, true); this.toast(BS.TECH.find(c => c.id === m.kind).name + ' in position'); }
+          if (!m.route) m.route = this.mechRoute(m, m.slot);
+          if (!this.walkRoute(m, dt)) { m.state = 'ready'; m.route = null; this.toast(BS.TECH.find(c => c.id === m.kind).name + ' in position'); }
           m.handle.setPos(m.x, m.y, BS.Terrain.height(m.x, m.y)).setYaw(m.yaw);
           continue;
         }
+        if (!m.fwd && dist(m.x, m.y, m.slot[0], m.slot[1]) > 0.8) { m.state = 'walking'; m.route = null; continue; }   // knocked off its post (a viper)
         const bonus = (this.up.vehicle + (this.cards.maelstrom || 0)) * 2;
         m.cdG -= dt; m.cdA -= dt;
         for (const air of [false, true]) {
           if ((air ? m.cdA : m.cdG) > 0) continue;
-          const range = air ? D.aRange : D.gRange, pred = e => !!e.def.flying === air;
+          const range = (air ? D.aRange : D.gRange) + (BS.Terrain.onHigh(m.x, m.y) ? 1 : 0), pred = e => !!e.def.flying === air;   // the high ground's reach
           let target = this.focus && this.focus.hp > 0 && pred(this.focus) && dist(m.x, m.y, this.focus.x, this.focus.y) - this.focus.radius <= range ? this.focus : null;
           if (!target) target = this.enemiesInRange(m.x, m.y, range, pred)[0];
           if (!target) { if (air) m.cdA = 0.15; else m.cdG = 0.15; continue; }
@@ -858,14 +849,37 @@ window.BS = window.BS || {};
         m.handle.setPos(m.x, m.y, BS.Terrain.height(m.x, m.y)).setYaw(m.yaw);
       }
     }
+    // The way for a walker to (x, y): straight across the same level, otherwise down its own plateau's ramp and/or up the
+    // other one (Terrain.ledgeRoute, walked backwards to come down).
+    mechRoute(o, to) {
+      const side = (x, y) => this.mode === 'lane' && BS.Terrain.onHigh(x, y) ? (x < 0 ? -1 : 1) : 0;
+      const a = side(o.x, o.y), b = side(to[0], to[1]), pts = [];
+      if (a !== b) {
+        if (a) pts.push(...BS.Terrain.ledgeRoute(a).reverse());
+        if (b) pts.push(...BS.Terrain.ledgeRoute(b));
+      }
+      pts.push([to[0], to[1]]);
+      return pts;
+    }
+    // One step along a walker's route. Returns false once it has arrived (and stands).
+    walkRoute(m, dt) {
+      while (m.route.length && dist(m.x, m.y, m.route[0][0], m.route[0][1]) < (m.route.length > 1 ? 0.6 : 0.15)) m.route.shift();
+      if (!m.route.length) { if (m.anim === 'walk') { m.anim = 'stand'; m.handle.play(/^stand$/i, true); } return false; }
+      const [wx, wy] = this.roundBunker(m, m.route[0][0], m.route[0][1]), dx = wx - m.x, dy = wy - m.y, dd = Math.hypot(dx, dy) || 1, sp = Math.min(dd, m.def.speed * dt);
+      this.stepGround(m, dx / dd * sp, dy / dd * sp);
+      m.yaw += clamp(angDelta(m.yaw, Math.atan2(dy, dx)), -3 * dt, 3 * dt);
+      if (m.anim !== 'walk') { m.anim = 'walk'; m.handle.play(/^walk/i, true); }
+      return true;
+    }
     // Muzzles of a mech's ground or air weapons, in world space: its weapon bones (goliath autocannons and missile racks,
     // thor/odin arm cannons and shoulder pods), or their rest-pose spots if the model has not posed yet.
     muzzles(m, air) {
       const M = MECH_MUZZLES[m.kind][air ? 'a' : 'g'], out = [];
       const h = BS.Terrain.height(m.x, m.y), cs = Math.cos(m.yaw), sn = Math.sin(m.yaw);
+      const k = m.def.scale || 1;
       for (const [bone, [rx, ry, rz]] of M) {
         const w = m.handle.boneWorld(bone);
-        out.push(w || [m.x + cs * rz + sn * rx, m.y + sn * rz - cs * rx, h + ry]);
+        out.push(w || [m.x + (cs * rz + sn * rx) * k, m.y + (sn * rz - cs * rx) * k, h + ry * k]);
       }
       return out;
     }
@@ -1052,8 +1066,11 @@ window.BS = window.BS || {};
     // in the arena a ring round the bunker. patrolAt(s) is the point s metres round it and the heading there.
     patrolLoop() {
       if (this._patrol && this._patrol.mode === this.mode) return this._patrol;
-      const pts = this.mode === 'lane' ? [[0, 2.5], [-2, 9], [-8, 17], [-3, 22], [3, 22], [8, 17], [2, 9], [0, 2.5]]
-        : Array.from({ length: 25 }, (_, i) => [Math.cos(i / 24 * Math.PI * 2) * 9, Math.sin(i / 24 * Math.PI * 2) * 9]);
+      // Lane: a long racetrack, straight strafing runs up the east of the lane and back down the west with wide turns at
+      // either end. Arena: a wide circle round the bunker.
+      const arc = (cx, cy, r, a0, a1) => Array.from({ length: 9 }, (_, i) => { const a = a0 + (a1 - a0) * i / 8; return [cx + Math.cos(a) * r, cy + Math.sin(a) * r]; });
+      const pts = this.mode === 'lane' ? [...arc(0, 21, 4.5, 0, Math.PI), ...arc(0, -3, 4.5, Math.PI, Math.PI * 2), [4.5, 21]]
+        : Array.from({ length: 33 }, (_, i) => [Math.cos(i / 32 * Math.PI * 2) * 11, Math.sin(i / 32 * Math.PI * 2) * 11]);
       const segs = []; let len = 0;
       for (let i = 0; i + 1 < pts.length; i++) { const l = dist(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]); segs.push([pts[i], pts[i + 1], len, l]); len += l; }
       return (this._patrol = { mode: this.mode, segs, len });
@@ -1066,6 +1083,18 @@ window.BS = window.BS || {};
     }
     // A flier on patrol: s metres round the loop, off metres to its side.
     patrolPos(u) { const [x, y, h] = this.patrolAt(u.s); return [x - Math.sin(h) * u.off, y + Math.cos(h) * u.off, h]; }
+    // Wedge slots for flier i of n: spread side to side, the outer ones trailing.
+    wedge(i, n, s0) { const c = i - (n - 1) / 2; return { s: s0 - Math.abs(c) * 1.8, off: c * 2.2 }; }
+    // What a strafing flier shoots: its locked target while that stays in reach and ahead of its nose, else the
+    // nearest that is.
+    strafeTarget(u, lockKey, heading, range, cone, pred) {
+      const ahead = e => e.hp > 0 && pred(e) && dist(u.x, u.y, e.x, e.y) - e.radius <= range && Math.abs(angDelta(heading, Math.atan2(e.y - u.y, e.x - u.x))) < cone;
+      if (u[lockKey] && ahead(u[lockKey])) return u[lockKey];
+      let best = null, bd = 1e9;
+      for (const e of this.enemiesInRange(u.x, u.y, range, pred)) if (ahead(e)) { const dd = dist(u.x, u.y, e.x, e.y); if (dd < bd) { bd = dd; best = e; } }
+      return (u[lockKey] = best);
+    }
+    airBonus() { return this.up.vehicle + (this.cards.maelstrom || 0); }
     callVikings() {
       const D = T().vikings;
       if (this.techCd.vikings > 0) return this.toast('Vikings are rearming');
@@ -1073,7 +1102,7 @@ window.BS = window.BS || {};
       this.minerals -= D.cost; this.techCd.vikings = D.cooldown;
       for (let i = 0; i < D.count; i++) {
         const post = this.strikePosts[i % this.strikePosts.length];
-        const v = { s: i * 2.2, off: i % 2 ? 0.9 : -0.9, post: [post[0] * 1.2, post[1] + 2], x: post[0] * 0.6, y: (this.mode === 'lane' ? -18 : -34) - i * 1.2, z: D.fly + 1.5, yaw: Math.PI / 2, cd: 0.4 + i * 0.2, state: 'in', t: 0, hp: D.hp, maxHp: D.hp };
+        const v = { ...this.wedge(i, D.count, 0), post: [post[0] * 1.2, post[1] + 2], x: post[0] * 0.6, y: (this.mode === 'lane' ? -18 : -34) - i * 1.2, z: D.fly + 1.5, yaw: Math.PI / 2, cd: 0.4 + i * 0.2, state: 'in', t: 0, hp: D.hp, maxHp: D.hp };
         v.handle = this.r.spawn('vikingfighter', v.x, v.y, v.z, v.yaw).setTeam(1);
         v.handle.play(/^walk|^fly|^stand/i, true);
         this.vikingWing.push(v);
@@ -1091,25 +1120,25 @@ window.BS = window.BS || {};
           if (dd > 0.3) { const s = Math.min(dd, D.speed * dt) / dd; v.x += dx * s; v.y += dy * s; v.z += dz * s; v.yaw = Math.atan2(dy, dx); }
           else { v.state = 'patrol'; v.t = 0; }
         } else if (v.state === 'patrol') {
-          // Ranging round the patrol loop, turning to engage whatever flies within reach.
+          // A strafing pass round the patrol loop, nose always along it; missiles at the air ahead.
           v.s += D.patrol * dt;
           const [px, py, h] = this.patrolPos(v);
           v.x += (px - v.x) * Math.min(1, 4 * dt); v.y += (py - v.y) * Math.min(1, 4 * dt); v.z = D.fly + 0.2 * Math.sin(v.t * 2 + i);
-          const list = this.enemiesInRange(v.x, v.y, D.range, e => e.def.flying);
-          v.yaw += clamp(angDelta(v.yaw, list.length ? Math.atan2(list[0].y - v.y, list[0].x - v.x) : h), -4 * dt, 4 * dt);
+          v.yaw += clamp(angDelta(v.yaw, h), -3 * dt, 3 * dt);
+          const tg = this.strafeTarget(v, 'lock', h, D.range, D.cone, e => e.def.flying);
           v.cd -= dt * (v.acidUntil > this.time ? 0.7 : 1);
-          if (v.cd <= 0 && list.length) {
+          if (v.cd <= 0 && tg) {
             v.cd = D.cd;
             for (let k = 0; k < D.shots; k++) {
               const off = k ? 0.4 : -0.4;
-              const p = { kind: 'missile', friendly: true, fx: v.x - Math.sin(v.yaw) * off, fy: v.y + Math.cos(v.yaw) * off, fz: v.z - 0.2, tx: list[0].x, ty: list[0].y, tz: list[0].z,
-                t: -k * 0.1, dur: 0.4, dmg: D.dmg, target: list[0], impact: 'vikingImpact' };
+              const p = { kind: 'missile', friendly: true, fx: v.x - Math.sin(v.yaw) * off, fy: v.y + Math.cos(v.yaw) * off, fz: v.z - 0.2, tx: tg.x, ty: tg.y, tz: tg.z,
+                t: -k * 0.1, dur: 0.4, dmg: D.dmg + this.airBonus(), target: tg, impact: 'vikingImpact' };
               this.projectileModel(p, null, 'vikingMissile');
               this.projectiles.push(p);
             }
             this.fx.play('vikingLaunch', v.x, v.y, v.z, v.yaw);
             BS.audio.play('vikingFire', { vol: 0.45, gap: 0.2 });
-          } else if (v.cd <= 0) v.cd = 0.1;
+          } else if (v.cd <= 0) v.cd = 0.05;
           if (v.t > D.hover) { v.state = 'out'; v.t = 0; }
         } else {
           v.y -= D.speed * dt; v.z += 2 * dt;
@@ -1128,7 +1157,7 @@ window.BS = window.BS || {};
       this.minerals -= D.cost; this.techCd.wraiths = D.cooldown;
       for (let i = 0; i < D.count; i++) {
         const post = this.strikePosts[(i + 1) % this.strikePosts.length];
-        const w = { s: 30 + i * 2.6, off: (i - 1) * 1.0, cloakUntil: 0, cloakReady: 0, post: [post[0] * 1.3, post[1] + 4], x: post[0] * 0.6, y: (this.mode === 'lane' ? -18 : -34) - i * 1.2, z: D.fly + 1.5, yaw: Math.PI / 2,
+        const w = { ...this.wedge(i, D.count, 30), cloakUntil: 0, cloakReady: 0, post: [post[0] * 1.3, post[1] + 4], x: post[0] * 0.6, y: (this.mode === 'lane' ? -18 : -34) - i * 1.2, z: D.fly + 1.5, yaw: Math.PI / 2,
           gCd: 0.3 + i * 0.2, aCd: 0.5 + i * 0.2, state: 'in', t: 0, hp: D.hp, maxHp: D.hp, armor: 0, flash: 0 };
         w.handle = this.r.spawn('wraith', w.x, w.y, w.z, w.yaw).setTeam(1);
         w.handle.play(/^walk$|^stand$/i, true);
@@ -1149,13 +1178,13 @@ window.BS = window.BS || {};
           if (dd > 0.3) { const s = Math.min(dd, D.speed * dt) / dd; w.x += dx * s; w.y += dy * s; w.z += dz * s; w.yaw = Math.atan2(dy, dx); }
           else { w.state = 'patrol'; w.t = 0; }
         } else if (w.state === 'patrol') {
-          // Ranging round the patrol loop, banking into the turns; it turns to face whatever it shoots.
+          // A strafing run round the patrol loop, nose always along it: lasers raking the ground ahead, missiles at air.
           w.s += D.patrol * dt;
           const [px, py, heading] = this.patrolPos(w);
           w.x += (px - w.x) * Math.min(1, 4 * dt); w.y += (py - w.y) * Math.min(1, 4 * dt); w.z = D.fly + 0.25 * Math.sin(w.t * 2 + i);
-          const near = this.enemiesInRange(w.x, w.y, D.range), ground = near.find(e => !e.def.flying), air = near.find(e => e.def.flying);
-          const aim = ground || air;
-          w.yaw += clamp(angDelta(w.yaw, aim ? Math.atan2(aim.y - w.y, aim.x - w.x) : heading), -4 * dt, 4 * dt);
+          w.yaw += clamp(angDelta(w.yaw, heading), -3 * dt, 3 * dt);
+          const ground = this.strafeTarget(w, 'lockG', heading, D.range, D.cone, e => !e.def.flying && !e.def.untouchable && !e.def.tumor);
+          const air = this.strafeTarget(w, 'lockA', heading, D.range, D.cone, e => e.def.flying);
           const rate = w.acidUntil > this.time ? 0.7 : 1;
           w.gCd -= dt * rate; w.aCd -= dt * rate;
           if (w.gCd <= 0 && ground) {
@@ -1164,19 +1193,19 @@ window.BS = window.BS || {};
             this.fx.beam(at, hit, 0.12, [1, 0.28, 0.2], 0.07);
             this.fx.play('laserImpact', hit[0], hit[1], hit[2], Math.atan2(at[1] - hit[1], at[0] - hit[0]), 1.1);
             BS.audio.play('laserHit', { vol: 0.25, gap: 0.12 });
-            this.hurtEnemy(ground, D.gDmg);
-          } else if (w.gCd <= 0) w.gCd = 0.1;
+            this.hurtEnemy(ground, D.gDmg + this.airBonus());
+          } else if (w.gCd <= 0) w.gCd = 0.05;
           if (w.aCd <= 0 && air) {
             w.aCd = D.aCd;
             for (let k = 0; k < D.aShots; k++) {
               const off = k ? 0.35 : -0.35;
               const p = { kind: 'missile', friendly: true, fx: w.x - Math.sin(w.yaw) * off, fy: w.y + Math.cos(w.yaw) * off, fz: w.z - 0.2, tx: air.x, ty: air.y, tz: air.z,
-                t: -k * 0.1, dur: 0.4, dmg: D.aDmg, target: air, impact: 'wraithImpact' };
+                t: -k * 0.1, dur: 0.4, dmg: D.aDmg + this.airBonus(), target: air, impact: 'wraithImpact' };
               this.projectileModel(p, null, 'wraithMissile');
               this.projectiles.push(p);
             }
             BS.audio.play('vikingFire', { vol: 0.35, gap: 0.2 });
-          } else if (w.aCd <= 0) w.aCd = 0.1;
+          } else if (w.aCd <= 0) w.aCd = 0.05;
           if (w.t > D.hover) { w.state = 'out'; w.t = 0; }
         } else {
           w.y -= D.speed * dt; w.z += 2 * dt;
@@ -1658,6 +1687,7 @@ window.BS = window.BS || {};
       const lane = this.mode === 'lane', side = Math.random() < 0.5 ? -1 : 1, ar = Math.random() * Math.PI * 2;
       if (at) { x = at[0] + rnd(-0.6, 0.6); y = at[1] + rnd(-0.6, 0.6); }
       else if (d.transport) { x = lane ? side * 23 : Math.cos(ar) * 27; y = lane ? rnd(-3, 6) : Math.sin(ar) * 27; }        // overlords come in from a flank
+      else if (d.nydus && lane && Math.random() < 0.45) { x = side * rnd(10, 12.5); y = rnd(-4, 6); }      // up on a plateau beside the bunker
       else if (d.nydus) { const r = rnd(5.5, 8); x = lane ? side * rnd(2.5, 4.5) : Math.cos(ar) * r; y = lane ? rnd(-8.5, -7) : Math.sin(ar) * r; }   // behind our lines
       else if (d.creeper || d.watcher || d.detector) { x = lane ? side * rnd(10, 18) : Math.cos(ar) * 29; y = lane ? rnd(30, 34) : Math.sin(ar) * 29; }   // creep overlords and watchers drift in from afar
       else if (this.mode === 'lane') {
@@ -1716,7 +1746,7 @@ window.BS = window.BS || {};
         e.state = 'birth'; e.t = 0; e.spawnT = 0; e.z = BS.Terrain.height(x, y) - 3;
         e.cargo = []; for (let i = 0; i < 6 + 2 * this.lateTier(); i++) e.cargo.push(pick(['zergling', 'zergling', 'zergling', 'roach', 'hydralisk']));   // no winglings: they only come over the mesa
         this.fx.play('nydusBirth', x, y, BS.Terrain.height(x, y), 0, 1.4);
-        this.toast('Nydus worm breaching behind our lines!');
+        this.toast(BS.Terrain.onHigh(x, y) ? 'Nydus worm breaching on the high ground!' : 'Nydus worm breaching behind our lines!');
       }
       this.setupCreeper(e);
       this.enemies.push(e);
@@ -2042,7 +2072,7 @@ window.BS = window.BS || {};
       const post = this.ghostPosts().find(p => !this.ghosts.some(g => g.post[0] === p[0] && g.post[1] === p[1]));
       if (!post) return this.toast('No room for more');
       this.minerals -= D.cost;
-      const g = { post, x: lane ? post[2] * 3 : post[0] * 0.3, y: lane ? -9 : post[1] * 0.3 - 4, yaw: Math.PI / 2, hp: D.hp, maxHp: D.hp, cd: 0, snipeCd: 3, channel: null, hold: 0,
+      const g = { post, x: lane ? post[2] * 3 : post[0] * 0.3, y: lane ? -9 : post[1] * 0.3 - 4, yaw: Math.PI / 2, hp: D.hp, maxHp: D.hp, armor: D.armor, cd: 0, snipeCd: 3, channel: null, hold: 0,
         detected: false, anim: '', dead: false, flash: 0, radius: 0.375, hitAt: -99 };
       g.route = this.ghostRoute(g);
       g.handle = this.r.spawn('ghost', g.x, g.y, BS.Terrain.height(g.x, g.y), g.yaw).setTeam(1);
@@ -2059,7 +2089,7 @@ window.BS = window.BS || {};
       const D = T().ghost, S = D.snipe, OS = BS.OVERSEERS;
       for (const g of this.ghosts.slice()) {
         if (g.dead) continue;
-        const det = this.enemies.some(e => e.def.detector && e.hp > 0 && dist(e.x, e.y, g.x, g.y) < OS.detect);
+        const ov = this.enemies.find(e => e.def.detector && e.hp > 0 && dist(e.x, e.y, g.x, g.y) < OS.detect), det = !!ov;
         if (det !== g.detected) {
           g.detected = det; this.cloakTint(g);
           if (det) { this.toast('Ghost detected!'); this.floater(g.x, g.y, BS.Terrain.height(g.x, g.y) + 2.5, 'DETECTED', '#ff6a5a'); }
@@ -2082,8 +2112,8 @@ window.BS = window.BS || {};
           } else { busy = true; g.yaw = Math.atan2(e.y - g.y, e.x - g.x); }
         }
         if (!busy && g.snipeCd <= 0) {
-          let best = null;
-          for (const e of this.enemiesInRange(g.x, g.y, S.range, e => !e.def.untouchable && !e.def.tumor && (e.def.armored || e.maxHp >= S.minHp)))
+          let best = ov && dist(g.x, g.y, ov.x, ov.y) <= S.range ? ov : null;      // the overseer that sees it, first
+          if (!best) for (const e of this.enemiesInRange(g.x, g.y, S.range, e => !e.def.untouchable && !e.def.tumor && (e.def.armored || e.maxHp >= S.minHp)))
             if (!best || e.hp > best.hp) best = e;
           if (best) {
             g.channel = { target: best, until: this.time + S.channel }; busy = true;
@@ -2093,7 +2123,7 @@ window.BS = window.BS || {};
         }
         if (!busy && g.cd <= 0) {
           const list = this.enemiesInRange(g.x, g.y, range, e => !e.def.untouchable);
-          const tg = list.find(e => BS.Terrain.onHigh(e.x, e.y) || e.highRoute) || list[0];
+          const tg = (ov && list.includes(ov) && ov) || list.find(e => BS.Terrain.onHigh(e.x, e.y) || e.highRoute) || list[0];
           if (tg) {
             g.cd = D.cd; g.hold = this.time + 0.4;
             g.yaw = Math.atan2(tg.y - g.y, tg.x - g.x);
@@ -2105,8 +2135,16 @@ window.BS = window.BS || {};
             BS.audio.play('ghostFire', { vol: 0.35, gap: 0.1 });
           } else g.cd = 0.1;
         }
-        // Back to the post if something moved it (an abduction), then hold there.
-        if (!g.route.length && dist(g.x, g.y, g.post[0], g.post[1]) > 0.6) g.route = this.ghostRoute(g);
+        // Revealed: sidestep away from the overseer, staying on the post's own level; hidden again, back to the post (or
+        // after an abduction), then hold there.
+        let evade = null;
+        if (ov && !g.route.length) {
+          const a = Math.atan2(g.post[1] - ov.y, g.post[0] - ov.x), ex = g.post[0] + Math.cos(a) * D.evade, ey = g.post[1] + Math.sin(a) * D.evade;
+          if (BS.Terrain.walkable(ex, ey) && BS.Terrain.onHigh(ex, ey) === BS.Terrain.onHigh(g.post[0], g.post[1]) && BS.Terrain.clearPath(g.x, g.y, ex, ey)) evade = [ex, ey];
+        }
+        if (evade) g.route = [evade];
+        else if (!g.route.length && dist(g.x, g.y, g.post[0], g.post[1]) > 0.6) g.route = this.ghostRoute(g);
+        else if (!ov && g.route.length === 1 && dist(g.route[0][0], g.route[0][1], g.post[0], g.post[1]) > 0.6 && BS.Terrain.onHigh(g.x, g.y) === BS.Terrain.onHigh(g.post[0], g.post[1])) g.route = [[g.post[0], g.post[1]]];
         if (!busy && this.time > g.hold && g.route.length) {
           const [wx, wy] = g.route[0], dx = wx - g.x, dy = wy - g.y, dd = Math.hypot(dx, dy);
           if (dd < 0.3) g.route.shift();
@@ -2310,7 +2348,7 @@ window.BS = window.BS || {};
           this.toast('Siege tank destroyed');
         }
       } else if (tg.kind === 'reaper' || tg.kind === 'ghost') {
-        o.hp -= Math.max(0.5, dmg); o.flash = 1; o.hitAt = this.time;
+        o.hp -= Math.max(0.5, dmg - (o.armor || 0)); o.flash = 1; o.hitAt = this.time;
         if (o.hp <= 0 && !o.dead) this.killSpecial(o, tg.kind);
       } else if (tg.kind === 'trooper') {
         o.hp -= Math.max(0.5, dmg - (o.type === 'marauder' ? 1 : 0)); o.flash = 1;

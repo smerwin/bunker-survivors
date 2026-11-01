@@ -133,8 +133,8 @@ run is over. Either way, the vespene it earned buys permanent perks at the Hyper
 **Thirty minutes.** The clock under HYPERION in the top bar counts fighting time only; it stops while you shop. A run
 is about 40 waves. Early waves ramp up steadily. Past wave 16 the swarm stops simply getting bigger and starts getting
 stranger: from wave 20 it evolves on its own (one more late-game strain every five waves, on top of whatever your tech
-provokes), more zerg can be on the field at once (160 rising to 220 by wave 40), and every third wave from 28 is a named
-assault: an ultralisk stampede (28), an air armada (31), a lone leviathan (34), drop pods all round the base (37), a
+provokes), more zerg can be on the field at once (160 rising to 220 by wave 40), and every third wave from 25 is a named
+assault: a hydralisk swarm (25), an ultralisk stampede (28), an air armada (31), a lone leviathan (34), drop pods all round the base (37), a
 nydus breach (40), a defiler-led lurker siege (43) and the old brood in force (46). At 28 minutes Kerrigan comes for
 you in person (the clock turns amber): nothing you have can touch her, so she carves straight for the bunker while the
 swarm's last, maxed-out push hits everything else, and all you can do is hold on. Ten seconds before the end the
@@ -229,14 +229,14 @@ minerals for the first level (450 for the armor), 125 more for each one after.
 
 | Unit | What it does |
 | --- | --- |
-| Goliath (250, up to 4) | Walkers at the bunker's shoulders: autocannons against ground, missiles against air. |
+| Goliath (250, up to 4) | Walkers that take the plateaus beside the stem (lane: up the arms' ramps), with the high ground's extra reach: autocannons against ground, missiles against air. |
 | Tactical Nuke (400) | A ghost calls a nuke on the densest pack clear of the bunker. 45 s to reload. |
-| Viking Wing (300) | Four fighters range up and down the lane (round the bunker in the arena) for 20 s, hunting air. |
-| Wraith Squadron (350) | Three wraiths range up and down the lane for 20 s: burst lasers on ground zerg, missiles at air. A wraith that is fired upon cloaks for 6 s (an overseer still sees it). 40 s to rearm. |
+| Viking Wing (300) | Close air support for 20 s: four fighters fly long strafing passes up and down the lane (round the bunker in the arena) in a spread wedge, firing fast missile pairs at the air ahead of them and staying on a target while it is there. Vehicle Weapons and Maelstrom Rounds add to every shot. |
+| Wraith Squadron (350) | Three wraiths fly the same strafing passes for 20 s: rapid lasers raking the ground ahead, missiles at air; Vehicle Weapons and Maelstrom Rounds add to every shot. A wraith that is fired upon cloaks for 6 s (an overseer still sees it). 40 s to rearm. |
 | Reaper (100, up to 6) | Fast hit-and-run skirmishers: dual pistols on the nearest zerg near your lines, backing off from anything that closes while they reload, and a KD8 charge every 12 s that knocks a pack back. They jump-pack over the cliffs both ways, and pull back to heal when hurt. |
-| Ghost (200, up to 4) | Cloaked snipers that take the high ground over the ramps and the stem: the C-10 rifle on anything climbing to them, Steady Targeting (170) on anything big and armoured. Each ghost on the field takes 15% off the tactical nuke's price and reload. From wave 18, overseers come hunting them: a revealed ghost is quickly overwhelmed. |
+| Ghost (200, up to 4) | Cloaked snipers that take the high ground over the ramps and the stem: the C-10 rifle on anything climbing to them, Steady Targeting (170) on anything big and armoured. Each ghost on the field takes 15% off the tactical nuke's price and reload. From wave 18, overseers come hunting them: a revealed ghost turns its guns on the overseer and sidesteps away from it until it is hidden again. |
 | Science Vessel (400) | On station over the lane for 30 s: Irradiate on the densest pack (damage over time to everything around its target), and a Defensive Matrix (soaks 250 damage for 12 s) on the most battered of the bunker, tanks and mechs. Fired upon, it pulls back behind the bunker and returns once it has gone 3 s unhit. 50 s to refit. |
-| Thor (600, up to 2) | Heavy walkers firing long-range from behind the bunker. |
+| Thor (600, up to 2) | Heavy walkers firing long-range from the plateaus beside the bunker. |
 | Battlecruiser (1500) | Parks nose-south over the fork of the lane. As in StarCraft II, its laser batteries fire rapid amber bolts along six hardpoints (8 against ground, 5 against air), taking scourge (then devourers) first, a little beyond their usual range; missile pods fire at air only, and the Yamato charges at the bow for two seconds before it fires. |
 | Odin (2500) | Heavy artillery from behind the bunker. |
 
@@ -277,7 +277,7 @@ plateau finds their own way back down.
 | Brood queen | The Brood War queen. Not tech-gated: she joins from wave 14 (12 in the arena) and stays rare: never more than two on the field at once (bar the wave-46 Brood War assault). Hangs back out of reach and casts Spawn Broodling every 9 s on the best ground target in range (a sieged tank, then a goliath, thor or odin, then a trooper outside the bunker, then an SCV): troopers and SCVs die outright, tanks and mechs take 120; two broodlings hatch from the victim and fight for 8 s. With nothing to hatch on she presses in under the bunker's guns. |
 | Overlord drop | Flies in from a flank and drops zerglings behind your lines (early, if badly hurt). |
 | Overlords (from wave 3) | Never counted against the swarm on the field. Overseers (from wave 18, only while you have ghosts) hunt cloaked ghosts and wraiths. Watchers drift to a vantage point out of reach and glare at the bunker for half a minute; drop overlords unload zerg up the lane, worse as the waves go on: zerglings from wave 3, banelings from 8, roaches and hydralisks from 14, infested marines from 22, and from wave 30 a whole ultralisk. |
-| Nydus worm | Breaches behind the bunker and disgorges zerg until it is killed or sinks away. |
+| Nydus worm | Heavily armoured; breaches behind the bunker or (lane) up on the plateaus among your walkers and ghosts, and disgorges zerg until it is killed or sinks away. |
 | Creep (from wave 8, whatever your tech) | Queens walk with the waves planting creep tumors; each tumor spreads creep and buds one more toward the bunker, and from wave 10 overlords drift in overhead dribbling creep onto the field (shoot them down with anti-air). Zerg on creep move 30% faster, and creep lingers after its tumors die. Firebat flames burn it back and singe tumors. |
 | Kerrigan (28 minutes in) | The finale, the swarm's last push. The Queen of Blades comes for the bunker in person with a leviathan and a maxed-out wave: nothing you have can hurt her, so your guns ignore her while she leaps onto your lines and blasts the thickest knot of defenders with Apocalypse. The leviathan (which can be killed) bombards from the air and spawns mutalisks, and zerg drop pods slam down all round the base. Hold on until the Hyperion takes you off. Try it with `?clock=28&tech=max` (Unreal: `-BSClock=28 -BSTechMax`), or the evac with `?clock=29.5`. |
 

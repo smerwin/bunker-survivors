@@ -73,7 +73,7 @@ namespace BSOverlords
 namespace BSOverseers
 {
 	constexpr int32 From = 18, Base = 1;
-	constexpr float PerGhost = 0.5f, Detect = 7;
+	constexpr float PerGhost = 0.5f, Detect = 5.5f;
 }
 
 namespace BSCreep
@@ -101,7 +101,7 @@ struct FBSInfantryDef
 struct FBSMechDef
 {
 	FString Key, Name;
-	float Hp = 150, Armor = 1, Radius = 0.7f, Speed = 3;
+	float Hp = 150, Armor = 1, Radius = 0.7f, Speed = 3, Scale = 1;
 	int32 Cost = 250, Max = 4;
 	float GDmg = 12, GCd = 0.9f, GRange = 6, GSplash = 0; int32 GShots = 2;
 	float ADmg = 10, ACd = 1.5f, ARange = 8, ASplash = 0; int32 AShots = 2;
@@ -207,17 +207,22 @@ namespace BSDefs
 	constexpr int32 Kd8MinPack = 3;
 	// Ghosts: cloaked snipers on the high ground (lane: over the ramp tops, then the cliffs over the stem). C-10 rifle at
 	// anything climbing to them, Steady Targeting (Snipe*) on anything big and armoured. Overseers reveal them. Each ghost on
-	// the field takes GhostNukeCut off the tactical nuke's price and reload (up to 4).
-	constexpr float GhostHp = 100, GhostDmg = 10, GhostDmgLight = 10, GhostCd = 1.07f, GhostRange = 6, GhostSpeed = 3.94f, GhostNukeCut = 0.15f;
+	// the field takes GhostNukeCut off the tactical nuke's price and reload (up to 4). Revealed, a ghost turns its guns on the
+	// overseer first and sidesteps GhostEvade metres away from it along the plateau.
+	constexpr float GhostArmor = 1, GhostEvade = 3;
+	constexpr float GhostHp = 150, GhostDmg = 10, GhostDmgLight = 10, GhostCd = 1.07f, GhostRange = 6, GhostSpeed = 3.94f, GhostNukeCut = 0.15f;
 	constexpr int32 GhostCost = 200, GhostMax = 4;
 	constexpr float SnipeDmg = 170, SnipeRange = 10, SnipeCd = 8, SnipeChannel = 1.43f, SnipeMinHp = 300;
-	// Four viking fighters patrol overhead hunting air (VikingPatrol: metres a second round the patrol loop).
-	constexpr float VikingDmg = 10, VikingCd = 1.4f, VikingRange = 9, VikingHover = 20, VikingFly = 4.2f, VikingSpeed = 9, VikingCooldown = 35, VikingPatrol = 4.5f;
+	// Vikings and wraiths fly close air support: long strafing passes up and down the lane (round the arena) in a spread
+	// wedge, always flying straight on, firing on whatever lies within *Cone radians of their nose and staying on that
+	// target while it does. Vehicle Weapons and Maelstrom Rounds add to every shot (ABSGame::AirBonus).
+	// Four viking fighters hunt air (VikingPatrol: metres a second round the patrol loop).
+	constexpr float VikingDmg = 7, VikingCd = 0.7f, VikingRange = 9, VikingCone = 1.0f, VikingHover = 20, VikingFly = 4.2f, VikingSpeed = 9, VikingCooldown = 35, VikingPatrol = 6.5f;
 	constexpr int32 VikingShots = 2, VikingCost = 300, VikingCount = 4;
 	// Three wraiths sweep the lane for a while: burst lasers at ground zerg (GDmg every GCd), Gemini missiles at air.
 	// Wraiths cloak for WraithCloakDur s when fired upon (an overseer still sees them), then not again for WraithCloakCd s.
-	constexpr float WraithHp = 120, WraithGDmg = 9, WraithGCd = 0.75f, WraithADmg = 10, WraithACd = 1.5f, WraithRange = 7, WraithHover = 20, WraithFly = 3.4f, WraithSpeed = 9, WraithCooldown = 40;
-	constexpr float WraithPatrol = 5.5f, WraithCloakDur = 6, WraithCloakCd = 12;
+	constexpr float WraithHp = 120, WraithGDmg = 5, WraithGCd = 0.3f, WraithADmg = 7, WraithACd = 0.8f, WraithRange = 7, WraithCone = 1.0f, WraithHover = 20, WraithFly = 3.4f, WraithSpeed = 9, WraithCooldown = 40;
+	constexpr float WraithPatrol = 7.5f, WraithCloakDur = 6, WraithCloakCd = 12;
 	constexpr int32 WraithCost = 350, WraithCount = 3, WraithAShots = 2;
 	// A science vessel on station for VesselStay seconds, casting from VesselRange: Irradiate on the densest pack (dps to
 	// the target and everything within radius, for its duration), Defensive Matrix on the most battered of the bunker,
@@ -244,9 +249,10 @@ namespace BSDefs
 	// The swarm evolves on its own as well as answering your tech: from TierFrom, every TierEvery waves count as one more
 	// tech card for the late-game strains (ABSGame::LateTier).
 	constexpr int32 TierFrom = 20, TierEvery = 5;
-	// A named assault every three waves from 28 (BS.WAVES.milestones), on top of the budget: Zerg is "type:count,...".
+	// A named assault every three waves from 25 (BS.WAVES.milestones), on top of the budget: Zerg is "type:count,...".
 	struct FMilestone { int32 Wave; const TCHAR* Name; const TCHAR* Toast; const TCHAR* Zerg; int32 Pods, Nydus; };
 	inline constexpr FMilestone Milestones[] = {
+		{ 25, TEXT("HYDRALISK SWARM"), TEXT("A hydralisk swarm pours down the lane!"), TEXT("hydralisk:36"), 0, 0 },
 		{ 28, TEXT("ULTRALISK STAMPEDE"), TEXT("Ultralisks stampeding down the lane!"), TEXT("ultralisk:6"), 0, 0 },
 		{ 31, TEXT("AIR ARMADA"), TEXT("A swarm of fliers darkens the sky!"), TEXT("mutalisk:12,guardian:4,devourer:3,broodlord:2"), 0, 0 },
 		{ 34, TEXT("THE LEVIATHAN"), TEXT("A leviathan looms over the field!"), TEXT("leviathan:1"), 0, 0 },

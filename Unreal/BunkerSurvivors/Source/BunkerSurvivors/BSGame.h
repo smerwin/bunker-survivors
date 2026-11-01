@@ -71,6 +71,8 @@ struct FBSMech
 	FString Anim;
 	ABSModelActor* Actor = nullptr;
 	FBSFwd Fwd;
+	// The way it is walking (ABSGame::MechRoute), once it has one (bRoute).
+	TArray<FVector2D> Route; bool bRoute = false;
 };
 
 struct FBSEnemy;
@@ -84,7 +86,7 @@ struct FBSSpecial
 	bool bGhost = false, bDead = false, bDetected = false, bChannel = false;
 	FVector2D Home = FVector2D::ZeroVector;
 	int32 Side = 0;
-	float X = 0, Y = 0, Yaw = PI / 2, Hp = 0, MaxHp = 0, Cd = 0, Kd = 0, Kite = 0, HitAt = -99, JumpUntil = 0, Flash = 0, Radius = 0.375f;
+	float X = 0, Y = 0, Yaw = PI / 2, Hp = 0, MaxHp = 0, Armor = 0, Cd = 0, Kd = 0, Kite = 0, HitAt = -99, JumpUntil = 0, Flash = 0, Radius = 0.375f;
 	float SnipeCd = 3, ChannelUntil = 0, Hold = 0;
 	TWeakPtr<FBSEnemy> Channel;
 	TArray<FVector2D> Route;
@@ -135,8 +137,8 @@ struct FBSStructure
 // Air strike banshee, viking, wraith or science vessel: flies in to a post, fights from there, then leaves (or is shot
 // down). Wraiths keep a second cooldown (Cd: lasers, Cd2: missiles); the vessel casts (Cd: Irradiate, Cd2: Defensive
 // Matrix) facing Aim until CastUntil, and goes Home when it leaves. Vikings and wraiths range round the patrol loop (S metres
-// along it, Off to its side; see ABSGame::PatrolAt); a wraith fired upon cloaks until CloakUntil, then not again until
-// CloakReady.
+// along it, Off to its side; see ABSGame::PatrolAt), strafing: Lock (wraiths: and Lock2, air) is what they keep firing on
+// (ABSGame::StrafeTarget); a wraith fired upon cloaks until CloakUntil, then not again until CloakReady.
 struct FBSBanshee
 {
 	enum EState : uint8 { In, Hover, Out, Retreat } State = In;
@@ -144,6 +146,7 @@ struct FBSBanshee
 	float X = 0, Y = 0, Z = 0, Yaw = 0, Cd = 0, Cd2 = 0, T = 0, StandAt = 0, CastUntil = 0, Aim = 0, HitAt = 0;
 	float Hp = BSDefs::BansheeHp, MaxHp = BSDefs::BansheeHp, AcidUntil = 0, Flash = 0;
 	float S = 0, Off = 0, CloakUntil = 0, CloakReady = 0;
+	TWeakPtr<FBSEnemy> Lock, Lock2;
 	bool bDead = false, bArrived = false;
 	ABSModelActor* Actor = nullptr;
 };
@@ -490,6 +493,12 @@ private:
 	FVector PatrolAt(float S) const;
 	FVector PatrolPos(const FBSBanshee& U) const;     // a flier on patrol: S metres round the loop, Off to its side
 	TArray<FVector2D> PatrolPts; TArray<float> PatrolS0; float PatrolLen = 0;
+	// Wedge slot for flier I of N: spread side to side, the outer ones trailing (sets S and Off).
+	void Wedge(FBSBanshee& U, int32 I, int32 N, float S0) const;
+	// What a strafing flier shoots: its locked target while that stays in reach and within Cone of Heading, else the nearest
+	// that is.
+	TSharedPtr<FBSEnemy> StrafeTarget(const FBSBanshee& U, TWeakPtr<FBSEnemy>& Lock, float Heading, float Range, float Cone, TFunctionRef<bool(const FBSEnemy&)> Pred) const;
+	float AirBonus() const { return Up.Vehicle + Cards.FindRef(TEXT("maelstrom")); }
 	// Reapers and ghosts.
 	bool AddReaper();
 	void UpdateReapers(float Dt);
@@ -503,6 +512,7 @@ private:
 	void UpdateGhosts(float Dt);
 	void KillSpecial(const TSharedPtr<FBSSpecial>& O);
 	bool DetectedAt(float X, float Y) const;          // is anything cloaked at (X, Y) seen by an overseer?
+	TSharedPtr<FBSEnemy> DetectorAt(float X, float Y) const;   // the overseer that sees (X, Y), if any
 	void UpdateOverseer(const TSharedPtr<FBSEnemy>& E, float Dt);
 	TArray<FBSNuke> Nukes;
 	TMap<FString, TArray<FVector2D>> MechSlots;
@@ -531,6 +541,10 @@ private:
 	void AddProjectileModel(FBSProjectile& P, const TCHAR* Model, const TCHAR* Trail, float TrailScale = 1.f);
 	void MuzzleMesh(const FVector& At, float Yaw, float Delay, float Scale = 1.f);
 	TArray<FVector> MechMuzzles(const FBSMech& M, bool bAir) const;
+	// The way for a walker to To: straight across the same level, otherwise down its own plateau's ramp and/or up the other
+	// one (BSTerrain::LedgeRoute, walked backwards to come down). WalkRoute: one step along it; false once it has arrived.
+	TArray<FVector2D> MechRoute(const FBSMech& M, const FVector2D& To) const;
+	bool WalkRoute(FBSMech& M, float Dt);
 	// Late-game zerg.
 	int32 LateTier() const
 	{

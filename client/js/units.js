@@ -320,7 +320,9 @@ window.BS = window.BS || {};
     overseer: { name: 'Overseer', model: 'overseer', death: 'overseerDeath', hp: 200, armor: 1, dmg: 0, cd: 1, range: 0, speed: 4.2, radius: 1.0, armored: true, flying: true, fly: 5.0, detector: true, uncounted: true, bounty: 25, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2 },
     overlordWatch: { name: 'Overlord', model: 'overlordCreep', death: 'overlordCreepDeath', hp: 200, armor: 1, dmg: 0, cd: 1, range: 0, speed: 1.6, radius: 1.0, armored: true, flying: true, fly: 5.4, watcher: true, ambient: true, uncounted: true, bounty: 15, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2 },
     overlordDrop: { name: 'Overlord', model: 'overlord', death: 'overlordDeath', hp: 250, armor: 1, dmg: 0, cd: 1, range: 0, speed: 2.6, radius: 1.0, armored: true, flying: true, fly: 4.2, transport: true, front: true, uncounted: true, bounty: 15, budget: 0, unlock: 999, weight: 0, hitFrac: 0, soundDeath: 'overlordDeath', height: 2 },
-    nydus: { name: 'Nydus Worm', model: 'nydus', death: null, hp: 450, armor: 1, dmg: 0, cd: 1, range: 0, speed: 0, radius: 1.3, armored: true, nydus: true, bounty: 60, budget: 0, unlock: 999, weight: 0, hitFrac: 0, height: 3 },
+    // Nydus worms breach behind our lines or (lane) up on the plateaus beside the bunker, armoured enough to disgorge
+    // their whole cargo unless focused.
+    nydus: { name: 'Nydus Worm', model: 'nydus', death: null, hp: 900, armor: 3, dmg: 0, cd: 1, range: 0, speed: 0, radius: 1.3, armored: true, nydus: true, bounty: 60, budget: 0, unlock: 999, weight: 0, hitFrac: 0, height: 3 },
     broodling: { name: 'Broodling', model: 'broodling', death: 'broodlingDeath', scale: 0.75, hp: 30, armor: 0, dmg: 4, cd: 0.46, range: 0.1, speed: 4.13, radius: 0.25, light: true, life: 8, bounty: 1, budget: 0, unlock: 999, weight: 0, hitFrac: 0.45, attackSeq: /^attack/i, soundDeath: 'broodlingDeath', height: 0.5, impactFx: 'zerglingImpact' },
     // Creep (see BS.CREEP): queens walk with the waves planting creep tumors; tumors spread creep and bud one more
     // tumor each; overlords drift over the field generating creep beneath them.
@@ -344,7 +346,7 @@ window.BS = window.BS || {};
   // the lane n zerg picked from the latest of the cargo tiers the wave has reached.
   // Overseers: from wave from, while there are ghosts on the field, base + perGhost per ghost a wave. A ghost within
   // detect metres of one is revealed.
-  BS.OVERSEERS = { from: 18, base: 1, perGhost: 0.5, detect: 7 };
+  BS.OVERSEERS = { from: 18, base: 1, perGhost: 0.5, detect: 5.5 };
 
   BS.OVERLORDS = { from: 3, watch: [0.7, 0.4], max: 3, life: [25, 45], chance: 0.35, chanceGrow: 0.02, chanceMax: 0.8, second: 15,
     cargo: [
@@ -383,12 +385,13 @@ window.BS = window.BS || {};
   // and has to make every rebuy count.
   // tierFrom/tierEvery: the swarm evolves on its own as well as answering your tech: from tierFrom, every tierEvery waves
   // count as one more tech card for the late-game strains (see Game.lateTier). milestones: a named assault every three
-  // waves from 28 (around 17 minutes in), on top of the budget: extra zerg, drop pods or nydus breaches. A run that
+  // waves from 25 (around 15 minutes in), on top of the budget: extra zerg, drop pods or nydus breaches. A run that
   // clears fast meets more of them before the finale.
   BS.WAVES = { alive: [160, 220], aliveHard: [200, 250], aliveFrom: 20, aliveBy: 40, len: [30, 30], lenBy: 12, knee: 16, perWave: [16, 0.4], swarmKnee: 12, swarmPerWave: 5, swarmMax: 360, hp: 0.02, hpFrom: 10,
     bountyFrom: 28, bountyFall: 0.15,
     tierFrom: 20, tierEvery: 5,
     milestones: {
+      25: { name: 'HYDRALISK SWARM', toast: 'A hydralisk swarm pours down the lane!', zerg: { hydralisk: 36 } },
       28: { name: 'ULTRALISK STAMPEDE', toast: 'Ultralisks stampeding down the lane!', zerg: { ultralisk: 6 } },
       31: { name: 'AIR ARMADA', toast: 'A swarm of fliers darkens the sky!', zerg: { mutalisk: 12, guardian: 4, devourer: 3, broodlord: 2 } },
       34: { name: 'THE LEVIATHAN', toast: 'A leviathan looms over the field!', zerg: { leviathan: 1 } },
@@ -429,7 +432,7 @@ window.BS = window.BS || {};
     expand: { troopers: 16, minSquad: 24, clear: 7 },
     railsRange: 2,
     // High-tech reinforcements. g* = anti-ground weapon, a* = anti-air; shots per volley; walkers walk in from the south.
-    goliath: { hp: 150, armor: 1, radius: 0.7, cost: 250, max: 4, speed: 3, gDmg: 12, gShots: 2, gCd: 0.9, gRange: 6, aDmg: 10, aShots: 2, aCd: 1.5, aRange: 8 },
+    goliath: { hp: 150, armor: 1, radius: 0.7, scale: 0.65, cost: 250, max: 4, speed: 3, gDmg: 12, gShots: 2, gCd: 0.9, gRange: 6, aDmg: 10, aShots: 2, aCd: 1.5, aRange: 8 },
     thor: { hp: 450, armor: 1, radius: 1.25, cost: 600, max: 2, speed: 2.2, gDmg: 30, gShots: 2, gCd: 1.28, gRange: 10, aDmg: 6, aShots: 4, aCd: 2.1, aRange: 12, aSplash: 0.6 },
     odin: { hp: 1500, armor: 2, radius: 2.2, cost: 2500, max: 1, speed: 2, gDmg: 60, gShots: 2, gCd: 1.1, gRange: 16, gSplash: 1.2, aDmg: 15, aShots: 6, aCd: 2, aRange: 16, aSplash: 0.8 },
     // Battlecruiser on station: hovers over the lane out of reach; laser batteries at air and ground, Yamato on its own.
@@ -448,12 +451,16 @@ window.BS = window.BS || {};
     // Ghosts: cloaked snipers on the high ground (lane: over the ramp tops, then the cliffs over the stem). C-10 rifle at
     // anything climbing to them, Steady Targeting on anything big and armoured. Overseers reveal them. Each ghost on the
     // field takes nukeCut off the tactical nuke's price and reload (up to 4).
-    ghost: { hp: 100, cost: 200, max: 4, dmg: 10, dmgLight: 10, cd: 1.07, range: 6, speed: 3.94, nukeCut: 0.15,
+    // Revealed, a ghost turns its guns on the overseer first and sidesteps evade metres away from it along the plateau.
+    ghost: { hp: 150, armor: 1, evade: 3, cost: 200, max: 4, dmg: 10, dmgLight: 10, cd: 1.07, range: 6, speed: 3.94, nukeCut: 0.15,
       snipe: { dmg: 170, range: 10, cd: 8, channel: 1.43, minHp: 300 } },
-    vikings: { hp: 135, cost: 300, cooldown: 35, count: 4, dmg: 10, shots: 2, cd: 1.4, range: 9, hover: 20, fly: 4.2, speed: 9, patrol: 4.5 },
+    // Vikings and wraiths fly close air support: long strafing passes up and down the lane (round the arena) in a spread
+    // wedge, always flying straight on, firing on whatever lies within cone radians of their nose and staying on that
+    // target while it does. Vehicle Weapons and Maelstrom Rounds add to every shot.
+    vikings: { hp: 135, cost: 300, cooldown: 35, count: 4, dmg: 7, shots: 2, cd: 0.7, range: 9, cone: 1.0, hover: 20, fly: 4.2, speed: 9, patrol: 6.5 },
     // Three wraiths sweep the lane for a while: burst lasers at ground zerg (gDmg every gCd), Gemini missiles at air.
     // Wraiths cloak for cloak.dur s when fired upon (an overseer still sees them), then not again for cloak.cd s.
-    wraiths: { hp: 120, cost: 350, cooldown: 40, count: 3, gDmg: 9, gCd: 0.75, aDmg: 10, aShots: 2, aCd: 1.5, range: 7, hover: 20, fly: 3.4, speed: 9, patrol: 5.5,
+    wraiths: { hp: 120, cost: 350, cooldown: 40, count: 3, gDmg: 5, gCd: 0.3, aDmg: 7, aShots: 2, aCd: 0.8, range: 7, cone: 1.0, hover: 20, fly: 3.4, speed: 9, patrol: 7.5,
       cloak: { dur: 6, cd: 12 } },
     // A science vessel on station for `stay` seconds, casting from `range`: Irradiate on the densest pack (dps to the
     // target and everything within radius, for dur s), Defensive Matrix on the most battered of the bunker, tanks and

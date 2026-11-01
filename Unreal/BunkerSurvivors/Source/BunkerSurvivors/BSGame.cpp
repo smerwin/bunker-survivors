@@ -223,10 +223,11 @@ void ABSGame::Init(UBSAssets* InAssets, EBSMode InMode)
 		SamSlots = { FVector2D(-5.6f, 1.2f), FVector2D(5.6f, 1.2f), FVector2D(-3.6f, -4.6f) };
 		SensorSlot = FVector2D(3.6f, -4.6f);
 		StrikePosts = { FVector2D(-3.4f, 3.6f), FVector2D(3.4f, 3.6f), FVector2D(-1.4f, 6.4f), FVector2D(1.4f, 6.4f) };   // in view: covering both ledges and the lane
-		// High-tech walkers: goliaths at the bunker's shoulders; the thors and the odin are too big to stand in the lane
-		// without walling off the view, so they fire long-range from behind the bunker.
-		MechSlots.Add(TEXT("goliath"), { FVector2D(-3.9f, 1.6f), FVector2D(3.9f, 1.6f), FVector2D(-2.3f, 2.3f), FVector2D(2.3f, 2.3f) });
-		MechSlots.Add(TEXT("thor"), { FVector2D(-5.0f, -5.8f), FVector2D(5.0f, -5.8f) });
+		// High-tech walkers: goliaths and thors take the plateaus either side of the stem (up the arms' ramps, see
+		// MechRoute), clear of the lane and with the high ground's reach; the odin is too big for them and fires long-range
+		// from behind the bunker.
+		MechSlots.Add(TEXT("goliath"), { FVector2D(-7.6f, 3.2f), FVector2D(7.6f, 3.2f), FVector2D(-9.4f, 1.6f), FVector2D(9.4f, 1.6f) });
+		MechSlots.Add(TEXT("thor"), { FVector2D(-9.6f, -0.4f), FVector2D(9.6f, -0.4f) });
 		MechSlots.Add(TEXT("odin"), { FVector2D(0, -10.5f) });
 		// Forward base on the plateau east of the stem (see UpdateExpansion): the way up, the command center's site and the
 		// SCV's spot beside it, the Odin, goliaths over the arm, and three ranks of troopers on the cliff edge over the stem.
@@ -1055,8 +1056,8 @@ void ABSGame::BeginExpansion()
 	int32 G = 0;
 	for (const TSharedPtr<FBSMech>& M : Mechs)
 	{
-		if (M->Def->Key == TEXT("odin")) Send(M->Fwd, FwdOdin);
-		else if (M->Def->Key == TEXT("goliath")) Send(M->Fwd, FwdGoliath[G++ % FwdGoliath.Num()]);
+		if (M->Def->Key == TEXT("odin")) { Send(M->Fwd, FwdOdin); M->bRoute = false; }
+		else if (M->Def->Key == TEXT("goliath")) { Send(M->Fwd, FwdGoliath[G++ % FwdGoliath.Num()]); M->bRoute = false; }
 	}
 	// A detachment of troopers (those already out there first).
 	TArray<TSharedPtr<FBSTrooper>> Pick;
@@ -1095,7 +1096,7 @@ void ABSGame::UpdateExpansion(float Dt)
 		// Taken once the Odin stands at its post and (almost) nothing on the ground contests the plateau round it.
 		const TSharedPtr<FBSMech>* OdinP = Mechs.FindByPredicate([](const TSharedPtr<FBSMech>& M) { return M->Def->Key == TEXT("odin"); });
 		const FBSMech& Odin = **OdinP;
-		const bool bThere = Odin.Fwd.bOn && !Odin.Fwd.bBack && Odin.Fwd.Leg >= FwdRoute.Num() && Dist2(Odin.X, Odin.Y, Odin.Fwd.Post.X, Odin.Fwd.Post.Y) < 0.5f * 0.5f;
+		const bool bThere = Odin.Fwd.bOn && !Odin.Fwd.bBack && Dist2(Odin.X, Odin.Y, Odin.Fwd.Post.X, Odin.Fwd.Post.Y) < 0.5f * 0.5f;
 		int32 Foes = 0;
 		for (const TSharedPtr<FBSEnemy>& E : Enemies)
 			Foes += E->Alive() && !E->Def->bFlying && BSTerrain::OnHigh(E->X, E->Y) && Dist2(E->X, E->Y, FwdPost.X, FwdPost.Y) < BSDefs::ExpandClear * BSDefs::ExpandClear;
@@ -1633,7 +1634,13 @@ bool ABSGame::AddMech(const FString& Kind)
 	TSharedPtr<FBSMech> M = MakeShared<FBSMech>();
 	M->Def = D; M->Slot = *Slot; M->X = Slot->X; M->Y = Mode == EBSMode::Lane ? -9.f : -14.f; M->Hp = M->MaxHp = D->Hp;
 	M->Actor = AcquireModel(Kind);
-	if (M->Actor) { M->Actor->SetTeamColor(TerranColor); M->Actor->SetSim(M->X, M->Y, BSTerrain::Height(M->X, M->Y), M->Yaw); }
+	if (M->Actor)
+	{
+		M->Actor->SetTeamColor(TerranColor); M->Actor->SetScale(D->Scale); M->Actor->SetSim(M->X, M->Y, BSTerrain::Height(M->X, M->Y), M->Yaw);
+		// Its weapon bones place every muzzle (MechMuzzles), so keep them posed off screen too (a thor or the Odin on the
+		// far side of the field still fires from its guns).
+		M->Actor->Mesh->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	}
 	Mechs.Add(M);
 	Toast(D->Name + TEXT(" inbound"));
 	return true;
@@ -1650,46 +1657,30 @@ void ABSGame::UpdateMechs(float Dt)
 		bool bMoving = false;
 		if (M.Fwd.bOn)
 		{
-			// On the expedition to the high ground (UpdateExpansion): walk the route, guns firing on the move.
-			FVector2D G = FVector2D::ZeroVector; bool bFinal = false;
-			if (!FwdGoal(M.Fwd, M.X, M.Y, G, bFinal)) { M.Fwd.bOn = false; M.Fwd.bBack = false; M.bReady = false; }   // back down in the stem: on to its post
+			// On the expedition to the high ground (UpdateExpansion): walk there, guns firing on the move. Falling back,
+			// it heads home to its own post.
+			if (M.Fwd.bBack) { M.Fwd.bOn = false; M.Fwd.bBack = false; M.bReady = false; M.bRoute = false; }
 			else
 			{
 				M.bReady = true;                                                  // (even if a viper yanked it about)
-				const float Far = FMath::Sqrt(Dist2(M.X, M.Y, G.X, G.Y));
-				if (Far > 0.15f)
-				{
-					const FVector2D Wp = RoundBunker(M.X, M.Y, G.X, G.Y);
-					const float Dx = Wp.X - M.X, Dy = Wp.Y - M.Y, Dd = FMath::Max(0.001f, FMath::Sqrt(Dx * Dx + Dy * Dy)), Sp = FMath::Min(Dd, D->Speed * Dt);
-					StepGround(M.X, M.Y, Dx / Dd * Sp, Dy / Dd * Sp);
-					M.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(M.Yaw, FMath::Atan2(Dy, Dx)), -3 * Dt, 3 * Dt);
-					if (M.Actor && M.Anim != TEXT("walk")) { M.Anim = TEXT("walk"); M.Actor->Play(WalkNames, true); }
-					bMoving = true;
-				}
-				else if (M.Anim == TEXT("walk")) { M.Anim = TEXT("stand"); if (M.Actor) M.Actor->Play(StandNames, true); }
+				if (!M.bRoute || (!M.Route.Num() && Dist2(M.X, M.Y, M.Fwd.Post.X, M.Fwd.Post.Y) > 0.5f * 0.5f)) { M.Route = MechRoute(M, M.Fwd.Post); M.bRoute = true; }
+				bMoving = WalkRoute(M, Dt);
 			}
 		}
 		if (!M.bReady)
 		{
-			const FVector2D Wp = RoundBunker(M.X, M.Y, M.Slot.X, M.Slot.Y);
-			const float Far = FVector2D::Distance(M.Slot, FVector2D(M.X, M.Y)), Dx = Wp.X - M.X, Dy = Wp.Y - M.Y, Dd = FMath::Max(0.001f, FMath::Sqrt(Dx * Dx + Dy * Dy));
-			if (Far > 0.15f)
-			{
-				const float Sp = FMath::Min(Dd, D->Speed * Dt);
-				StepGround(M.X, M.Y, Dx / Dd * Sp, Dy / Dd * Sp);
-				M.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(M.Yaw, FMath::Atan2(Dy, Dx)), -3 * Dt, 3 * Dt);
-				if (M.Actor && M.Anim != TEXT("walk")) { M.Anim = TEXT("walk"); M.Actor->Play(WalkNames, true); }
-			}
-			else { M.bReady = true; M.Anim = TEXT("stand"); if (M.Actor) M.Actor->Play(StandNames, true); Toast(D->Name + TEXT(" in position")); }
+			if (!M.bRoute) { M.Route = MechRoute(M, M.Slot); M.bRoute = true; }
+			if (!WalkRoute(M, Dt)) { M.bReady = true; M.bRoute = false; Toast(D->Name + TEXT(" in position")); }
 			if (M.Actor) M.Actor->SetSim(M.X, M.Y, BSTerrain::Height(M.X, M.Y), M.Yaw);
 			continue;
 		}
+		if (!M.Fwd.bOn && Dist2(M.X, M.Y, M.Slot.X, M.Slot.Y) > 0.8f * 0.8f) { M.bReady = false; M.bRoute = false; continue; }   // knocked off its post (a viper)
 		const float Bonus = (Up.Vehicle + Cards.FindRef(TEXT("maelstrom"))) * 2.f;
 		M.CdG -= Dt; M.CdA -= Dt;
 		for (const bool bAir : { false, true })
 		{
 			if ((bAir ? M.CdA : M.CdG) > 0) continue;
-			const float Range = bAir ? D->ARange : D->GRange;
+			const float Range = (bAir ? D->ARange : D->GRange) + (BSTerrain::OnHigh(M.X, M.Y) ? 1.f : 0.f);   // the high ground's reach
 			auto Pred = [bAir](const FBSEnemy& E) { return E.Def->bFlying == bAir; };
 			TSharedPtr<FBSEnemy> Target;
 			if (TSharedPtr<FBSEnemy> F = Focus.Pin())
@@ -1705,8 +1696,44 @@ void ABSGame::UpdateMechs(float Dt)
 	}
 }
 
+// The way for a walker to To: straight across the same level, otherwise down its own plateau's ramp and/or up the other
+// one (BSTerrain::LedgeRoute, walked backwards to come down), then To itself.
+TArray<FVector2D> ABSGame::MechRoute(const FBSMech& M, const FVector2D& To) const
+{
+	const bool bLane = Mode == EBSMode::Lane;
+	auto Side = [bLane](float X, float Y) { return bLane && BSTerrain::OnHigh(X, Y) ? (X < 0 ? -1 : 1) : 0; };
+	const int32 A = Side(M.X, M.Y), B = Side(To.X, To.Y);
+	TArray<FVector2D> Pts;
+	if (A != B)
+	{
+		if (A) { TArray<FVector2D> Down = BSTerrain::LedgeRoute(A); for (int32 i = Down.Num() - 1; i >= 0; i--) Pts.Add(Down[i]); }
+		if (B) Pts.Append(BSTerrain::LedgeRoute(B));
+	}
+	Pts.Add(To);
+	return Pts;
+}
+
+// One step along a walker's route (waypoints passed within 0.6 m, the last within 0.15 m). False once it has arrived
+// (and stands).
+bool ABSGame::WalkRoute(FBSMech& M, float Dt)
+{
+	while (M.Route.Num() && Dist2(M.X, M.Y, M.Route[0].X, M.Route[0].Y) < FMath::Square(M.Route.Num() > 1 ? 0.6f : 0.15f)) M.Route.RemoveAt(0);
+	if (!M.Route.Num())
+	{
+		if (M.Anim == TEXT("walk")) { M.Anim = TEXT("stand"); if (M.Actor) M.Actor->Play(StandNames, true); }
+		return false;
+	}
+	const FVector2D Wp = RoundBunker(M.X, M.Y, M.Route[0].X, M.Route[0].Y);
+	const float Dx = Wp.X - M.X, Dy = Wp.Y - M.Y, Dd = FMath::Max(0.001f, FMath::Sqrt(Dx * Dx + Dy * Dy)), Sp = FMath::Min(Dd, M.Def->Speed * Dt);
+	StepGround(M.X, M.Y, Dx / Dd * Sp, Dy / Dd * Sp);
+	M.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(M.Yaw, FMath::Atan2(Dy, Dx)), -3 * Dt, 3 * Dt);
+	if (M.Anim != TEXT("walk")) { M.Anim = TEXT("walk"); if (M.Actor) M.Actor->Play(WalkNames, true); }
+	return true;
+}
+
 // Muzzles of a mech's ground or air weapons, in sim space: its weapon bones (goliath autocannons and missile racks,
-// thor/odin arm cannons and shoulder pods), or their rest-pose spots (model space: x right, y up, z forward).
+// thor/odin arm cannons and shoulder pods), or their rest-pose spots (model space: x right, y up, z forward; scaled with
+// the model) if a bone is missing or has not been posed (still at the model's origin, or far from where it should be).
 TArray<FVector> ABSGame::MechMuzzles(const FBSMech& M, bool bAir) const
 {
 	struct FMz { const TCHAR* Bone; float Rx, Ry, Rz; };
@@ -1721,17 +1748,24 @@ TArray<FVector> ABSGame::MechMuzzles(const FBSMech& M, bool bAir) const
 	else
 		L = bAir ? TArray<FMz>{ { TEXT("Ref_Weapon_01"), -1.14f, 5.02f, -0.97f }, { TEXT("Ref_Weapon_04"), 1.42f, 4.88f, -0.75f }, { TEXT("Ref_Weapon_02"), -0.73f, 5.27f, -1.4f }, { TEXT("Ref_Weapon_03"), 1.13f, 5.13f, -1.28f } }
 			: TArray<FMz>{ { TEXT("Ref_Weapon_07"), -2.22f, 2.27f, 1.4f }, { TEXT("Ref_Weapon_05"), 2.24f, 2.47f, 1.83f }, { TEXT("Ref_Weapon_08"), -2.25f, 1.76f, 1.51f }, { TEXT("Ref_Weapon_06"), 2.27f, 1.98f, 1.99f } };
-	const float H = BSTerrain::Height(M.X, M.Y), Cs = FMath::Cos(M.Yaw), Sn = FMath::Sin(M.Yaw);
+	const float H = BSTerrain::Height(M.X, M.Y), Cs = FMath::Cos(M.Yaw), Sn = FMath::Sin(M.Yaw), K = M.Def->Scale;
 	TArray<FVector> Out;
 	for (const FMz& Z : L)
 	{
-		const FName Bone(Z.Bone);
+		// (The importer keeps SC2's "Ref_Weapon 07" as "Ref_Weapon-07"; the bare "Ref_Weapon" is as is.)
+		const FName Bone(FString(Z.Bone).Replace(TEXT("Ref_Weapon_"), TEXT("Ref_Weapon-")));
+		// Sim space is a mirror image of model space (BSSpace::ToWorld swaps the axes), so the model's x lands on the left.
+		const FVector Rest(M.X + (Cs * Z.Rz - Sn * Z.Rx) * K, M.Y + (Sn * Z.Rz + Cs * Z.Rx) * K, H + Z.Ry * K);
+		bool bBone = false;
 		if (M.Actor && M.Actor->Mesh && M.Actor->Mesh->GetBoneIndex(Bone) != INDEX_NONE)
 		{
 			const FVector Wp = M.Actor->Mesh->GetBoneLocation(Bone);
-			Out.Add(FVector(Wp.Y / BSSpace::UnitsPerMetre, Wp.X / BSSpace::UnitsPerMetre, Wp.Z / BSSpace::UnitsPerMetre));
+			const FVector P(Wp.Y / BSSpace::UnitsPerMetre, Wp.X / BSSpace::UnitsPerMetre, Wp.Z / BSSpace::UnitsPerMetre);
+			// An unposed skeleton leaves its bones at the component's origin (the mech's feet) or wherever it last posed.
+			bBone = FVector::Dist(P, Rest) < 2.5f * K && P.Z > H + 0.3f * K;
+			if (bBone) Out.Add(P);
 		}
-		else Out.Add(FVector(M.X + Cs * Z.Rz + Sn * Z.Rx, M.Y + Sn * Z.Rz - Cs * Z.Rx, H + Z.Ry));
+		if (!bBone) Out.Add(Rest);
 	}
 	return Out;
 }
@@ -1988,10 +2022,15 @@ void ABSGame::BcAlerts()
 void ABSGame::BuildPatrol()
 {
 	PatrolPts.Reset(); PatrolS0.Reset(); PatrolLen = 0;
-	if (Mode == EBSMode::Lane)
-		PatrolPts = { FVector2D(0, 2.5f), FVector2D(-2, 9), FVector2D(-8, 17), FVector2D(-3, 22), FVector2D(3, 22), FVector2D(8, 17), FVector2D(2, 9), FVector2D(0, 2.5f) };
+	// Lane: a long racetrack, straight strafing runs up the east of the lane and back down the west with wide turns at
+	// either end. Arena: a wide circle round the bunker.
+	auto Arc = [this](float Cx, float Cy, float R, float A0, float A1)
+	{
+		for (int32 i = 0; i <= 8; i++) { const float A = A0 + (A1 - A0) * i / 8.f; PatrolPts.Add(FVector2D(Cx + FMath::Cos(A) * R, Cy + FMath::Sin(A) * R)); }
+	};
+	if (Mode == EBSMode::Lane) { Arc(0, 21, 4.5f, 0, PI); Arc(0, -3, 4.5f, PI, PI * 2); PatrolPts.Add(FVector2D(4.5f, 21)); }
 	else
-		for (int32 i = 0; i <= 24; i++) PatrolPts.Add(FVector2D(FMath::Cos(i / 24.f * PI * 2) * 9, FMath::Sin(i / 24.f * PI * 2) * 9));
+		for (int32 i = 0; i <= 32; i++) PatrolPts.Add(FVector2D(FMath::Cos(i / 32.f * PI * 2) * 11, FMath::Sin(i / 32.f * PI * 2) * 11));
 	for (int32 i = 0; i + 1 < PatrolPts.Num(); i++) { PatrolS0.Add(PatrolLen); PatrolLen += FVector2D::Distance(PatrolPts[i], PatrolPts[i + 1]); }
 }
 
@@ -2015,6 +2054,27 @@ FVector ABSGame::PatrolPos(const FBSBanshee& U) const
 	return FVector(P.X - FMath::Sin(P.Z) * U.Off, P.Y + FMath::Cos(P.Z) * U.Off, P.Z);
 }
 
+void ABSGame::Wedge(FBSBanshee& U, int32 I, int32 N, float S0) const
+{
+	const float C = I - (N - 1) / 2.f;
+	U.S = S0 - FMath::Abs(C) * 1.8f; U.Off = C * 2.2f;
+}
+
+TSharedPtr<FBSEnemy> ABSGame::StrafeTarget(const FBSBanshee& U, TWeakPtr<FBSEnemy>& Lock, float Heading, float Range, float Cone, TFunctionRef<bool(const FBSEnemy&)> Pred) const
+{
+	auto Ahead = [&](const FBSEnemy& E)
+	{
+		return E.Alive() && !E.Def->bUntouchable && Pred(E) && FMath::Sqrt(Dist2(U.X, U.Y, E.X, E.Y)) - E.Radius <= Range
+			&& FMath::Abs(FMath::FindDeltaAngleRadians(Heading, FMath::Atan2(E.Y - U.Y, E.X - U.X))) < Cone;
+	};
+	if (const TSharedPtr<FBSEnemy> L = Lock.Pin()) if (Ahead(*L)) return L;
+	TSharedPtr<FBSEnemy> Near; float Bd = 1e18f;
+	for (const TSharedPtr<FBSEnemy>& E : EnemiesInRange(U.X, U.Y, Range, Pred))
+		if (Ahead(*E)) { const float Dd = Dist2(U.X, U.Y, E->X, E->Y); if (Dd < Bd) { Bd = Dd; Near = E; } }
+	Lock = Near;
+	return Near;
+}
+
 bool ABSGame::CallVikings()
 {
 	if (VikingCd > 0) { Toast(TEXT("Vikings are rearming")); return false; }
@@ -2023,7 +2083,7 @@ bool ABSGame::CallVikings()
 	for (int32 i = 0; i < BSDefs::VikingCount; i++)
 	{
 		const FVector2D Post = StrikePosts[i % StrikePosts.Num()];
-		FBSBanshee V; V.S = i * 2.2f; V.Off = i % 2 ? 0.9f : -0.9f; V.Post = FVector2D(Post.X * 1.2f, Post.Y + 2); V.X = Post.X * 0.6f; V.Y = (Mode == EBSMode::Lane ? -18.f : -34.f) - i * 1.2f;
+		FBSBanshee V; Wedge(V, i, BSDefs::VikingCount, 0); V.Post = FVector2D(Post.X * 1.2f, Post.Y + 2); V.X = Post.X * 0.6f; V.Y = (Mode == EBSMode::Lane ? -18.f : -34.f) - i * 1.2f;
 		V.Z = BSDefs::VikingFly + 1.5f; V.Yaw = PI / 2; V.Cd = 0.4f + i * 0.2f;
 		V.Actor = AcquireModel(TEXT("vikingfighter"));
 		if (V.Actor) { V.Actor->SetTeamColor(TerranColor); V.Actor->Play(WalkNames, true); }
@@ -2049,22 +2109,22 @@ void ABSGame::UpdateVikings(float Dt)
 		}
 		else if (V.State == FBSBanshee::Hover)
 		{
-			// Ranging round the patrol loop, turning to engage whatever flies within reach.
+			// A strafing pass round the patrol loop, nose always along it; missiles at the air ahead.
 			V.S += BSDefs::VikingPatrol * Dt;
 			const FVector Pp = PatrolPos(V);
 			V.X += (Pp.X - V.X) * FMath::Min(1.f, 4 * Dt); V.Y += (Pp.Y - V.Y) * FMath::Min(1.f, 4 * Dt); V.Z = BSDefs::VikingFly + 0.2f * FMath::Sin(V.T * 2 + i);
-			TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(V.X, V.Y, BSDefs::VikingRange, [](const FBSEnemy& E) { return E.Def->bFlying; });
-			V.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(V.Yaw, L.Num() ? FMath::Atan2(L[0]->Y - V.Y, L[0]->X - V.X) : Pp.Z), -4 * Dt, 4 * Dt);
+			V.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(V.Yaw, Pp.Z), -3 * Dt, 3 * Dt);
+			const TSharedPtr<FBSEnemy> Tg = StrafeTarget(V, V.Lock, Pp.Z, BSDefs::VikingRange, BSDefs::VikingCone, [](const FBSEnemy& E) { return E.Def->bFlying; });
 			V.Cd -= Dt * (V.AcidUntil > Time ? 0.7f : 1.f);
-			if (V.Cd <= 0 && L.Num())
+			if (V.Cd <= 0 && Tg)
 			{
 				V.Cd = BSDefs::VikingCd;
 				for (int32 k = 0; k < BSDefs::VikingShots; k++)
 				{
 					const float Off = k ? 0.4f : -0.4f;
 					FBSProjectile P; P.Kind = EBSProjKind::Missile; P.bFriendly = true;
-					P.From = FVector(V.X - FMath::Sin(V.Yaw) * Off, V.Y + FMath::Cos(V.Yaw) * Off, V.Z - 0.2f); P.To = FVector(L[0]->X, L[0]->Y, L[0]->Z);
-					P.T = -k * 0.1f; P.Dur = 0.4f; P.Dmg = BSDefs::VikingDmg; P.TargetEnemy = L[0]; P.ImpactFx = TEXT("vikingImpact");
+					P.From = FVector(V.X - FMath::Sin(V.Yaw) * Off, V.Y + FMath::Cos(V.Yaw) * Off, V.Z - 0.2f); P.To = FVector(Tg->X, Tg->Y, Tg->Z);
+					P.T = -k * 0.1f; P.Dur = 0.4f; P.Dmg = BSDefs::VikingDmg + AirBonus(); P.TargetEnemy = Tg; P.ImpactFx = TEXT("vikingImpact");
 					AddProjectileModel(P, nullptr, TEXT("vikingMissile"));
 					if (!P.Trail) AddProjectileVisual(P, FLinearColor(1, 0.8f, 0.5f), 0.15f);
 					Projectiles.Add(P);
@@ -2072,7 +2132,7 @@ void ABSGame::UpdateVikings(float Dt)
 				PlayFx(TEXT("vikingLaunch"), FVector(V.X, V.Y, V.Z), V.Yaw);
 				PlaySound(TEXT("vikingFire"), 0.45f, 0.2f);
 			}
-			else if (V.Cd <= 0) V.Cd = 0.1f;
+			else if (V.Cd <= 0) V.Cd = 0.05f;
 			if (V.T > BSDefs::VikingHover) { V.State = FBSBanshee::Out; V.T = 0; }
 		}
 		else
@@ -2095,7 +2155,7 @@ bool ABSGame::CallWraiths()
 	for (int32 i = 0; i < BSDefs::WraithCount; i++)
 	{
 		const FVector2D Post = StrikePosts[(i + 1) % StrikePosts.Num()];
-		FBSBanshee W; W.S = 30 + i * 2.6f; W.Off = (i - 1) * 1.0f; W.Post = FVector2D(Post.X * 1.3f, Post.Y + 4); W.X = Post.X * 0.6f; W.Y = (Mode == EBSMode::Lane ? -18.f : -34.f) - i * 1.2f;
+		FBSBanshee W; Wedge(W, i, BSDefs::WraithCount, 30); W.Post = FVector2D(Post.X * 1.3f, Post.Y + 4); W.X = Post.X * 0.6f; W.Y = (Mode == EBSMode::Lane ? -18.f : -34.f) - i * 1.2f;
 		W.Z = BSDefs::WraithFly + 1.5f; W.Yaw = PI / 2; W.Cd = 0.3f + i * 0.2f; W.Cd2 = 0.5f + i * 0.2f;
 		W.Actor = AcquireModel(TEXT("wraith"));
 		if (W.Actor) { W.Actor->SetTeamColor(TerranColor); W.Actor->Play(WalkNames, true); }
@@ -2109,7 +2169,6 @@ bool ABSGame::CallWraiths()
 void ABSGame::UpdateWraiths(float Dt)
 {
 	const float HomeY = Mode == EBSMode::Lane ? -20.f : -36.f;
-	auto Any = [](const FBSEnemy& E) { return E.Alive(); };
 	for (int32 i = Wraiths.Num() - 1; i >= 0; i--)
 	{
 		FBSBanshee& W = *Wraiths[i];
@@ -2124,16 +2183,14 @@ void ABSGame::UpdateWraiths(float Dt)
 		}
 		else if (W.State == FBSBanshee::Hover)
 		{
-			// Ranging round the patrol loop, banking into the turns; it turns to face whatever it shoots.
+			// A strafing run round the patrol loop, nose always along it: lasers raking the ground ahead, missiles at air.
 			W.S += BSDefs::WraithPatrol * Dt;
 			const FVector Pp = PatrolPos(W);
 			const float Heading = Pp.Z;
 			W.X += (Pp.X - W.X) * FMath::Min(1.f, 4 * Dt); W.Y += (Pp.Y - W.Y) * FMath::Min(1.f, 4 * Dt); W.Z = BSDefs::WraithFly + 0.25f * FMath::Sin(W.T * 2 + i);
-			TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(W.X, W.Y, BSDefs::WraithRange, Any);
-			TSharedPtr<FBSEnemy> GroundE, AirE;
-			for (const TSharedPtr<FBSEnemy>& E : L) { if (E->Def->bFlying) { if (!AirE) AirE = E; } else if (!GroundE) GroundE = E; }
-			const TSharedPtr<FBSEnemy> Aim = GroundE ? GroundE : AirE;
-			W.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(W.Yaw, Aim ? FMath::Atan2(Aim->Y - W.Y, Aim->X - W.X) : Heading), -4 * Dt, 4 * Dt);
+			W.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(W.Yaw, Heading), -3 * Dt, 3 * Dt);
+			const TSharedPtr<FBSEnemy> GroundE = StrafeTarget(W, W.Lock, Heading, BSDefs::WraithRange, BSDefs::WraithCone, [](const FBSEnemy& E) { return !E.Def->bFlying && !E.Def->bTumor; });
+			const TSharedPtr<FBSEnemy> AirE = StrafeTarget(W, W.Lock2, Heading, BSDefs::WraithRange, BSDefs::WraithCone, [](const FBSEnemy& E) { return E.Def->bFlying; });
 			const float Rate = W.AcidUntil > Time ? 0.7f : 1.f;
 			W.Cd -= Dt * Rate; W.Cd2 -= Dt * Rate;
 			if (W.Cd <= 0 && GroundE)
@@ -2143,9 +2200,9 @@ void ABSGame::UpdateWraiths(float Dt)
 				AddFx(EBSFxKind::Tracer, At, Hit, 0.12f, 0.07f, FLinearColor(1.f, 0.28f, 0.2f), 22);
 				PlayFx(TEXT("laserImpact"), Hit, FMath::Atan2(At.Y - Hit.Y, At.X - Hit.X), 1.1f);
 				PlaySound(TEXT("laserHit"), 0.25f, 0.12f);
-				HurtEnemy(GroundE, BSDefs::WraithGDmg);
+				HurtEnemy(GroundE, BSDefs::WraithGDmg + AirBonus());
 			}
-			else if (W.Cd <= 0) W.Cd = 0.1f;
+			else if (W.Cd <= 0) W.Cd = 0.05f;
 			if (W.Cd2 <= 0 && AirE)
 			{
 				W.Cd2 = BSDefs::WraithACd;
@@ -2154,14 +2211,14 @@ void ABSGame::UpdateWraiths(float Dt)
 					const float Off = k ? 0.35f : -0.35f;
 					FBSProjectile P; P.Kind = EBSProjKind::Missile; P.bFriendly = true;
 					P.From = FVector(W.X - FMath::Sin(W.Yaw) * Off, W.Y + FMath::Cos(W.Yaw) * Off, W.Z - 0.2f); P.To = FVector(AirE->X, AirE->Y, AirE->Z);
-					P.T = -k * 0.1f; P.Dur = 0.4f; P.Dmg = BSDefs::WraithADmg; P.TargetEnemy = AirE; P.ImpactFx = TEXT("wraithImpact");
+					P.T = -k * 0.1f; P.Dur = 0.4f; P.Dmg = BSDefs::WraithADmg + AirBonus(); P.TargetEnemy = AirE; P.ImpactFx = TEXT("wraithImpact");
 					AddProjectileModel(P, nullptr, TEXT("wraithMissile"));
 					if (!P.Trail) AddProjectileVisual(P, FLinearColor(1, 0.8f, 0.5f), 0.15f);
 					Projectiles.Add(P);
 				}
 				PlaySound(TEXT("vikingFire"), 0.35f, 0.2f);
 			}
-			else if (W.Cd2 <= 0) W.Cd2 = 0.1f;
+			else if (W.Cd2 <= 0) W.Cd2 = 0.05f;
 			if (W.T > BSDefs::WraithHover) { W.State = FBSBanshee::Out; W.T = 0; }
 		}
 		else
@@ -2717,6 +2774,7 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 	const float SideS = FMath::RandBool() ? 1.f : -1.f, Ar = FMath::FRand() * 2 * PI;
 	if (At) { X = At->X + Rnd(-0.6f, 0.6f); Y = At->Y + Rnd(-0.6f, 0.6f); }
 	else if (D->bTransport) { X = bLane ? SideS * 23 : FMath::Cos(Ar) * 27; Y = bLane ? Rnd(-3, 6) : FMath::Sin(Ar) * 27; }          // overlords come in from a flank
+	else if (D->bNydus && bLane && FMath::FRand() < 0.45f) { X = SideS * Rnd(10, 12.5f); Y = Rnd(-4, 6); }   // up on a plateau beside the bunker
 	else if (D->bNydus) { const float R = Rnd(5.5f, 8); X = bLane ? SideS * Rnd(2.5f, 4.5f) : FMath::Cos(Ar) * R; Y = bLane ? Rnd(-8.5f, -7) : FMath::Sin(Ar) * R; }   // behind our lines
 	else if (D->bCreeper || D->bWatcher || D->bDetector) { X = bLane ? SideS * Rnd(10, 18) : FMath::Cos(Ar) * 29; Y = bLane ? Rnd(30, 34) : FMath::Sin(Ar) * 29; }   // creep overlords and watchers drift in from afar
 	else if (Mode == EBSMode::Lane)
@@ -2806,7 +2864,7 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 		static const TCHAR* Kinds[] = { TEXT("zergling"), TEXT("zergling"), TEXT("zergling"), TEXT("roach"), TEXT("hydralisk") };   // no winglings: they only come over the mesa
 		for (int32 i = 0; i < 6 + 2 * LateTier(); i++) E->CargoList.Add(Kinds[FMath::RandRange(0, 4)]);
 		PlayFx(TEXT("nydusBirth"), FVector(X, Y, BSTerrain::Height(X, Y)), 0, 1.4f);
-		Toast(TEXT("Nydus worm breaching behind our lines!"));
+		Toast(BSTerrain::OnHigh(X, Y) ? TEXT("Nydus worm breaching on the high ground!") : TEXT("Nydus worm breaching behind our lines!"));
 	}
 	SetupCreeper(*E);
 	Enemies.Add(E);
@@ -3032,7 +3090,7 @@ bool ABSGame::AddGhost()
 	TSharedPtr<FBSSpecial> G = MakeShared<FBSSpecial>();
 	G->bGhost = true; G->Home = FVector2D(Post->X, Post->Y); G->Side = FMath::RoundToInt(Post->Z);
 	G->X = bLane ? Post->Z * 3 : Post->X * 0.3f; G->Y = bLane ? -9.f : Post->Y * 0.3f - 4;
-	G->Hp = G->MaxHp = BSDefs::GhostHp;
+	G->Hp = G->MaxHp = BSDefs::GhostHp; G->Armor = BSDefs::GhostArmor;
 	G->Route = GhostRoute(*G);
 	G->Actor = AcquireModel(TEXT("ghost"));
 	if (G->Actor) { G->Actor->SetTeamColor(TerranColor); G->Actor->SetSim(G->X, G->Y, BSTerrain::Height(G->X, G->Y), G->Yaw); }
@@ -3054,7 +3112,8 @@ void ABSGame::UpdateGhosts(float Dt)
 	{
 		FBSSpecial& G = *GP;
 		if (G.bDead) continue;
-		const bool bDet = DetectedAt(G.X, G.Y);
+		const TSharedPtr<FBSEnemy> Ov = DetectorAt(G.X, G.Y);
+		const bool bDet = Ov.IsValid();
 		if (bDet != G.bDetected)
 		{
 			G.bDetected = bDet; CloakTint(G);
@@ -3082,9 +3141,10 @@ void ABSGame::UpdateGhosts(float Dt)
 		}
 		if (!bBusy && G.SnipeCd <= 0)
 		{
-			TSharedPtr<FBSEnemy> Pick;
-			for (const TSharedPtr<FBSEnemy>& E : EnemiesInRange(G.X, G.Y, BSDefs::SnipeRange, [](const FBSEnemy& V) { return !V.Def->bUntouchable && !V.Def->bTumor && (V.Def->bArmored || V.MaxHp >= BSDefs::SnipeMinHp); }))
-				if (!Pick || E->Hp > Pick->Hp) Pick = E;
+			TSharedPtr<FBSEnemy> Pick = Ov && FMath::Sqrt(Dist2(G.X, G.Y, Ov->X, Ov->Y)) <= BSDefs::SnipeRange ? Ov : nullptr;   // the overseer that sees it, first
+			if (!Pick)
+				for (const TSharedPtr<FBSEnemy>& E : EnemiesInRange(G.X, G.Y, BSDefs::SnipeRange, [](const FBSEnemy& V) { return !V.Def->bUntouchable && !V.Def->bTumor && (V.Def->bArmored || V.MaxHp >= BSDefs::SnipeMinHp); }))
+					if (!Pick || E->Hp > Pick->Hp) Pick = E;
 			if (Pick)
 			{
 				G.bChannel = true; G.Channel = Pick; G.ChannelUntil = Time + BSDefs::SnipeChannel; bBusy = true;
@@ -3097,8 +3157,8 @@ void ABSGame::UpdateGhosts(float Dt)
 		if (!bBusy && G.Cd <= 0)
 		{
 			const TArray<TSharedPtr<FBSEnemy>> L = EnemiesInRange(G.X, G.Y, Range, [](const FBSEnemy& V) { return !V.Def->bUntouchable; });
-			TSharedPtr<FBSEnemy> Tg;
-			for (const TSharedPtr<FBSEnemy>& E : L) if (BSTerrain::OnHigh(E->X, E->Y) || E->bHighRoute) { Tg = E; break; }
+			TSharedPtr<FBSEnemy> Tg = Ov && L.Contains(Ov) ? Ov : nullptr;
+			if (!Tg) for (const TSharedPtr<FBSEnemy>& E : L) if (BSTerrain::OnHigh(E->X, E->Y) || E->bHighRoute) { Tg = E; break; }
 			if (!Tg && L.Num()) Tg = L[0];
 			if (Tg)
 			{
@@ -3114,8 +3174,16 @@ void ABSGame::UpdateGhosts(float Dt)
 			}
 			else G.Cd = 0.1f;
 		}
-		// Back to the post if something moved it (an abduction), then hold there.
-		if (!G.Route.Num() && FMath::Sqrt(Dist2(G.X, G.Y, G.Home.X, G.Home.Y)) > 0.6f) G.Route = GhostRoute(G);
+		// Revealed: sidestep away from the overseer, staying on the post's own level; hidden again, back to the post (or
+		// after an abduction), then hold there.
+		bool bEvade = false;
+		if (Ov && !G.Route.Num())
+		{
+			const float A = FMath::Atan2(G.Home.Y - Ov->Y, G.Home.X - Ov->X), Ex = G.Home.X + FMath::Cos(A) * BSDefs::GhostEvade, Ey = G.Home.Y + FMath::Sin(A) * BSDefs::GhostEvade;
+			if (BSTerrain::Walkable(Ex, Ey) && BSTerrain::OnHigh(Ex, Ey) == BSTerrain::OnHigh(G.Home.X, G.Home.Y) && BSTerrain::ClearPath(G.X, G.Y, Ex, Ey)) { G.Route = { FVector2D(Ex, Ey) }; bEvade = true; }
+		}
+		if (!bEvade && !G.Route.Num() && FMath::Sqrt(Dist2(G.X, G.Y, G.Home.X, G.Home.Y)) > 0.6f) G.Route = GhostRoute(G);
+		else if (!Ov && G.Route.Num() == 1 && FVector2D::Distance(G.Route[0], G.Home) > 0.6f && BSTerrain::OnHigh(G.X, G.Y) == BSTerrain::OnHigh(G.Home.X, G.Home.Y)) G.Route = { G.Home };
 		if (!bBusy && Time > G.Hold && G.Route.Num())
 		{
 			const float Dx = G.Route[0].X - G.X, Dy = G.Route[0].Y - G.Y, Dd = FMath::Sqrt(Dx * Dx + Dy * Dy);
@@ -3131,6 +3199,13 @@ void ABSGame::UpdateGhosts(float Dt)
 		else if (G.Anim == TEXT("walk") || (G.Anim == TEXT("attack") && Time > G.Hold)) { G.Anim = TEXT("stand"); if (G.Actor) G.Actor->Play(StandNames, true); }
 		if (G.Actor) G.Actor->SetSim(G.X, G.Y, BSTerrain::Height(G.X, G.Y), G.Yaw);
 	}
+}
+
+TSharedPtr<FBSEnemy> ABSGame::DetectorAt(float X, float Y) const
+{
+	for (const TSharedPtr<FBSEnemy>& E : Enemies)
+		if (E->Def->bDetector && E->Alive() && Dist2(E->X, E->Y, X, Y) < BSOverseers::Detect * BSOverseers::Detect) return E;
+	return nullptr;
 }
 
 bool ABSGame::DetectedAt(float X, float Y) const
@@ -3804,7 +3879,7 @@ void ABSGame::DamageDefender(const FBSTarget& T, float Dmg)
 	else if (T.Kind == FBSTarget::Reaper || T.Kind == FBSTarget::Ghost)
 	{
 		TSharedPtr<FBSSpecial> O = T.SpecialRef.Pin();
-		O->Hp -= FMath::Max(0.5f, Dmg); O->Flash = 1; O->HitAt = Time;
+		O->Hp -= FMath::Max(0.5f, Dmg - O->Armor); O->Flash = 1; O->HitAt = Time;
 		if (O->Hp <= 0 && !O->bDead) KillSpecial(O);
 	}
 	else if (T.Kind == FBSTarget::Mech)

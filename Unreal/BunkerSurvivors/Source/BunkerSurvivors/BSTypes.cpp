@@ -133,8 +133,10 @@ namespace
 			D.Bounty = 25; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0; D.SoundDeath = TEXT("overlordDeath"); D.Height = 2;
 		}
 		{
+			// Breaches behind our lines or (lane) up on the plateaus beside the bunker, armoured enough to disgorge its whole
+			// cargo unless focused.
 			FBSZergDef& D = Add(TEXT("nydus"), TEXT("Nydus Worm"), TEXT("nydus"), TEXT(""), TEXT("btn-building-zerg-nydusworm"));
-			D.Hp = 450; D.Armor = 1; D.Dmg = 0; D.Cd = 1; D.Range = 0; D.Speed = 0; D.Radius = 1.3f; D.bArmored = true; D.bNydus = true;
+			D.Hp = 900; D.Armor = 3; D.Dmg = 0; D.Cd = 1; D.Range = 0; D.Speed = 0; D.Radius = 1.3f; D.bArmored = true; D.bNydus = true;
 			D.Bounty = 60; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0; D.Height = 3;
 		}
 		{
@@ -253,7 +255,7 @@ namespace
 		auto Add = [&Out](const TCHAR* Key, const TCHAR* Name) -> FBSMechDef& { FBSMechDef& D = Out.AddDefaulted_GetRef(); D.Key = Key; D.Name = Name; return D; };
 		{
 			FBSMechDef& D = Add(TEXT("goliath"), TEXT("Goliath"));
-			D.Hp = 150; D.Armor = 1; D.Radius = 0.7f; D.Cost = 250; D.Max = 4; D.Speed = 3;
+			D.Hp = 150; D.Armor = 1; D.Radius = 0.7f; D.Scale = 0.65f; D.Cost = 250; D.Max = 4; D.Speed = 3;
 			D.GDmg = 12; D.GShots = 2; D.GCd = 0.9f; D.GRange = 6; D.ADmg = 10; D.AShots = 2; D.ACd = 1.5f; D.ARange = 8;
 		}
 		{

@@ -106,6 +106,9 @@ window.BS = window.BS || {};
       if (i === undefined) i = cache[name] = this.model.bones.findIndex(b => b.name === name);
       if (i < 0) return null;
       const w = inst.skeleton.nodes[i].worldLocation;
+      // The viewer only poses skeletons it draws: a model that has never been on screen (a thor or the Odin behind the
+      // bunker) still has every bone at the origin, so callers fall back to their rest-pose offsets.
+      if (w[0] === 0 && w[1] === 0 && w[2] === 0) return null;
       return [w[0], w[1], w[2]];
     }
     // Turn one bone (a siege tank's turret) about the vertical by an angle relative to the hull, on top of the
