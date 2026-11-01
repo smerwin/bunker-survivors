@@ -174,7 +174,7 @@ struct FBSEnemy
 	FBSTarget Target, HitTarget;
 	// Late game: overlord drop / nydus worm state, spellcasting, winged hops.
 	int32 State = 0, Cargo = 0, NextSpell = 0;
-	float T = 0, SpawnT = 0, UnloadT = 0, CastUntil = 0, Seed = 0, Idle = 0;
+	float T = 0, SpawnT = 0, UnloadT = 0, CastUntil = 0, Seed = 0, Idle = 0, Stay = 0;
 	bool bBackOff = false;                    // brood queen: drawing back out of reach after a Spawn Broodling
 	FVector2D Drop = FVector2D::ZeroVector, Exit = FVector2D::ZeroVector;
 	TArray<FString> CargoList;
@@ -386,6 +386,8 @@ public:
 	int32 UpgradeLevel(const FString& Id) const;
 	FString DebugState() const;
 	void DebugSpawn(const FString& Type, float X, float Y) { const FVector2D At(X, Y); SpawnEnemy(Type, 0, &At); }
+	// Zerg against the alive cap: overlords are not attackers and do not count.
+	int32 AliveCount() const { int32 N = 0; for (const TSharedPtr<FBSEnemy>& E : Enemies) N += !E->Def->bUncounted; return N; }
 	int32 MaxAlive() const
 	{
 		const int32* A = bHard ? BSDefs::AliveHard : BSDefs::Alive;
@@ -458,7 +460,7 @@ private:
 	TArray<FBSNuke> Nukes;
 	TMap<FString, TArray<FVector2D>> MechSlots;
 	void BuildTerrain();                      // the lane chokepoint's ground mesh (BSTerrain heights)
-	bool StepGround(float& X, float& Y, float Mx, float My) const;
+	bool StepGround(float& X, float& Y, float Mx, float My, bool bDrop = false) const;
 	void UpdateStructures(float Dt);
 	// Forward base on the high ground.
 	bool ExpandReady() const;
@@ -504,6 +506,7 @@ private:
 	void UpdateTumor(const TSharedPtr<FBSEnemy>& E, float Dt);
 	bool QueenCreep(FBSEnemy& E, float Dt);
 	void UpdateCreeper(const TSharedPtr<FBSEnemy>& E, float Dt);
+	void UpdateWatcher(const TSharedPtr<FBSEnemy>& E, float Dt);
 	bool WaveAlive() const;                   // zerg still to beat this wave (not creep tumors or flyers sieging out of reach)
 	void BuildCreepMesh();                    // the creep overlay: a terrain-hugging translucent grid (M_Creep)
 	void UpdateCreepMesh();

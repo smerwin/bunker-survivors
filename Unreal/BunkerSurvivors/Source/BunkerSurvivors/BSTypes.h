@@ -33,6 +33,9 @@ struct FBSZergDef
 	int32 Max = 0;                    // rare units (brood queen): never more than Max on the field and on their way
 	// Creep (see BSCreep): queens plant tumors, tumors spread creep, creep overlords generate it from the sky.
 	bool bTumors = false, bTumor = false, bCreeper = false;
+	// Overlords (BSOverlords): watchers glare from a vantage point (ambient: they never hold up the end of a wave); front
+	// drops unload zerg up the lane. No overlord counts toward the alive cap (bUncounted).
+	bool bWatcher = false, bFront = false, bAmbient = false, bUncounted = false;
 	// Finale bosses: "kerrigan" (Leaping Strike, Apocalypse) or "leviathan" (bombards, spawns mutalisks). Bosses
 	// keep their own hit points (no late-wave toughening) and always spawn, whatever the alive cap.
 	FString Boss;
@@ -46,6 +49,23 @@ struct FBSZergDef
 // while, and singe tumors. Queens join from FromWave, creep overlords two waves later. The swarm may keep more tumors
 // alive each wave (TumorBase + TumorPerWave per creep wave, up to TumorMax), so the creep spreads further as the waves go
 // on. Port of BS.CREEP in units.js.
+// Overlords from wave From: watchers (Watch0 a wave plus Watch1 every 10 waves, at most WatchMax), each staying
+// Life0..Life1 seconds; and drops (Chance a wave, plus ChanceGrow a wave up to ChanceMax; a second one from Second)
+// unloading up the lane N zerg picked from the latest cargo tier the wave has reached. Port of BS.OVERLORDS in units.js.
+namespace BSOverlords
+{
+	constexpr int32 From = 3, WatchMax = 3, Second = 15;
+	constexpr float Watch0 = 0.7f, Watch1 = 0.4f, Life0 = 25, Life1 = 45, Chance = 0.35f, ChanceGrow = 0.02f, ChanceMax = 0.8f;
+	struct FCargo { int32 From, N; TArray<const TCHAR*> Units; };
+	inline const FCargo Cargo[] = {
+		{ 3, 4, { TEXT("zergling") } },
+		{ 8, 4, { TEXT("zergling"), TEXT("zergling"), TEXT("baneling") } },
+		{ 14, 3, { TEXT("baneling"), TEXT("roach"), TEXT("hydralisk") } },
+		{ 22, 4, { TEXT("roach"), TEXT("hydralisk"), TEXT("infested") } },
+		{ 30, 1, { TEXT("ultralisk") } },
+	};
+}
+
 namespace BSCreep
 {
 	constexpr float Cell = 1, Update = 0.25f, On = 0.35f, Grow = 0.6f, Decay = 0.012f, Speed = 1.3f;

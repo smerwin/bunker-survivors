@@ -176,7 +176,8 @@ When the bunker is full, new recruits stand behind it, up to 48.
 **The shop.** A wave ends once all of it has come and its zerg are dead (or 40 s after the last one arrived: the
 stragglers wait, frozen). You get a clear bonus (25 + 10 a wave, if the field is clear), then the fight pauses and the
 shop offers four random cards. Buy any you can afford (prices are in minerals), reroll the offer (25, then 25 more each
-time in the same visit), and hit NEXT WAVE. The armoury stays open while you shop. Keys: `1`-`5` buy, `X` rerolls,
+time in the same visit), and hit NEXT WAVE. The armoury stays open while you shop (on a phone the shop fills the
+screen; ARMOURY folds it into a bar so you can still buy troops). Keys: `1`-`5` buy, `X` rerolls,
 `Enter` or `Space` starts the next wave.
 
 Each shop is also a checkpoint (browser edition). If the browser throws the page away while it sits in the background,
@@ -257,6 +258,9 @@ go up the arm's ramp and clear it, then an SCV builds a command center there tha
 the high ground get +1 range and never miss for firing uphill. Lose the battlecruiser or the Odin, or drop below 24
 troopers outside, and they fall back to the bunker.
 
+Soldiers outside the bunker can scramble down a cliff face but never up one, so anyone pushed or abducted onto a
+plateau finds their own way back down.
+
 **The Swarm answers.** Every high-tech unit you put in the armoury brings stranger zerg into the waves, and more of them:
 
 | Zerg | What it does |
@@ -268,6 +272,7 @@ troopers outside, and they fall back to the bunker.
 | Viper | Abducts a trooper, goliath or thor, yanking it out toward the swarm. |
 | Brood queen | The Brood War queen. Not tech-gated: she joins from wave 14 (12 in the arena) and stays rare: never more than two on the field at once (bar the wave-46 Brood War assault). Hangs back out of reach and casts Spawn Broodling every 9 s on the best ground target in range (a sieged tank, then a goliath, thor or odin, then a trooper outside the bunker, then an SCV): troopers and SCVs die outright, tanks and mechs take 120; two broodlings hatch from the victim and fight for 8 s. With nothing to hatch on she presses in under the bunker's guns. |
 | Overlord drop | Flies in from a flank and drops zerglings behind your lines (early, if badly hurt). |
+| Overlords (from wave 3) | Never counted against the swarm on the field. Watchers drift to a vantage point out of reach and glare at the bunker for half a minute; drop overlords unload zerg up the lane, worse as the waves go on: zerglings from wave 3, banelings from 8, roaches and hydralisks from 14, infested marines from 22, and from wave 30 a whole ultralisk. |
 | Nydus worm | Breaches behind the bunker and disgorges zerg until it is killed or sinks away. |
 | Creep (from wave 8, whatever your tech) | Queens walk with the waves planting creep tumors; each tumor spreads creep and buds one more toward the bunker, and from wave 10 overlords drift in overhead dribbling creep onto the field (shoot them down with anti-air). Zerg on creep move 30% faster, and creep lingers after its tumors die. Firebat flames burn it back and singe tumors. |
 | Kerrigan (28 minutes in) | The finale, the swarm's last push. The Queen of Blades comes for the bunker in person with a leviathan and a maxed-out wave: nothing you have can hurt her, so your guns ignore her while she leaps onto your lines and blasts the thickest knot of defenders with Apocalypse. The leviathan (which can be killed) bombards from the air and spawns mutalisks, and zerg drop pods slam down all round the base. Hold on until the Hyperion takes you off. Try it with `?clock=28&tech=max` (Unreal: `-BSClock=28 -BSTechMax`), or the evac with `?clock=29.5`. |

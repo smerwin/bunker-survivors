@@ -129,7 +129,7 @@ namespace
 		// Not bought from the wave budget: special events scheduled by StartWave.
 		{
 			FBSZergDef& D = Add(TEXT("overlord"), TEXT("Overlord"), TEXT("overlord"), TEXT("overlordDeath"), TEXT("btn-unit-zerg-overlord"));
-			D.Hp = 400; D.Armor = 1; D.Dmg = 0; D.Cd = 1; D.Range = 0; D.Speed = 3; D.Radius = 1.0f; D.bArmored = true; D.bFlying = true; D.Fly = 4.2f; D.bTransport = true;
+			D.Hp = 400; D.Armor = 1; D.Dmg = 0; D.Cd = 1; D.Range = 0; D.Speed = 3; D.Radius = 1.0f; D.bArmored = true; D.bFlying = true; D.Fly = 4.2f; D.bTransport = true; D.bUncounted = true;
 			D.Bounty = 25; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0; D.SoundDeath = TEXT("overlordDeath"); D.Height = 2;
 		}
 		{
@@ -158,8 +158,22 @@ namespace
 		}
 		{
 			FBSZergDef& D = Add(TEXT("overlordCreep"), TEXT("Overlord"), TEXT("overlordCreep"), TEXT("overlordCreepDeath"), TEXT("btn-unit-zerg-overlord"));
-			D.Hp = 200; D.Dmg = 0; D.Cd = 1; D.Range = 0; D.Speed = 1.4f; D.Radius = 1.0f; D.bArmored = true; D.bFlying = true; D.Fly = 4.8f; D.bCreeper = true;
+			D.Hp = 200; D.Dmg = 0; D.Cd = 1; D.Range = 0; D.Speed = 1.4f; D.Radius = 1.0f; D.bArmored = true; D.bFlying = true; D.Fly = 4.8f; D.bCreeper = true; D.bUncounted = true;
 			D.Bounty = 20; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0; D.SoundDeath = TEXT("overlordDeath"); D.Height = 2;
+		}
+		// Overlords (BSOverlords): a watcher hangs over the field glaring at the bunker; a front drop unloads zerg up the lane,
+		// worse ones as the waves go on.
+		{
+			FBSZergDef& D = Add(TEXT("overlordWatch"), TEXT("Overlord"), TEXT("overlordCreep"), TEXT("overlordCreepDeath"), TEXT("btn-unit-zerg-overlord"));
+			D.Hp = 200; D.Armor = 1; D.Dmg = 0; D.Cd = 1; D.Range = 0; D.Speed = 1.6f; D.Radius = 1.0f; D.bArmored = true; D.bFlying = true; D.Fly = 5.4f;
+			D.bWatcher = true; D.bAmbient = true; D.bUncounted = true;
+			D.Bounty = 15; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0; D.SoundDeath = TEXT("overlordDeath"); D.Height = 2;
+		}
+		{
+			FBSZergDef& D = Add(TEXT("overlordDrop"), TEXT("Overlord"), TEXT("overlord"), TEXT("overlordDeath"), TEXT("btn-unit-zerg-overlord"));
+			D.Hp = 250; D.Armor = 1; D.Dmg = 0; D.Cd = 1; D.Range = 0; D.Speed = 2.6f; D.Radius = 1.0f; D.bArmored = true; D.bFlying = true; D.Fly = 4.2f;
+			D.bTransport = true; D.bFront = true; D.bUncounted = true;
+			D.Bounty = 15; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0; D.SoundDeath = TEXT("overlordDeath"); D.Height = 2;
 		}
 		// The finale (see ABSGame::StartFinale): Kerrigan casts Leaping Strike and Apocalypse, is untouchable and makes for
 		// the bunker; the leviathan bombards and spawns mutalisks.

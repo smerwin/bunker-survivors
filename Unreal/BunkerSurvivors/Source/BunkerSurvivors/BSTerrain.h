@@ -18,6 +18,12 @@ namespace BSTerrain
 	float Slope(float X, float Y);
 	bool Walkable(float X, float Y);           // ground units cannot climb cliff faces (the ramps are gentle enough)
 	bool OnHigh(float X, float Y);
+	// Infantry can also scramble down a cliff face (never up one): a step is fine if it lands somewhere walkable or lower.
+	bool Passable(float Ax, float Ay, float Bx, float By);
+	bool ClearPath(float Ax, float Ay, float Bx, float By, float Step = 0.25f);
+	// Which way home for infantry that cannot walk straight there (round a cliff corner, off a plateau): a unit vector
+	// down a breadth-first distance field to the pad round the bunker, built once over the lane on a 25 cm grid.
+	bool HomeFlow(float X, float Y, FVector2D& Dir);
 	// Waypoints for a ground unit spawning at (X, Y): down an arm into the stem, or up a ramp to a perch.
 	TArray<FVector2D> Route(float X, float Y, bool bHigh);
 	// The way from the bunker up onto the side plateau east (Side 1) or west (-1) of the stem: up the stem to the fork,

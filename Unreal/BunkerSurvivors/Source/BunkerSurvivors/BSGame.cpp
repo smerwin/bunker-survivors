@@ -191,13 +191,16 @@ void ABSGame::BuildTerrain()
 
 // One step for a ground unit: straight on if it can, otherwise the nearest heading off the cliff face, so nothing
 // hangs on a corner (port of Game.stepGround). Returns false when boxed in.
-bool ABSGame::StepGround(float& X, float& Y, float Mx, float My) const
+// bDrop: infantry may step down a cliff face (never up one).
+bool ABSGame::StepGround(float& X, float& Y, float Mx, float My, bool bDrop) const
 {
-	if (BSTerrain::Walkable(X + Mx, Y + My)) { X += Mx; Y += My; return true; }
+	const float X0 = X, Y0 = Y;
+	auto Open = [&](float Px, float Py) { return bDrop ? BSTerrain::Passable(X0, Y0, Px, Py) : BSTerrain::Walkable(Px, Py); };
+	if (Open(X + Mx, Y + My)) { X += Mx; Y += My; return true; }
 	for (const float A : { 0.5f, -0.5f, 1.0f, -1.0f, PI / 2, -PI / 2, 2.1f, -2.1f })
 	{
 		const float C = FMath::Cos(A), S = FMath::Sin(A), K = FMath::Max(0.35f, C), Rx = (Mx * C - My * S) * K, Ry = (Mx * S + My * C) * K;
-		if (BSTerrain::Walkable(X + Rx, Y + Ry)) { X += Rx; Y += Ry; return true; }
+		if (Open(X + Rx, Y + Ry)) { X += Rx; Y += Ry; return true; }
 	}
 	// Wedged on a slope: step down it, back towards the low ground.
 	const float E = 0.2f, Gx = BSTerrain::Height(X + E, Y) - BSTerrain::Height(X - E, Y), Gy = BSTerrain::Height(X, Y + E) - BSTerrain::Height(X, Y - E), Gl = FMath::Sqrt(Gx * Gx + Gy * Gy);
@@ -771,7 +774,7 @@ void ABSGame::UpdateSquad(float Dt)
 		&& Squad.ContainsByPredicate([](const TSharedPtr<FBSTrooper>& M) { return M->Team == 1; });
 	SquadDeaths.RemoveAll([this](const FVector& K) { return Time - K.Z > 6; });
 	const bool bLane = Mode == EBSMode::Lane;
-	auto Forward = [bLane](const FBSTrooper& M) { return bLane ? M.Y > 0.6f : FMath::Sqrt(M.X * M.X + M.Y * M.Y) > 3.2f; };   // ahead of the bunker's line
+	auto Forward = [bLane](const FBSTrooper& M) { return bLane ? M.Y > 0.6f || BSTerrain::OnHigh(M.X, M.Y) : FMath::Sqrt(M.X * M.X + M.Y * M.Y) > 3.2f; };   // ahead of the bunker's line (or up on a plateau)
 	TArray<TSharedPtr<FBSTrooper>> Snapshot = Squad;
 	for (const TSharedPtr<FBSTrooper>& MP : Snapshot)
 	{
@@ -844,12 +847,15 @@ void ABSGame::UpdateSquad(float Dt)
 			}
 		}
 		const float Far = FMath::Sqrt(Dist2(M.X, M.Y, Gx, Gy));
-		const FVector2D Wp = RoundBunker(M.X, M.Y, Gx, Gy);
+		FVector2D Wp = RoundBunker(M.X, M.Y, Gx, Gy);
+		// No straight way there (a cliff corner, or up on a plateau after a push or an abduction): follow the way home.
+		FVector2D Flow;
+		if (bLane && !M.Fwd.bOn && Far > 0.12f && !BSTerrain::ClearPath(M.X, M.Y, Wp.X, Wp.Y) && BSTerrain::HomeFlow(M.X, M.Y, Flow)) Wp = FVector2D(M.X, M.Y) + Flow;
 		const float Dx = Wp.X - M.X, Dy = Wp.Y - M.Y, Dd = FMath::Max(0.001f, FMath::Sqrt(Dx * Dx + Dy * Dy));
 		if (Far > 0.12f)
 		{
 			const float Sp = FMath::Min(Dd, 3.15f * (bStim ? 1.5f : 1.f) * Dt), Ox = M.X, Oy = M.Y;
-			StepGround(M.X, M.Y, Dx / Dd * Sp, Dy / Dd * Sp);
+			StepGround(M.X, M.Y, Dx / Dd * Sp, Dy / Dd * Sp, !M.Fwd.bOn);
 			if (M.X != Ox || M.Y != Oy) M.Yaw = FMath::Atan2(M.Y - Oy, M.X - Ox);
 			if (M.Actor && M.Anim != TEXT("walk")) { M.Anim = TEXT("walk"); M.Actor->Play(WalkNames, true, bStim ? 1.8f : 1.2f); }
 			if (M.Actor) M.Actor->SetSim(M.X, M.Y, BSTerrain::Height(M.X, M.Y), M.Yaw);
@@ -2438,6 +2444,14 @@ void ABSGame::StartWave()
 		const int32 Lords = FMath::Min(3, 1 + (Wv - Cw - 2) / 8);
 		for (int32 i = 0; i < Lords; i++) { SpawnQueue.Add({ 2 + Rnd(0.f, Spread), TEXT("overlordCreep"), 0.f }); Added++; }
 	}
+	// Overlords: watchers, and drops up the lane.
+	if (Wv >= BSOverlords::From)
+	{
+		const int32 Watch = FMath::Min(BSOverlords::WatchMax, FMath::FloorToInt(BSOverlords::Watch0 + BSOverlords::Watch1 * Wv / 10.f + FMath::FRand()));
+		for (int32 i = 0; i < Watch; i++) SpawnQueue.Add({ Rnd(0.f, Spread), TEXT("overlordWatch"), 0.f });
+		const float Chance = FMath::Min(BSOverlords::ChanceMax, BSOverlords::Chance + BSOverlords::ChanceGrow * (Wv - BSOverlords::From));
+		for (int32 i = 0; i < (Wv >= BSOverlords::Second ? 2 : 1); i++) if (FMath::FRand() < Chance) SpawnQueue.Add({ Rnd(2.f, FMath::Max(2.f, Spread)), TEXT("overlordDrop"), 0.f });
+	}
 	SpawnQueue.Sort([](const FBSSpawn& A, const FBSSpawn& B) { return A.T < B.T; });
 	Tele.Spawned = Added;
 	SpawnTimer = 0;
@@ -2657,7 +2671,7 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 	if (At) { X = At->X + Rnd(-0.6f, 0.6f); Y = At->Y + Rnd(-0.6f, 0.6f); }
 	else if (D->bTransport) { X = bLane ? SideS * 23 : FMath::Cos(Ar) * 27; Y = bLane ? Rnd(-3, 6) : FMath::Sin(Ar) * 27; }          // overlords come in from a flank
 	else if (D->bNydus) { const float R = Rnd(5.5f, 8); X = bLane ? SideS * Rnd(2.5f, 4.5f) : FMath::Cos(Ar) * R; Y = bLane ? Rnd(-8.5f, -7) : FMath::Sin(Ar) * R; }   // behind our lines
-	else if (D->bCreeper) { X = bLane ? SideS * Rnd(10, 18) : FMath::Cos(Ar) * 29; Y = bLane ? Rnd(30, 34) : FMath::Sin(Ar) * 29; }   // creep overlords drift in from afar
+	else if (D->bCreeper || D->bWatcher) { X = bLane ? SideS * Rnd(10, 18) : FMath::Cos(Ar) * 29; Y = bLane ? Rnd(30, 34) : FMath::Sin(Ar) * 29; }   // creep overlords and watchers drift in from afar
 	else if (Mode == EBSMode::Lane)
 	{
 		const int32 Side = FMath::RoundToInt(Ang);         // 0 north, 1 north-east, 2 north-west
@@ -2722,6 +2736,21 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 		const float A2 = FMath::FRand() * 2 * PI;
 		E->Exit = FVector2D(X, Y); E->Cargo = 5 + LateTier();
 		E->Drop = bLane ? FVector2D(Rnd(-4, 4), Rnd(-6.5f, -3)) : FVector2D(FMath::Cos(A2) * Rnd(4, 6.5f), FMath::Sin(A2) * Rnd(4, 6.5f));
+		if (D->bFront)           // up the lane, with the worst cargo the wave has reached
+		{
+			const BSOverlords::FCargo* Tier = &BSOverlords::Cargo[0];
+			for (const BSOverlords::FCargo& C : BSOverlords::Cargo) if (Wave >= C.From) Tier = &C;
+			E->CargoList.Reset();
+			for (int32 i = 0; i < Tier->N; i++) E->CargoList.Add(Tier->Units[FMath::RandRange(0, Tier->Units.Num() - 1)]);
+			E->Cargo = E->CargoList.Num();
+			E->Drop = bLane ? FVector2D(Rnd(-2.5f, 2.5f), Rnd(6, 14)) : FVector2D(FMath::Cos(A2) * Rnd(7, 11), FMath::Sin(A2) * Rnd(7, 11));
+		}
+	}
+	if (D->bWatcher)             // a vantage point out of the bunker's reach: over the plateaus and mesa, or the arena's rim
+	{
+		const float A3 = FMath::FRand() * 2 * PI;
+		E->State = 0; E->T = 0; E->Exit = FVector2D(X, Y); E->Stay = Rnd(BSOverlords::Life0, BSOverlords::Life1);
+		E->Hover = bLane ? FVector2D(SideS * Rnd(6, 13), Rnd(10, 20)) : FVector2D(FMath::Cos(A3) * Rnd(11, 15), FMath::Sin(A3) * Rnd(11, 15));
 	}
 	if (D->bNydus)
 	{
@@ -2756,7 +2785,14 @@ void ABSGame::UpdateOverlord(const TSharedPtr<FBSEnemy>& EP, float Dt)
 	if (E.State == Unload)
 	{
 		E.UnloadT -= Dt;
-		if (E.UnloadT <= 0 && E.Cargo > 0) { E.Cargo--; E.UnloadT = 0.2f; const FVector2D At(E.X, E.Y); SpawnEnemy(TEXT("zergling"), 0, &At); }
+		if (E.UnloadT <= 0 && E.Cargo > 0)
+		{
+			E.Cargo--; E.UnloadT = E.Def->bFront ? 0.35f : 0.2f;
+			const FVector2D At(E.X, E.Y);
+			FString Kind = TEXT("zergling");
+			if (E.CargoList.Num()) { Kind = E.CargoList[0]; E.CargoList.RemoveAt(0); }
+			SpawnEnemy(Kind, 0, &At);
+		}
 		if (E.Cargo <= 0) { E.State = Out; PlayEnemyAnim(E, TEXT("walk")); }
 		return;
 	}
@@ -2764,7 +2800,7 @@ void ABSGame::UpdateOverlord(const TSharedPtr<FBSEnemy>& EP, float Dt)
 	const float Dx = G.X - E.X, Dy = G.Y - E.Y, Dd = FMath::Sqrt(Dx * Dx + Dy * Dy);
 	if (Dd < 0.3f || (E.State == In && E.Hp < E.MaxHp * 0.5f))
 	{
-		if (E.State == In) { E.State = Unload; E.UnloadT = 0.4f; PlayEnemyAnim(E, TEXT("stand")); PlaySound(TEXT("overlordUnload"), 0.6f); Toast(TEXT("Overlord dropping zerglings behind our lines")); }
+		if (E.State == In) { E.State = Unload; E.UnloadT = 0.4f; PlayEnemyAnim(E, TEXT("stand")); PlaySound(TEXT("overlordUnload"), 0.6f); Toast(E.Def->bFront ? TEXT("Overlord dropping zerg up the lane") : TEXT("Overlord dropping zerglings behind our lines")); }
 		else Despawn(EP);
 		return;
 	}
@@ -2772,6 +2808,23 @@ void ABSGame::UpdateOverlord(const TSharedPtr<FBSEnemy>& EP, float Dt)
 	E.X += Dx / Dd * S; E.Y += Dy / Dd * S;
 	E.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(E.Yaw, FMath::Atan2(Dy, Dx)), -2 * Dt, 2 * Dt);
 	PlayEnemyAnim(E, TEXT("walk"));
+}
+
+// Watcher overlord: drifts to its vantage point, hangs there bobbing and turned on the bunker, then drifts away.
+void ABSGame::UpdateWatcher(const TSharedPtr<FBSEnemy>& EP, float Dt)
+{
+	FBSEnemy& E = *EP;
+	enum { In, Watch, Out };
+	E.T += Dt;
+	if (E.State == Watch && E.T > E.Stay) { E.State = Out; PlayEnemyAnim(E, TEXT("walk")); }
+	const FVector2D G = E.State == Out ? E.Exit : E.Hover;
+	const float Dx = G.X - E.X, Dy = G.Y - E.Y, Dd = FMath::Sqrt(Dx * Dx + Dy * Dy);
+	if (E.State == In && Dd < 0.5f) { E.State = Watch; E.T = 0; PlayEnemyAnim(E, TEXT("stand")); }
+	if (E.State == Out && Dd < 0.5f) { Despawn(EP); return; }
+	if (Dd > 0.05f) { const float S = FMath::Min(Dd, E.Def->Speed * Dt); E.X += Dx / Dd * S; E.Y += Dy / Dd * S; }
+	const float Face = E.State == Watch ? FMath::Atan2(-E.Y, -E.X) : FMath::Atan2(Dy, Dx);
+	E.Yaw += FMath::Clamp(FMath::FindDeltaAngleRadians(E.Yaw, Face), -1.2f * Dt, 1.2f * Dt);
+	E.Z = E.Def->Fly + 0.25f * FMath::Sin(Time * 0.9f + E.X);
 }
 
 // Nydus worm: rises out of the ground, disgorges its cargo, then sinks back unless it is killed first.
@@ -2852,7 +2905,7 @@ void ABSGame::BroodlingHit(const FBSTarget& T)
 	PlaySound(TEXT("broodSpell"), 0.8f); PlaySound(TEXT("broodlingBirth"), 0.5f);
 	DamageDefender(T, bKill ? Hp + 100 : BroodSpellDmg + Armor);
 	Floater(X, Y, Gz + 3, bKill ? FString(TEXT("BROODLINGS")) : FString::Printf(TEXT("BROODLINGS -%d"), FMath::RoundToInt(BroodSpellDmg)), FLinearColor(0.71f, 1.f, 0.35f));
-	for (int32 k = 0; k < 2; k++) if (Enemies.Num() < MaxAlive()) { const FVector2D At(X, Y); SpawnEnemy(TEXT("broodling"), 0, &At); }
+	for (int32 k = 0; k < 2; k++) if (AliveCount() < MaxAlive()) { const FVector2D At(X, Y); SpawnEnemy(TEXT("broodling"), 0, &At); }
 }
 
 // ---- Creep ------------------------------------------------------------------------------------------------
@@ -2947,7 +3000,7 @@ bool ABSGame::WaveAlive() const
 	const float Reach = BSDefs::FindInfantry(TEXT("marine"))->Range + BSDefs::BunkerRangeBonus + BSDefs::BunkerHalfSize + (Up.bHiSec ? BSDefs::HiSecRange : 0.f)
 		+ (Up.bRails ? BSDefs::RailsRange : 0.f) + (Mode == EBSMode::Arena ? 1.f : 0.f);
 	for (const TSharedPtr<FBSEnemy>& E : Enemies)
-		if (!E->Def->bTumor && !E->Def->bCreeper && !(E->Def->bFlying && E->bAttacking && FMath::Sqrt(Dist2(0, 0, E->X, E->Y)) - E->Radius > Reach)) return true;
+		if (!E->Def->bTumor && !E->Def->bCreeper && !E->Def->bAmbient && !(E->Def->bFlying && E->bAttacking && FMath::Sqrt(Dist2(0, 0, E->X, E->Y)) - E->Radius > Reach)) return true;
 	return false;
 }
 
@@ -3510,8 +3563,9 @@ void ABSGame::Tick(float Dt)
 	Super::Tick(Dt);
 	if (!Assets) return;
 	if (CrowdTest > 0 && bStarted) CrowdTick(Dt);
-	// Bots shop at once and carry on.
-	if (Shop.bOpen && bAutoPlay && !bOver) { AutoShop(); CloseShop(); }
+	// Bots shop at once and carry on (-BSShopHold: they leave the shop open, for screenshots of it).
+	static const bool bShopHold = FParse::Param(FCommandLine::Get(), TEXT("BSShopHold"));
+	if (Shop.bOpen && bAutoPlay && !bOver && !bShopHold) { AutoShop(); CloseShop(); }
 	if (bStarted && !bPaused && !bOver && !Shop.bOpen)
 	{
 		Acc += FMath::Min(Dt, 0.1f) * TimeScale;
@@ -3548,7 +3602,7 @@ void ABSGame::Step(float Dt)
 	// always come through).
 	while (SpawnQueue.Num() && SpawnQueue[0].T <= SpawnTimer)
 	{
-		if (Enemies.Num() >= MaxAlive())
+		if (AliveCount() >= MaxAlive())
 		{
 			const int32 Bi = SpawnQueue.IndexOfByPredicate([this](const FBSSpawn& Q) { const FBSZergDef* QD = BSDefs::FindZerg(Q.Type); return Q.T <= SpawnTimer && QD && !QD->Boss.IsEmpty(); });
 			if (Bi != INDEX_NONE) { const FBSSpawn B = SpawnQueue[Bi]; SpawnQueue.RemoveAt(Bi); SpawnEnemy(B.Type, B.Ang); }
@@ -3636,6 +3690,7 @@ void ABSGame::UpdateEnemies(float Dt)
 		if (D->bNydus) { UpdateNydus(EP, Dt); continue; }
 		if (D->bTumor) { UpdateTumor(EP, Dt); continue; }
 		if (D->bCreeper) { UpdateCreeper(EP, Dt); continue; }
+		if (D->bWatcher) { UpdateWatcher(EP, Dt); continue; }
 		if (D->bTumors && QueenCreep(E, Dt)) continue;
 		E.Retarget -= Dt;
 		const TArray<FBSTarget>& Pool = D->bAntiAir ? AirTargets : Targets;       // scourge and devourers hunt Terran air

@@ -183,8 +183,9 @@ window.BS = window.BS || {};
 
     // One step for a ground unit: straight on if it can, otherwise the nearest heading off the cliff face, so nothing
     // hangs on a corner. Returns false when boxed in.
-    stepGround(o, mx, my) {
-      const open = (x, y) => BS.Terrain.walkable(x, y);
+    // drop: infantry may step down a cliff face (never up one).
+    stepGround(o, mx, my, drop) {
+      const open = drop ? (x, y) => BS.Terrain.passable(o.x, o.y, x, y) : (x, y) => BS.Terrain.walkable(x, y);
       if (open(o.x + mx, o.y + my)) { o.x += mx; o.y += my; return true; }
       for (const a of [0.5, -0.5, 1.0, -1.0, Math.PI / 2, -Math.PI / 2, 2.1, -2.1]) {
         const c = Math.cos(a), sn = Math.sin(a), k = Math.max(0.35, Math.cos(a)), rx = (mx * c - my * sn) * k, ry = (mx * sn + my * c) * k;
@@ -269,7 +270,7 @@ window.BS = window.BS || {};
       const bothTeams = Q.some(m => m.team === 0) && Q.some(m => m.team === 1);
       this.squadDeaths = this.squadDeaths.filter(k => this.time - k.t < 6);
       const lane = this.mode === 'lane';
-      const forward = m => lane ? m.y > 0.6 : Math.hypot(m.x, m.y) > 3.2;     // ahead of the bunker's line
+      const forward = m => lane ? m.y > 0.6 || BS.Terrain.onHigh(m.x, m.y) : Math.hypot(m.x, m.y) > 3.2;     // ahead of the bunker's line (or up on a plateau)
       for (const m of Q.slice()) {
         if (m.dead) continue;
         const d = m.def, pred = e => !(d.groundOnly && e.def.flying);
@@ -321,10 +322,12 @@ window.BS = window.BS || {};
         }
         const far = Math.hypot(gx - m.x, gy - m.y);
         [gx, gy] = this.roundBunker(m, gx, gy);
+        // No straight way there (a cliff corner, or up on a plateau after a push or an abduction): follow the way home.
+        if (lane && !m.fwd && far > 0.12 && !BS.Terrain.clearPath(m.x, m.y, gx, gy)) { const f = BS.Terrain.homeFlow(m.x, m.y); if (f) { gx = m.x + f[0]; gy = m.y + f[1]; } }
         const dx = gx - m.x, dy = gy - m.y, dd = Math.hypot(dx, dy) || 1;
         if (far > 0.12) {
           const sp = Math.min(dd, 3.15 * (stim ? 1.5 : 1) * dt), ox = m.x, oy = m.y;
-          this.stepGround(m, dx / dd * sp, dy / dd * sp);
+          this.stepGround(m, dx / dd * sp, dy / dd * sp, !m.fwd);
           if (m.x !== ox || m.y !== oy) m.yaw = Math.atan2(m.y - oy, m.x - ox);
           if (m.anim !== 'walk') { m.anim = 'walk'; m.handle.play(/^walk/i, true, stim ? 1.8 : 1.2); }
           m.handle.setPos(m.x, m.y, BS.Terrain.height(m.x, m.y)).setYaw(m.yaw);
@@ -1443,6 +1446,14 @@ window.BS = window.BS || {};
         const lords = Math.min(3, 1 + Math.floor((w - cw - 2) / 8));
         for (let i = 0; i < lords; i++) this.spawnQueue.push({ t: 2 + rnd(0, spread), type: 'overlordCreep', ang: 0 });
       }
+      // Overlords: watchers, and drops up the lane.
+      const O = BS.OVERLORDS;
+      if (w >= O.from) {
+        const watch = Math.min(O.max, Math.floor(O.watch[0] + O.watch[1] * w / 10 + Math.random()));
+        for (let i = 0; i < watch; i++) this.spawnQueue.push({ t: rnd(0, spread), type: 'overlordWatch', ang: 0 });
+        const chance = Math.min(O.chanceMax, O.chance + O.chanceGrow * (w - O.from));
+        for (let i = 0; i < (w >= O.second ? 2 : 1); i++) if (Math.random() < chance) this.spawnQueue.push({ t: rnd(2, spread), type: 'overlordDrop', ang: 0 });
+      }
       this.spawnQueue.sort((a, b) => a.t - b.t);
       this.spawnTimer = 0; this.waveTimer = this.waveLen;
       this.minerals += 20 + 8 * w;
@@ -1599,6 +1610,8 @@ window.BS = window.BS || {};
       this.shake = 1;
     }
     bosses() { return this.enemies.filter(e => e.def.boss && e.hp > 0); }
+    // Zerg against the alive cap: overlords are not attackers and do not count.
+    aliveCount() { let n = 0; for (const e of this.enemies) if (!e.def.uncounted) n++; return n; }
     maxAlive() {
       const W = BS.WAVES, a = this.hard ? W.aliveHard : W.alive, k = clamp((this.wave - W.aliveFrom) / (W.aliveBy - W.aliveFrom), 0, 1);
       return Math.round((a[0] + (a[1] - a[0]) * k) * (BS.perfScale || 1));
@@ -1610,7 +1623,7 @@ window.BS = window.BS || {};
       if (at) { x = at[0] + rnd(-0.6, 0.6); y = at[1] + rnd(-0.6, 0.6); }
       else if (d.transport) { x = lane ? side * 23 : Math.cos(ar) * 27; y = lane ? rnd(-3, 6) : Math.sin(ar) * 27; }        // overlords come in from a flank
       else if (d.nydus) { const r = rnd(5.5, 8); x = lane ? side * rnd(2.5, 4.5) : Math.cos(ar) * r; y = lane ? rnd(-8.5, -7) : Math.sin(ar) * r; }   // behind our lines
-      else if (d.creeper) { x = lane ? side * rnd(10, 18) : Math.cos(ar) * 29; y = lane ? rnd(30, 34) : Math.sin(ar) * 29; }   // creep overlords drift in from afar
+      else if (d.creeper || d.watcher) { x = lane ? side * rnd(10, 18) : Math.cos(ar) * 29; y = lane ? rnd(30, 34) : Math.sin(ar) * 29; }   // creep overlords and watchers drift in from afar
       else if (this.mode === 'lane') {
         if ((ang === 1 || ang === 2) && !d.hops) {        // winged zerglings always come from the north, over the mesa
           // Somewhere down the arm (see terrain.js), not on the cliffs beside it.
@@ -1650,6 +1663,17 @@ window.BS = window.BS || {};
         const a2 = Math.random() * Math.PI * 2;
         e.state = 'in'; e.exit = [x, y]; e.cargo = 5 + this.lateTier();
         e.drop = lane ? [rnd(-4, 4), rnd(-6.5, -3)] : [Math.cos(a2) * rnd(4, 6.5), Math.sin(a2) * rnd(4, 6.5)];
+        if (d.front) {            // up the lane, with the worst cargo the wave has reached
+          const tier = BS.OVERLORDS.cargo.filter(c => this.wave >= c.from).pop() || BS.OVERLORDS.cargo[0];
+          e.cargoList = []; for (let i = 0; i < tier.n; i++) e.cargoList.push(pick(tier.units));
+          e.cargo = e.cargoList.length;
+          e.drop = lane ? [rnd(-2.5, 2.5), rnd(6, 14)] : [Math.cos(a2) * rnd(7, 11), Math.sin(a2) * rnd(7, 11)];
+        }
+      }
+      if (d.watcher) {           // a vantage point out of the bunker's reach: over the plateaus and mesa, or the arena's rim
+        const a3 = Math.random() * Math.PI * 2;
+        e.state = 'in'; e.t = 0; e.exit = [x, y]; e.stay = rnd(BS.OVERLORDS.life[0], BS.OVERLORDS.life[1]);
+        e.hover = lane ? [side * rnd(6, 13), rnd(10, 20)] : [Math.cos(a3) * rnd(11, 15), Math.sin(a3) * rnd(11, 15)];
       }
       if (d.nydus) {
         e.state = 'birth'; e.t = 0; e.spawnT = 0; e.z = BS.Terrain.height(x, y) - 3;
@@ -1683,13 +1707,13 @@ window.BS = window.BS || {};
       const d = e.def;
       if (e.state === 'unload') {
         e.unloadT -= dt;
-        if (e.unloadT <= 0 && e.cargo > 0) { e.cargo--; e.unloadT = 0.2; this.spawnEnemy('zergling', 0, [e.x, e.y]); }
+        if (e.unloadT <= 0 && e.cargo > 0) { e.cargo--; e.unloadT = d.front ? 0.35 : 0.2; this.spawnEnemy(e.cargoList ? e.cargoList.shift() : 'zergling', 0, [e.x, e.y]); }
         if (e.cargo <= 0) { e.state = 'out'; this.playAnim(e, 'walk'); }
         return;
       }
       const [gx, gy] = e.state === 'out' ? e.exit : e.drop, dx = gx - e.x, dy = gy - e.y, dd = Math.hypot(dx, dy);
       if (dd < 0.3 || (e.state === 'in' && e.hp < e.maxHp * 0.5)) {        // badly hurt: drop the cargo where it is
-        if (e.state === 'in') { e.state = 'unload'; e.unloadT = 0.4; this.playAnim(e, 'stand'); BS.audio.play('overlordUnload', { vol: 0.6 }); this.toast('Overlord dropping zerglings behind our lines'); }
+        if (e.state === 'in') { e.state = 'unload'; e.unloadT = 0.4; this.playAnim(e, 'stand'); BS.audio.play('overlordUnload', { vol: 0.6 }); this.toast(d.front ? 'Overlord dropping zerg up the lane' : 'Overlord dropping zerglings behind our lines'); }
         else this.despawn(e);
         return;
       }
@@ -1749,7 +1773,7 @@ window.BS = window.BS || {};
       BS.audio.play('broodSpell', { vol: 0.8 }); BS.audio.play('broodlingBirth', { vol: 0.5 });
       this.damageDefender(tg, kill ? o.hp + 100 : BROOD_SPELL_DMG + (o.armor || 0));
       this.floater(x, y, gz + 3, kill ? 'BROODLINGS' : 'BROODLINGS -' + BROOD_SPELL_DMG, '#b6ff5a');
-      for (let k = 0; k < 2; k++) if (this.enemies.length < this.maxAlive()) this.spawnEnemy('broodling', 0, [x, y]);
+      for (let k = 0; k < 2; k++) if (this.aliveCount() < this.maxAlive()) this.spawnEnemy('broodling', 0, [x, y]);
     }
 
     // ---- Creep ------------------------------------------------------------------------------------------
@@ -1857,6 +1881,19 @@ window.BS = window.BS || {};
       BS.audio.play('tumorPlant', { vol: 0.6, gap: 0.3 });
       return true;
     }
+    // Watcher overlord: drifts to its vantage point, hangs there bobbing and turned on the bunker, then drifts away.
+    updateWatcher(e, dt) {
+      const d = e.def;
+      e.t += dt;
+      if (e.state === 'watch' && e.t > e.stay) { e.state = 'out'; this.playAnim(e, 'walk'); }
+      const [gx, gy] = e.state === 'out' ? e.exit : e.hover, dx = gx - e.x, dy = gy - e.y, dd = Math.hypot(dx, dy);
+      if (e.state === 'in' && dd < 0.5) { e.state = 'watch'; e.t = 0; this.playAnim(e, 'stand'); }
+      if (e.state === 'out' && dd < 0.5) { this.despawn(e); return; }
+      if (dd > 0.05) { const s = Math.min(dd, d.speed * dt); e.x += dx / dd * s; e.y += dy / dd * s; }
+      const face = e.state === 'watch' ? Math.atan2(-e.y, -e.x) : Math.atan2(dy, dx);
+      e.yaw += clamp(angDelta(e.yaw, face), -1.2 * dt, 1.2 * dt);
+      e.z = d.fly + 0.25 * Math.sin(this.time * 0.9 + e.x);
+    }
     // Creep overlord: drifts in over the field, then hangs there generating creep beneath it while edging toward the
     // bunker (into anti-air reach), and finally drifts back out.
     updateCreeper(e, dt) {
@@ -1888,7 +1925,7 @@ window.BS = window.BS || {};
     // marines: they stay where they are and carry on into the next wave.
     waveAlive() {
       const reach = BS.INFANTRY.marine.range + T().bunker.rangeBonus + T().bunker.halfSize + (this.up.hisec ? T().hiSecRange : 0) + (this.up.rails ? T().railsRange : 0) + (this.hard ? 1 : 0);
-      return this.enemies.some(e => !e.def.tumor && !e.def.creeper && !(e.def.flying && e.attacking && Math.hypot(e.x, e.y) - e.radius > reach));
+      return this.enemies.some(e => !e.def.tumor && !e.def.creeper && !e.def.ambient && !(e.def.flying && e.attacking && Math.hypot(e.x, e.y) - e.radius > reach));
     }
     // Defiler (alternating dark swarm and plague) and viper (abduct) spells.
     castSpell(e, t) {
@@ -2165,7 +2202,7 @@ window.BS = window.BS || {};
       // Due spawns come out in order while there is room on the field; at the alive cap they wait their turn (bosses
       // always come through).
       while (this.spawnQueue.length && this.spawnQueue[0].t <= this.spawnTimer) {
-        if (this.enemies.length >= this.maxAlive()) {
+        if (this.aliveCount() >= this.maxAlive()) {
           const bi = this.spawnQueue.findIndex(q => q.t <= this.spawnTimer && BS.ZERG[q.type].boss);
           if (bi >= 0) { const b = this.spawnQueue.splice(bi, 1)[0]; this.spawnEnemy(b.type, b.ang); }
           break;
@@ -2226,6 +2263,7 @@ window.BS = window.BS || {};
         if (d.nydus) { this.updateNydus(e, dt); continue; }
         if (d.tumor) { this.updateTumor(e, dt); continue; }
         if (d.creeper) { this.updateCreeper(e, dt); continue; }
+        if (d.watcher) { this.updateWatcher(e, dt); continue; }
         if (d.tumors && this.queenCreep(e, dt)) continue;
         e.retarget -= dt;
         if (!this.valid(e.target) || e.retarget <= 0) {

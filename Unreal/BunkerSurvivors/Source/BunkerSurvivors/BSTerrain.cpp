@@ -72,6 +72,71 @@ namespace BSTerrain
 	bool Walkable(float X, float Y) { return !bActive || Slope(X, Y) < 1.05f; }
 	bool OnHigh(float X, float Y) { return bActive && Height(X, Y) > H * 0.6f; }
 
+	bool Passable(float Ax, float Ay, float Bx, float By) { return !bActive || Slope(Bx, By) < 1.05f || Height(Bx, By) < Height(Ax, Ay) - 1e-3f; }
+
+	bool ClearPath(float Ax, float Ay, float Bx, float By, float Step)
+	{
+		if (!bActive) return true;
+		const int32 N = FMath::CeilToInt(FMath::Sqrt(FMath::Square(Bx - Ax) + FMath::Square(By - Ay)) / Step);
+		float Px = Ax, Py = Ay;
+		for (int32 i = 1; i <= N; i++)
+		{
+			const float X = Ax + (Bx - Ax) * i / N, Y = Ay + (By - Ay) * i / N;
+			if (!Passable(Px, Py, X, Y)) return false;
+			Px = X; Py = Y;
+		}
+		return true;
+	}
+
+	constexpr float FX0 = -16, FY0 = -8, FS = 0.25f;
+	constexpr int32 FNX = 129, FNY = 153;
+	const int32 NB[8][2] = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 }, { 1, 1 }, { 1, -1 }, { -1, 1 }, { -1, -1 } };
+	const TArray<float>& FlowField()
+	{
+		static TArray<float> Flow;
+		if (Flow.Num()) return Flow;
+		Flow.Init(TNumericLimits<float>::Max(), FNX * FNY);
+		auto At = [](int32 K) { return FVector2D(FX0 + (K % FNX) * FS, FY0 + (K / FNX) * FS); };
+		TArray<int32> Q;
+		for (int32 K = 0; K < Flow.Num(); K++) { const FVector2D P = At(K); if (FMath::Sqrt(P.X * P.X + FMath::Square(P.Y + 1.5f)) < 2.5f && Walkable(P.X, P.Y)) { Flow[K] = 0; Q.Add(K); } }
+		// Backwards from the pad: a cell is one further away than a neighbour it can step to.
+		for (int32 Hd = 0; Hd < Q.Num(); Hd++)
+		{
+			const int32 K = Q[Hd], I = K % FNX, J = K / FNX;
+			const FVector2D B = At(K);
+			for (const auto& D : NB)
+			{
+				const int32 A = I + D[0], Bj = J + D[1];
+				if (A < 0 || Bj < 0 || A >= FNX || Bj >= FNY) continue;
+				const int32 N = Bj * FNX + A;
+				if (Flow[N] != TNumericLimits<float>::Max()) continue;
+				const FVector2D P = At(N);
+				if (!ClearPath(P.X, P.Y, B.X, B.Y, 0.06f)) continue;
+				Flow[N] = Flow[K] + 1; Q.Add(N);
+			}
+		}
+		return Flow;
+	}
+
+	bool HomeFlow(float X, float Y, FVector2D& Dir)
+	{
+		if (!bActive) return false;
+		const TArray<float>& F = FlowField();
+		const int32 I = FMath::RoundToInt((X - FX0) / FS), J = FMath::RoundToInt((Y - FY0) / FS);
+		if (I < 0 || J < 0 || I >= FNX || J >= FNY) return false;
+		float Bd = TNumericLimits<float>::Max(); bool bAny = false;
+		for (const auto& D : NB)
+		{
+			const int32 A = I + D[0], B = J + D[1];
+			if (A < 0 || B < 0 || A >= FNX || B >= FNY) continue;
+			const float Dist = F[B * FNX + A] + (D[0] && D[1] ? 0.4f : 0.f), Cx = FX0 + A * FS, Cy = FY0 + B * FS;
+			if (Dist < Bd && ClearPath(X, Y, Cx, Cy, 0.06f)) { Bd = Dist; Dir = FVector2D(Cx - X, Cy - Y); bAny = true; }
+		}
+		if (!bAny) return false;
+		Dir = Dir.GetSafeNormal();
+		return true;
+	}
+
 	TArray<FVector2D> Route(float X, float Y, bool bHigh)
 	{
 		TArray<FVector2D> Pts;

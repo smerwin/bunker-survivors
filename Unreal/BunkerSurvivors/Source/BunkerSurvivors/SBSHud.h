@@ -93,6 +93,8 @@ private:
 	TArray<double> SegmentLostAt;
 	float BcLastHp = 0; double BcHitAt = -10;     // battlecruiser hull bar: flashes when the ship is hit
 	bool bArmouryOpen = true;
+	bool bShopPeek = false;             // portrait: the full-screen shop folded into a bar so the armoury can be used
+	int32 ShopPeekWave = -1;
 	bool bHyperion = false;                      // the Hyperion panel is open over the start screen
 	TSharedPtr<SWidget> SquadCard;
 

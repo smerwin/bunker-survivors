@@ -1140,7 +1140,7 @@ TSharedRef<SWidget> SBSHud::BuildShop()
 		Rows->AddSlot().AutoHeight().Padding(0, 3)[ SNew(SBox).Visibility_Lambda([OfferVis, i]() { return OfferVis(i, true); })[ MakeOffer(i, true) ] ];
 	}
 
-	auto Header = SNew(SBSPaint).Size(TAttribute<FVector2D>::CreateLambda([this]() { return FVector2D(Portrait() ? FMath::Min(440.f, (float)LocalSize.X - 44) : 420.f, 64); }))
+	auto Header = [this]() { return SNew(SBSPaint).Size(TAttribute<FVector2D>::CreateLambda([this]() { return FVector2D(Portrait() ? FMath::Min(440.f, (float)LocalSize.X - 44) : 420.f, 64); }))
 		.Paint([this](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
 	{
 		ABSGame* Gm = Game(); if (!Gm) return L;
@@ -1151,65 +1151,113 @@ TSharedRef<SWidget> SBSHud::BuildShop()
 		if (Gm->Shop.Interest) B += FString::Printf(TEXT("   +%d INTEREST"), Gm->Shop.Interest);
 		D::Text(Out, L, G, B, D::Label(9), FVector2f(S.X * 0.5f, 46), C::Amber, 0.5f);
 		return L + 2;
-	});
+	}); };
 
-	auto Reroll = PaintedButton(FVector2D(160, 44), [this](const FGeometry& G, FSlateWindowElementList& Out, int32 L, bool bHover, bool bPress)
+	auto Reroll = [this](float W)
 	{
-		ABSGame* Gm = Game(); if (!Gm) return;
-		const int32 Cost = Gm->RerollCost();
-		const FVector2f S(160, 42), P(0, bPress ? 1.f : 0.f);
-		D::RFill(Out, L, G, P, S, 12, bHover ? C::GlassHi : C::A(C::Glass, 0.6f));
-		D::RLine(Out, L + 1, G, P, S, 12, C::A(C::Cyan, bHover ? 0.9f : 0.45f));
-		const FString T = Cost ? FString::Printf(TEXT("REROLL  %d"), Cost) : FString(TEXT("FREE REROLL"));
-		D::Text(Out, L + 2, G, T, D::Label(12), FVector2f(S.X * 0.5f, P.Y + 13), Gm->Minerals < Cost ? C::Red : C::Ink, 0.5f);
-	}, [this]() { if (ABSGame* Gm = Game()) Gm->Reroll(); });
+		return PaintedButton(FVector2D(W, 44), [this, W](const FGeometry& G, FSlateWindowElementList& Out, int32 L, bool bHover, bool bPress)
+		{
+			ABSGame* Gm = Game(); if (!Gm) return;
+			const int32 Cost = Gm->RerollCost();
+			const FVector2f S(W, 42), P(0, bPress ? 1.f : 0.f);
+			D::RFill(Out, L, G, P, S, 12, bHover ? C::GlassHi : C::A(C::Glass, 0.6f));
+			D::RLine(Out, L + 1, G, P, S, 12, C::A(C::Cyan, bHover ? 0.9f : 0.45f));
+			const FString T = Cost ? FString::Printf(TEXT("REROLL  %d"), Cost) : FString(TEXT("FREE REROLL"));
+			D::Text(Out, L + 2, G, T, D::Label(12), FVector2f(S.X * 0.5f, P.Y + 13), Gm->Minerals < Cost ? C::Red : C::Ink, 0.5f);
+		}, [this]() { if (ABSGame* Gm = Game()) Gm->Reroll(); });
+	};
+	auto NextWave = [this](float W) { return MakeButton(TEXT("NEXT WAVE"), true, [this]() { if (ABSGame* Gm = Game()) Gm->CloseShop(); }, W); };
+	auto Peek = [this](const TCHAR* Label, float W) { return MakeButton(Label, false, [this]() { bShopPeek = !bShopPeek; }, W); };
 
-	auto Hint = SNew(SBSPaint).Size(FVector2D(330, 16)).Paint([](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
+	auto Hint = [](){ return SNew(SBSPaint).Size(FVector2D(330, 16)).Paint([](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
 	{
 		D::Text(Out, L, G, TEXT("Troops, tanks, SCVs and turrets stay in the armoury."), D::Body(9), FVector2f(G.GetLocalSize().X * 0.5f, 2), C::Muted, 0.5f);
 		return L + 2;
-	});
-
-	auto Panel = SNew(SOverlay)
-		+ SOverlay::Slot()[ SNew(SBSPaint).Paint([](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
+	}); };
+	auto Backdrop = [](float Radius, float Alpha)
+	{
+		return SNew(SBSPaint).Paint([Radius, Alpha](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
 		{
 			const FVector2f S = FVector2f(G.GetLocalSize());
-			D::RFill(Out, L, G, FVector2f(0, 0), S, 18, C::A(C::Dark, 0.92f));
-			D::RLine(Out, L + 1, G, FVector2f(0, 0), S, 18, C::Hair);
+			if (Radius > 0) D::RFill(Out, L, G, FVector2f(0, 0), S, Radius, C::A(C::Dark, Alpha)); else D::Rect(Out, L, G, FVector2f(0, 0), S, C::A(C::Dark, Alpha));
+			if (Radius > 0) D::RLine(Out, L + 1, G, FVector2f(0, 0), S, Radius, C::Hair);
 			D::Rect(Out, L + 1, G, FVector2f(S.X * 0.5f - 24, 0), FVector2f(48, 2), C::Cyan);
 			return L + 2;
-		}) ]
+		});
+	};
+
+	// Landscape: a panel under the command bar; only the panel takes the pointer, so the armoury stays usable.
+	auto Panel = SNew(SOverlay)
+		+ SOverlay::Slot()[ Backdrop(18, 0.92f) ]
 		+ SOverlay::Slot().Padding(12, 14, 12, 12)
 		[
 			SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[ Header ]
-			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 6)
-			[
-				SNew(SBox).Visibility_Lambda([this]() { return Portrait() ? EVisibility::Collapsed : EVisibility::Visible; })[ Cards ]
-			]
-			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 4)
-			[
-				SNew(SBox).Visibility_Lambda([this]() { return Portrait() ? EVisibility::Visible : EVisibility::Collapsed; })[ Rows ]
-			]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[ Header() ]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 6)[ Cards ]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 10, 0, 0)
 			[
 				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().AutoWidth().Padding(5, 0)[ Reroll ]
-				+ SHorizontalBox::Slot().AutoWidth().Padding(5, 0)[ MakeButton(TEXT("NEXT WAVE"), true, [this]() { if (ABSGame* Gm = Game()) Gm->CloseShop(); }, 160) ]
+				+ SHorizontalBox::Slot().AutoWidth().Padding(5, 0)[ Reroll(160) ]
+				+ SHorizontalBox::Slot().AutoWidth().Padding(5, 0)[ NextWave(160) ]
 			]
-			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 8, 0, 0)[ Hint ]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 8, 0, 0)[ Hint() ]
 		];
 
-	// Only the panel takes the pointer: the armoury stays usable while shopping.
+	// Portrait (phones): the whole screen, the offers scrolling between the header (with the minerals, as the command bar
+	// is covered) and the buttons. ARMOURY folds it into a bar under the bunker card.
+	auto Minerals = SNew(SBSPaint).Size(FVector2D(300, 18)).Paint([this](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
+	{
+		ABSGame* Gm = Game(); if (!Gm) return L;
+		D::Text(Out, L, G, FString::Printf(TEXT("%d MINERALS"), FMath::FloorToInt(Gm->Minerals)), D::Label(11), FVector2f(G.GetLocalSize().X * 0.5f, 1), C::Cyan, 0.5f);
+		return L + 1;
+	});
+	auto Full = SNew(SOverlay)
+		+ SOverlay::Slot()[ Backdrop(0, 1.f) ]
+		+ SOverlay::Slot().Padding(12, 18, 12, 14)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[ Header() ]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 0, 0, 8)[ Minerals ]
+			+ SVerticalBox::Slot().FillHeight(1)[ SNew(SScrollBox).Orientation(Orient_Vertical).ScrollBarVisibility(EVisibility::Collapsed) + SScrollBox::Slot().HAlign(HAlign_Center)[ Rows ] ]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 10, 0, 0)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[ Peek(TEXT("ARMOURY"), 100) ]
+				+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[ Reroll(120) ]
+				+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[ NextWave(120) ]
+			]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 8, 0, 0)[ Hint() ]
+		];
+	auto Bar = SNew(SOverlay)
+		+ SOverlay::Slot()[ Backdrop(14, 0.92f) ]
+		+ SOverlay::Slot().Padding(8)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[ Peek(TEXT("SHOP"), 150) ]
+			+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[ NextWave(170) ]
+		];
+
+	auto Landscape = [this, Open]() { return Open() && !Portrait() ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed; };
+	auto PortraitFull = [this, Open]()
+	{
+		if (!Open()) return EVisibility::Collapsed;
+		if (ABSGame* Gm = Game()) if (Gm->Shop.Wave != ShopPeekWave) { ShopPeekWave = Gm->Shop.Wave; bShopPeek = false; }   // each shop opens unfolded
+		return Portrait() && !bShopPeek ? EVisibility::Visible : EVisibility::Collapsed;
+	};
+	auto PortraitBar = [this, Open]() { return Open() && Portrait() && bShopPeek ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed; };
 	return SNew(SOverlay)
-		.Visibility_Lambda([Open]() { return Open() ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed; })
-		+ SOverlay::Slot()[ SNew(SBSPaint).Visibility(EVisibility::HitTestInvisible).Paint([](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
-		{
-			D::Rect(Out, L, G, FVector2f(0, 0), FVector2f(G.GetLocalSize()), C::A(FLinearColor::Black, 0.3f));
-			return L + 1;
-		}) ]
-		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Top).Padding(TAttribute<FMargin>::CreateLambda([this]() { return FMargin(0, Portrait() ? 150.f : 70.f, 0, 0); }))
-		[ Panel ];
+		+ SOverlay::Slot()
+		[
+			SNew(SOverlay).Visibility_Lambda(Landscape)
+			+ SOverlay::Slot()[ SNew(SBSPaint).Visibility(EVisibility::HitTestInvisible).Paint([](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
+			{
+				D::Rect(Out, L, G, FVector2f(0, 0), FVector2f(G.GetLocalSize()), C::A(FLinearColor::Black, 0.3f));
+				return L + 1;
+			}) ]
+			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Top).Padding(0, 70, 0, 0)[ Panel ]
+		]
+		+ SOverlay::Slot()[ SNew(SBox).Visibility_Lambda(PortraitFull)[ Full ] ]
+		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Top).Padding(0, 150, 0, 0)[ SNew(SBox).Visibility_Lambda(PortraitBar)[ Bar ] ];
 }
 
 // A Hyperion perk: icon, name, what it does, level pips, vespene cost.
@@ -1537,7 +1585,7 @@ int32 SBSHud::PaintWorld(const FGeometry& G, FSlateWindowElementList& Out, int32
 	TMap<int32, int32> Buckets;
 	for (const TSharedPtr<FBSEnemy>& E : Gm->Enemies)
 	{
-		if (E->Def->bTumor) continue;                 // creep tumors stay put: not a threat to point at
+		if (E->Def->bTumor || E->Def->bAmbient) continue;   // creep tumors stay put, ambient overlords never attack: not threats to point at
 		FVector2D P;
 		if (WorldToLocal(BSSpace::ToWorld(E->X, E->Y, 0), P) && P.X >= 0 && P.Y >= 0 && P.X <= S.X && P.Y <= S.Y) continue;
 		const FVector2f Rp = ToRadar(E->X, E->Y) - Rc;
