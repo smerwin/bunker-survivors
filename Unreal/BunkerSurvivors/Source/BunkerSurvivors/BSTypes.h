@@ -38,7 +38,7 @@ struct FBSZergDef
 	bool bWatcher = false, bFront = false, bAmbient = false, bUncounted = false;
 	// Overseer (BSOverseers): hunts cloaked ghosts and reveals them (and cloaked wraiths) within BSOverseers::Detect.
 	bool bDetector = false;
-	// Finale bosses: "kerrigan" (Leaping Strike, Apocalypse) or "leviathan" (bombards, spawns mutalisks). Bosses
+	// Finale bosses: "kerrigan" (Leaping Strike, Apocalypse and the rest of her kit) or "leviathan" (bombards, spawns mutalisks). Bosses
 	// keep their own hit points (no late-wave toughening) and always spawn, whatever the alive cap.
 	FString Boss;
 	// Kerrigan: nothing aims at her or hurts her (you hold on until the Hyperion comes), and she makes for the bunker.
@@ -283,6 +283,21 @@ namespace BSDefs
 	constexpr float LeapCd = 8, LeapMin = 3, LeapMax = 9, LeapDur = 0.7f, LeapDmg = 90, LeapRadius = 1.8f;           // Leaping Strike onto a defender out of reach
 	constexpr float ApocCd = 13, ApocRange = 9, ApocDelay = 1.2f, ApocDmg = 70, ApocRadius = 2;                      // a psionic blast on the thickest knot of defenders
 	constexpr float BroodCd = 15; constexpr int32 BroodCount = 3;                                                    // the leviathan spawns mutalisks
+	// The rest of a maxed-out Heart of the Swarm kit (ABSGame::KerriganKit). Her swings use every attack she has and sweep
+	// the wings (cleave); every FuryEvery-th swing sends her into a Fury (half again the attack speed for FuryDur s). Kinetic Blast
+	// hits the biggest machine in reach, Crushing Grip and the Immobilization Wave crush defenders and pin them (no firing
+	// for the stun s), Chain Lightning arcs through troops, Wild Mutation halves the damage the zerg round her take for
+	// MutationDur s, and she spawns banelings.
+	constexpr float KineticCd = 9, KineticRange = 9, KineticDmg = 160;
+	constexpr float GripCd = 14, GripRange = 7, GripRadius = 2.4f, GripDmg = 50, GripStun = 2.5f;
+	constexpr float ChainCd = 8, ChainRange = 8, ChainHop = 4, ChainDmg = 45; constexpr int32 ChainJumps = 5;
+	constexpr float WaveCd = 22, WaveRadius = 5, WaveDmg = 60, WaveStun = 2; constexpr int32 WaveMin = 4;
+	constexpr float MutationCd = 20, MutationRadius = 9, MutationDur = 8; constexpr int32 MutationMin = 4;
+	constexpr float BanesCd = 16; constexpr int32 BanesCount = 6;
+	constexpr float FuryDur = 3; constexpr int32 FuryEvery = 8;
+	// Corpses lie for up to CorpseHold s (their death sequence, at least 3 s), sinking away over the last CorpseSink;
+	// past CorpseCap of them the oldest go early.
+	constexpr float CorpseHold = 7, CorpseSink = 1.2f; constexpr int32 CorpseCap = 120;
 }
 
 // Sound keys -> exported sound files (S_<key>_<n> in /Game/SC2/Sounds).

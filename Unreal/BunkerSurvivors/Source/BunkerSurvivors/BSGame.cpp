@@ -879,7 +879,7 @@ void ABSGame::UpdateSquad(float Dt)
 		}
 		// Holding position: fire at whatever comes into (unboosted) range.
 		M.Cd -= Dt * (bStim ? 1.5f : 1.f);
-		if (M.Cd <= 0)
+		if (M.Cd <= 0 && M.StunUntil <= Time)                               // pinned by Kerrigan: no firing
 		{
 			TSharedPtr<FBSEnemy> Target;
 			if (TSharedPtr<FBSEnemy> F = Focus.Pin())
@@ -1679,7 +1679,7 @@ void ABSGame::UpdateMechs(float Dt)
 		M.CdG -= Dt; M.CdA -= Dt;
 		for (const bool bAir : { false, true })
 		{
-			if ((bAir ? M.CdA : M.CdG) > 0) continue;
+			if (M.StunUntil > Time || (bAir ? M.CdA : M.CdG) > 0) continue;   // pinned by Kerrigan: no firing
 			const float Range = (bAir ? D->ARange : D->GRange) + (BSTerrain::OnHigh(M.X, M.Y) ? 1.f : 0.f);   // the high ground's reach
 			auto Pred = [bAir](const FBSEnemy& E) { return E.Def->bFlying == bAir; };
 			TSharedPtr<FBSEnemy> Target;
@@ -1845,8 +1845,8 @@ bool ABSGame::CallBattlecruiser()
 	// down: it overlooks both arms and the stem without hiding the lane.
 	Bc->X = Bc->Sx = 0; Bc->Y = bLane ? -24.f : -34.f; Bc->Z = 10; Bc->Sy = bLane ? 13.f : 0.f; Bc->Sz = bLane ? 6.5f : 8.f;
 	Bc->Actor = AcquireModel(TEXT("battlecruiser"));
-	// The hull's hardpoints (Ref_Weapon bones; the importer turns "Ref_Weapon 10" into "Ref_Weapon_10").
-	for (const TCHAR* Bone : { TEXT("Ref_Weapon_10"), TEXT("Ref_Weapon_13"), TEXT("Ref_Weapon_12"), TEXT("Ref_Weapon_15"), TEXT("Ref_Weapon_24"), TEXT("Ref_Weapon_25") })
+	// The hull's hardpoints (Ref_Weapon bones; the importer turns "Ref_Weapon 10" into "Ref_Weapon-10").
+	for (const TCHAR* Bone : { TEXT("Ref_Weapon-10"), TEXT("Ref_Weapon-13"), TEXT("Ref_Weapon-12"), TEXT("Ref_Weapon-15"), TEXT("Ref_Weapon-24"), TEXT("Ref_Weapon-25") })
 	{
 		FBSBcTurret Tu; Tu.Bone = Bone;
 		Bc->Turrets.Add(Tu);
@@ -2699,7 +2699,9 @@ bool ABSGame::UpdateKerrigan(const TSharedPtr<FBSEnemy>& EP, const FBSTarget& T,
 		return true;
 	}
 	if (E.CastUntil > Time) return true;
+	if (E.Anim == TEXT("spell")) E.Anim.Empty();                  // cast over: back to walking or fighting
 	const float Reach = FMath::Sqrt(Dist2(E.X, E.Y, T.X, T.Y)) - T.Radius - E.Radius;
+	if (KerriganKit(E, Dt)) return true;
 	if (E.ApocCd <= 0 && Reach <= BSDefs::ApocRange)
 	{
 		// The defender with the most others round it.
@@ -2713,9 +2715,8 @@ bool ABSGame::UpdateKerrigan(const TSharedPtr<FBSEnemy>& EP, const FBSTarget& T,
 		}
 		if (Knot)
 		{
-			E.ApocCd = BSDefs::ApocCd; E.CastUntil = Time + BSDefs::ApocDelay; E.Anim = TEXT("spell");
-			if (E.Actor) E.Actor->Play(TEXT("spell"), false);
-			E.Yaw = FMath::Atan2(Knot->Y - E.Y, Knot->X - E.X);
+			E.ApocCd = BSDefs::ApocCd;
+			KerriganCast(E, TEXT("spell a"), BSDefs::ApocDelay, nullptr, Knot);
 			E.Blast = FVector2D(Knot->X, Knot->Y); E.BlastAt = Time + BSDefs::ApocDelay;
 			E.BlastFx = PlayFx(TEXT("apocalypseChannel"), FVector(Knot->X, Knot->Y, BSTerrain::Height(Knot->X, Knot->Y)), 0, 1.2f);
 			PlaySound(TEXT("kerriganPsi"), 0.8f);
@@ -2739,6 +2740,181 @@ bool ABSGame::UpdateKerrigan(const TSharedPtr<FBSEnemy>& EP, const FBSTarget& T,
 			return true;
 		}
 		E.LeapCd = 1;
+	}
+	return false;
+}
+
+// Kerrigan casts: face the target, play that spell's sequence over Dur s and name it.
+void ABSGame::KerriganCast(FBSEnemy& E, const FString& Anim, float Dur, const TCHAR* Label, const FBSTarget* At)
+{
+	if (At) E.Yaw = FMath::Atan2(At->Y - E.Y, At->X - E.X);
+	E.CastUntil = Time + Dur; E.Anim = TEXT("spell");
+	if (E.Actor) { const float Len = E.Actor->Play(Anim, false); if (Len > 0) E.Actor->SetRate(Len / Dur); }
+	if (Label) Floater(E.X, E.Y, E.Z + 3, Label, FLinearColor(0.75f, 0.55f, 1.f));
+}
+
+// Each swing: one of her attacks at random (wings and claws), and every few a Fury.
+void ABSGame::KerriganSwing(FBSEnemy& E, float Cd)
+{
+	if (E.Actor) { const float Len = E.Actor->PlayRandomWithPrefix(TEXT("attack"), false); if (Len > 0) E.Actor->SetRate(Len / Cd); }
+	E.Anim = TEXT("attack");
+	if (++E.Swings % BSDefs::FuryEvery == 0)
+	{
+		E.FuryUntil = Time + BSDefs::FuryDur;
+		PlayFx(TEXT("kerriganFury"), FVector(E.X, E.Y, E.Z), E.Yaw, 1.3f);
+		Floater(E.X, E.Y, E.Z + 3, TEXT("FURY"), FLinearColor(1.f, 0.48f, 0.85f));
+	}
+}
+
+// The defender (not a building) in reach of her with the most others round it, if at least Min.
+bool ABSGame::DensestDefender(const FBSEnemy& E, float Range, float Radius, int32 Min, FBSTarget& Out) const
+{
+	int32 BestN = 0;
+	for (const FBSTarget& O : Targets)
+	{
+		if (O.bStructure || FMath::Sqrt(Dist2(E.X, E.Y, O.X, O.Y)) - O.Radius > Range) continue;
+		int32 N = 0;
+		for (const FBSTarget& Q : Targets) N += !Q.bStructure && Dist2(Q.X, Q.Y, O.X, O.Y) < Radius * Radius;
+		if (N > BestN) { BestN = N; Out = O; }
+	}
+	return BestN >= Min;
+}
+
+// Pinned by Kerrigan: troopers, tanks, mechs, reapers and ghosts hold their fire for S s.
+void ABSGame::PinDefender(const FBSTarget& T, float S)
+{
+	const float Until = Time + S;
+	if (TSharedPtr<FBSTank> K = T.TankRef.Pin()) K->StunUntil = FMath::Max(K->StunUntil, Until);
+	if (TSharedPtr<FBSTrooper> M = T.TrooperRef.Pin()) M->StunUntil = FMath::Max(M->StunUntil, Until);
+	if (TSharedPtr<FBSMech> M = T.MechRef.Pin()) M->StunUntil = FMath::Max(M->StunUntil, Until);
+	if (TSharedPtr<FBSSpecial> O = T.SpecialRef.Pin()) O->StunUntil = FMath::Max(O->StunUntil, Until);
+}
+
+// The rest of her Heart of the Swarm kit (see BSDefs). Returns true when she casts something.
+bool ABSGame::KerriganKit(FBSEnemy& E, float Dt)
+{
+	const float Gz = BSTerrain::Height(E.X, E.Y);
+	E.KineticCd -= Dt; E.GripCd -= Dt; E.ChainCd -= Dt; E.WaveCd -= Dt; E.MutateCd -= Dt; E.BanesCd -= Dt;
+	const TArray<FBSTarget> Tgs = Targets;      // (what she kills drops out of Targets)
+	// Immobilization Wave: the troops and machines close round her are struck and frozen (buildings are spared).
+	if (E.WaveCd <= 0)
+	{
+		TArray<FBSTarget> Close;
+		for (const FBSTarget& O : Tgs) if (!O.bStructure && FMath::Sqrt(Dist2(E.X, E.Y, O.X, O.Y)) - O.Radius <= BSDefs::WaveRadius) Close.Add(O);
+		if (Close.Num() >= BSDefs::WaveMin)
+		{
+			E.WaveCd = BSDefs::WaveCd;
+			KerriganCast(E, TEXT("spell b"), 1.f, TEXT("IMMOBILIZATION WAVE"), nullptr);
+			PlayFx(TEXT("immobilizationWave"), FVector(E.X, E.Y, Gz), 0, 1.4f);
+			for (const FBSTarget& O : Close)
+			{
+				DamageDefender(O, BSDefs::WaveDmg); PinDefender(O, BSDefs::WaveStun);
+				PlayFx(TEXT("immobilizationImpact"), FVector(O.X, O.Y, BSTerrain::Height(O.X, O.Y)));
+			}
+			PlaySound(TEXT("kerriganPsi"), 0.8f);
+			Shake = FMath::Min(1.f, Shake + 0.4f);
+			return true;
+		}
+		E.WaveCd = 1;
+	}
+	// Crushing Grip on the thickest knot of troops.
+	if (E.GripCd <= 0)
+	{
+		FBSTarget Knot;
+		if (DensestDefender(E, BSDefs::GripRange, BSDefs::GripRadius, 2, Knot))
+		{
+			E.GripCd = BSDefs::GripCd;
+			KerriganCast(E, TEXT("spell d"), 0.9f, TEXT("CRUSHING GRIP"), &Knot);
+			PlayFx(TEXT("crushingGrip"), FVector(Knot.X, Knot.Y, BSTerrain::Height(Knot.X, Knot.Y)), 0, 1.6f);
+			for (const FBSTarget& O : Tgs)
+				if (!O.bStructure && FMath::Sqrt(Dist2(Knot.X, Knot.Y, O.X, O.Y)) - O.Radius <= BSDefs::GripRadius) { DamageDefender(O, BSDefs::GripDmg); PinDefender(O, BSDefs::GripStun); }
+			PlaySound(TEXT("crushingGrip"), 0.8f);
+			return true;
+		}
+		E.GripCd = 1;
+	}
+	// Kinetic Blast at the biggest machine in reach.
+	if (E.KineticCd <= 0)
+	{
+		const FBSTarget* Big = nullptr; float BigHp = 0;
+		for (const FBSTarget& O : Tgs)
+		{
+			if ((O.Kind != FBSTarget::Tank && O.Kind != FBSTarget::Mech) || FMath::Sqrt(Dist2(E.X, E.Y, O.X, O.Y)) - O.Radius > BSDefs::KineticRange) continue;
+			const TSharedPtr<FBSTank> K = O.TankRef.Pin(); const TSharedPtr<FBSMech> M = O.MechRef.Pin();
+			const float Mhp = K ? K->MaxHp : M ? M->MaxHp : 0.f;
+			if (!Big || Mhp > BigHp) { Big = &O; BigHp = Mhp; }
+		}
+		if (Big)
+		{
+			E.KineticCd = BSDefs::KineticCd;
+			KerriganCast(E, TEXT("spell c"), 0.8f, TEXT("KINETIC BLAST"), Big);
+			const float Tz = BSTerrain::Height(Big->X, Big->Y) + 1;
+			AddFx(EBSFxKind::Tracer, FVector(E.X, E.Y, Gz + 2), FVector(Big->X, Big->Y, Tz), 0.35f, 0.12f, FLinearColor(0.75f, 0.45f, 1.f), 22);
+			PlayFx(TEXT("kineticImpact"), FVector(Big->X, Big->Y, Tz), E.Yaw + PI, 1.4f);
+			DamageDefender(*Big, BSDefs::KineticDmg);
+			PlaySound(TEXT("kineticBlast"), 0.8f); PlaySound(TEXT("kineticHit"), 0.7f);
+			return true;
+		}
+		E.KineticCd = 1;
+	}
+	// Chain Lightning: arcs from troop to troop.
+	if (E.ChainCd <= 0)
+	{
+		TArray<const FBSTarget*> Pool;
+		for (const FBSTarget& O : Tgs) if (!O.bStructure && O.Kind != FBSTarget::Tank && O.Kind != FBSTarget::Mech) Pool.Add(&O);
+		const FBSTarget* Cur = nullptr; float CurD = BSDefs::ChainRange;
+		for (const FBSTarget* O : Pool) { const float Dd = FMath::Sqrt(Dist2(E.X, E.Y, O->X, O->Y)); if (Dd < CurD) { CurD = Dd; Cur = O; } }
+		if (Cur)
+		{
+			E.ChainCd = BSDefs::ChainCd;
+			KerriganCast(E, TEXT("spell e"), 0.7f, TEXT("CHAIN LIGHTNING"), Cur);
+			FVector From(E.X, E.Y, Gz + 2);
+			TArray<const FBSTarget*> Struck;
+			for (int32 j = 0; j < BSDefs::ChainJumps && Cur; j++)
+			{
+				Struck.Add(Cur);
+				const FVector To(Cur->X, Cur->Y, BSTerrain::Height(Cur->X, Cur->Y) + 0.8f);
+				AddFx(EBSFxKind::Tracer, From, To, 0.3f, 0.05f, FLinearColor(0.55f, 0.65f, 1.f), 22);
+				DamageDefender(*Cur, BSDefs::ChainDmg);
+				From = To;
+				const FBSTarget* Next = nullptr; float NextD = BSDefs::ChainHop;
+				for (const FBSTarget* O : Pool) if (!Struck.Contains(O)) { const float Dd = FMath::Sqrt(Dist2(Cur->X, Cur->Y, O->X, O->Y)); if (Dd < NextD) { NextD = Dd; Next = O; } }
+				Cur = Next;
+			}
+			PlaySound(TEXT("kerriganChain"), 0.7f);
+			return true;
+		}
+		E.ChainCd = 1;
+	}
+	// Wild Mutation: the zerg round her shrug off half of everything.
+	if (E.MutateCd <= 0)
+	{
+		TArray<TSharedPtr<FBSEnemy>> Kin;
+		for (const TSharedPtr<FBSEnemy>& O : Enemies) if (O.Get() != &E && O->Alive() && Dist2(E.X, E.Y, O->X, O->Y) < BSDefs::MutationRadius * BSDefs::MutationRadius) Kin.Add(O);
+		if (Kin.Num() >= BSDefs::MutationMin)
+		{
+			E.MutateCd = BSDefs::MutationCd;
+			KerriganCast(E, TEXT("spell"), 0.8f, TEXT("WILD MUTATION"), nullptr);
+			PlayFx(TEXT("mutationImpact"), FVector(E.X, E.Y, Gz), 0, 1.5f);
+			for (int32 i = 0; i < Kin.Num(); i++) { Kin[i]->MutatedUntil = Time + BSDefs::MutationDur; if (i < 12) PlayFx(TEXT("mutationBuff"), FVector(Kin[i]->X, Kin[i]->Y, Kin[i]->Z)); }
+			PlaySound(TEXT("finaleRoar"), 0.5f, 2.f);
+			return true;
+		}
+		E.MutateCd = 1;
+	}
+	// Spawn Banelings round her.
+	if (E.BanesCd <= 0)
+	{
+		E.BanesCd = BSDefs::BanesCd;
+		KerriganCast(E, TEXT("spell f"), 0.9f, TEXT("SPAWN BANELINGS"), nullptr);
+		for (int32 i = 0; i < BSDefs::BanesCount; i++)
+		{
+			const float A = i * 2 * PI / BSDefs::BanesCount;
+			const FVector2D At(E.X + FMath::Cos(A) * 1.4f, E.Y + FMath::Sin(A) * 1.4f);
+			SpawnEnemy(TEXT("baneling"), 0, &At);
+		}
+		PlayFx(TEXT("broodSpellImpact"), FVector(E.X, E.Y, Gz), 0, 1.2f);
+		return true;
 	}
 	return false;
 }
@@ -2792,7 +2968,11 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 	TSharedPtr<FBSEnemy> E = MakeShared<FBSEnemy>();
 	E->Id = NextId++; E->Def = D; E->X = X; E->Y = Y; E->Z = D->bFlying ? D->Fly : BSTerrain::Height(X, Y); E->Yaw = FMath::Atan2(-Y, -X);
 	E->Hp = E->MaxHp = D->Boss.IsEmpty() ? D->Hp * (1 + BSDefs::WaveHp * (bHard ? 1.25f : 1.f) * FMath::Max(0, Wave - BSDefs::WaveHpFrom)) : D->Hp;   // late waves get tougher
-	if (!D->Boss.IsEmpty()) { E->LeapCd = 3; E->ApocCd = 6; E->BroodCd = 8; }
+	if (!D->Boss.IsEmpty())
+	{
+		E->LeapCd = 3; E->ApocCd = 6; E->BroodCd = 8; E->Swings = 0;
+		E->KineticCd = 4; E->GripCd = 6; E->ChainCd = 3; E->WaveCd = 10; E->MutateCd = 8; E->BanesCd = 12;
+	}
 	E->Cd = Rnd(0, D->Cd); E->Radius = D->Radius; E->Life = D->Life;
 	// Lane terrain: ground zerg follow the Y; some ranged ones climb a ramp to a ledge over the bunker.
 	if (!D->bFlying && !At && !D->bHops && !D->bNydus)
@@ -2968,7 +3148,7 @@ void ABSGame::UpdateReapers(float Dt)
 			if (Dd < Near) { Near = Dd; NearE = E; }
 			if (Dd < Td && FMath::Sqrt(E->X * E->X + E->Y * E->Y) < BSDefs::ReaperHunt) { Td = Dd; Tg = E; }
 		}
-		if (Tg && R.Cd <= 0 && Td - Tg->Radius <= BSDefs::ReaperRange) { ReaperFire(R, Tg); R.Cd = BSDefs::ReaperCd; R.Kite = Time + 0.7f; }
+		if (Tg && R.Cd <= 0 && Td - Tg->Radius <= BSDefs::ReaperRange && R.StunUntil <= Time) { ReaperFire(R, Tg); R.Cd = BSDefs::ReaperCd; R.Kite = Time + 0.7f; }
 		if (R.Kd <= 0) R.Kd = ThrowKD8(R) ? BSDefs::Kd8Cd : 0.5f;
 		// Hurt: pull back home to heal, unless something is on top of it. Otherwise run while reloading, close to pistol
 		// range, or hold and shoot.
@@ -3122,8 +3302,8 @@ void ABSGame::UpdateGhosts(float Dt)
 		}
 		G.Cd -= Dt; G.SnipeCd -= Dt;
 		const float Z = BSTerrain::Height(G.X, G.Y), Range = BSDefs::GhostRange + (BSTerrain::OnHigh(G.X, G.Y) ? 1.f : 0.f);
-		bool bBusy = false;
-		if (G.bChannel)
+		bool bBusy = G.StunUntil > Time;                                   // pinned by Kerrigan
+		if (G.bChannel && !bBusy)
 		{
 			const TSharedPtr<FBSEnemy> E = G.Channel.Pin();
 			if (!E || !E->Alive() || FMath::Sqrt(Dist2(G.X, G.Y, E->X, E->Y)) > BSDefs::SnipeRange + 2) { G.bChannel = false; G.Channel.Reset(); }
@@ -3762,6 +3942,7 @@ void ABSGame::PlayEnemyAnim(FBSEnemy& E, const FString& Kind)
 	}
 	else if (Kind == TEXT("attack"))
 	{
+		if (D->Boss == TEXT("kerrigan")) return;                            // every swing picks its own (KerriganSwing)
 		const float Len = E.Actor->Play(D->AttackAnims, true);
 		E.Actor->SetRate(Len > 0 ? Len / EnemyCd(E) : 1);
 	}
@@ -3930,6 +4111,7 @@ void ABSGame::HurtEnemy(const TSharedPtr<FBSEnemy>& E, float Dmg, bool bSplash)
 	// Dark swarm: ground zerg under a cloud take a quarter from shots (blasts and flame still get through).
 	if (!bSplash && !E->Def->bFlying)
 		for (const FBSSwarm& Sw : Swarms) if (Dist2(Sw.X, Sw.Y, E->X, E->Y) < Sw.R * Sw.R) { Dmg *= 0.25f; break; }
+	if (E->MutatedUntil > Time) Dmg *= 0.5f;                               // Kerrigan's Wild Mutation
 	E->Hp -= FMath::Max(0.5f, Dmg - E->Def->Armor);
 	E->Flash = 1;
 	if (E->Hp <= 0) KillEnemy(E, false);
@@ -4004,7 +4186,9 @@ void ABSGame::Corpse(const FString& Key, float X, float Y, float Z, float Yaw, f
 	FBSCorpse Cp;
 	Cp.Actor = A; Cp.X = X; Cp.Y = Y; Cp.Z = FMath::Min(Z, Gz); Cp.Yaw = Yaw;
 	Cp.bSink = !Key.StartsWith(TEXT("bunker"));
-	Cp.Hold = Cp.bSink ? FMath::Clamp(FMath::Min(Len, 4.f), 2.5f, 4.f) : FMath::Max(Hold, FMath::Min(Len, 8.f));
+	// SC2's death sequences run up to ten seconds: the body falls, then lies there. Hold it most of that, then sink it away
+	// over the last CorpseSink s (a collapsed body is barely ankle-high, so any sooner and it just vanishes).
+	Cp.Hold = Cp.bSink ? FMath::Clamp(Len > 0 ? Len : BSDefs::CorpseHold, 3.f, BSDefs::CorpseHold) : FMath::Max(Hold, FMath::Min(Len, 8.f));
 	// Baneling chunks fade out in SC2 through visibility tracks we do not import; drop them right after the burst.
 	if (Key.StartsWith(TEXT("baneling"))) { Cp.Hold = 0.45f; Cp.bVanish = true; Cp.bSink = false; }
 	if (Z > 0.5f) Cp.Hold = FMath::Max(Cp.Hold, 2.f);      // flyers fall from the sky
@@ -4263,6 +4447,7 @@ void ABSGame::UpdateEnemies(float Dt)
 				E.Cd += Cd;
 				E.HitAt = Time + Cd * D->HitFrac;
 				E.HitTarget = T;
+				if (D->Boss == TEXT("kerrigan")) KerriganSwing(E, Cd);
 				if (!D->SoundAttack.IsEmpty()) PlaySound(D->SoundAttack, 0.35f, 0.15f);
 				if (!D->Spell.IsEmpty()) CastSpell(E, T);
 				else if (D->Projectile != EBSProjectile::None)
@@ -4530,6 +4715,7 @@ void ABSGame::UpdateTanks(float Dt)
 				if (K.MedT > 3) { ReleaseModel(K.Medivac); K.Medivac = nullptr; }
 			}
 			K.Cd -= Dt;
+			if (K.StunUntil > Time) continue;                               // pinned by Kerrigan
 			if (K.Cd > 0) continue;
 			const float Reach = BSDefs::TankRange + (Up.bHiSec ? BSDefs::HiSecRange : 0.f) + 2 * CardLevel(TEXT("siegerange"));
 			auto Pred = [&K](const FBSEnemy& E) { return !E.Def->bFlying && FMath::Sqrt(Dist2(K.X, K.Y, E.X, E.Y)) > BSDefs::TankMinRange; };
@@ -4906,12 +5092,19 @@ void ABSGame::UpdateVisuals(float Dt)
 		FBSCorpse& Cp = Corpses[i];
 		Cp.T += Dt;
 		if (Cp.T > Cp.Hold) { if (Cp.Actor) { Cp.Actor->Mesh->CastShadow = true; Cp.Actor->Mesh->MarkRenderStateDirty(); } ReleaseModel(Cp.Actor); Corpses.RemoveAt(i); continue; }
-		// Settle into the ground over the second half of the hold, as SC2 corpses decay.
+		// Settle into the ground over the last CorpseSink s of the hold, as SC2 corpses decay.
 		if (Cp.bSink && Cp.Actor)
 		{
-			const float K = FMath::Clamp((Cp.T / Cp.Hold - 0.45f) / 0.55f, 0.f, 1.f);
+			const float K = FMath::Clamp(1 - (Cp.Hold - Cp.T) / BSDefs::CorpseSink, 0.f, 1.f);
 			Cp.Actor->SetSim(Cp.X, Cp.Y, Cp.Z - 0.9f * K * K, Cp.Yaw);
 		}
+	}
+	// Big waves leave a field of bodies: past the cap, the oldest start their sink now.
+	for (int32 i = 0, Over = Corpses.Num() - BSDefs::CorpseCap; Over > 0 && i < Corpses.Num(); i++)
+	{
+		FBSCorpse& Cp = Corpses[i];
+		if (Cp.bSink && Cp.Hold - Cp.T > BSDefs::CorpseSink) Cp.Hold = Cp.T + BSDefs::CorpseSink;
+		Over--;                                                   // already on its way out counts too
 	}
 	for (int32 i = Floaters.Num() - 1; i >= 0; i--) { Floaters[i].T += Dt; if (Floaters[i].T > 1.3f) Floaters.RemoveAt(i); }
 

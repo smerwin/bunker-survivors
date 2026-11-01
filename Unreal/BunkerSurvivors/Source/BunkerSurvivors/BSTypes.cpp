@@ -184,12 +184,13 @@ namespace
 			D.bDetector = true; D.bUncounted = true;
 			D.Bounty = 25; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0; D.SoundDeath = TEXT("overlordDeath"); D.Height = 2;
 		}
-		// The finale (see ABSGame::StartFinale): Kerrigan casts Leaping Strike and Apocalypse, is untouchable and makes for
-		// the bunker; the leviathan bombards and spawns mutalisks.
+		// The finale (see ABSGame::StartFinale): Kerrigan casts Leaping Strike, Apocalypse and the rest of her kit, sweeps
+		// her wings through what she strikes (cleave), is untouchable and makes for the bunker; the leviathan bombards and
+		// spawns mutalisks.
 		{
 			FBSZergDef& D = Add(TEXT("kerrigan"), TEXT("Kerrigan"), TEXT("kerrigan"), TEXT("kerriganDeath"), TEXT("btn-unit-zerg-kerriganinfested"));
 			D.ImpactFx = TEXT("ultraliskImpact");
-			D.Scale = 1.3f; D.Hp = 6000; D.Armor = 3; D.Dmg = 45; D.Cd = 0.7f; D.Range = 1.2f; D.Speed = 3.4f; D.Radius = 0.9f; D.bArmored = true; D.Boss = TEXT("kerrigan"); D.bUntouchable = true; D.bPreferBunker = true;
+			D.Scale = 1.3f; D.Hp = 6000; D.Armor = 3; D.Dmg = 45; D.Cd = 0.7f; D.Range = 1.2f; D.Speed = 3.4f; D.Radius = 0.9f; D.bArmored = true; D.Cleave = 1.4f; D.Boss = TEXT("kerrigan"); D.bUntouchable = true; D.bPreferBunker = true;
 			D.Bounty = 2500; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0.4f; D.AttackAnims = { TEXT("attack"), TEXT("attack 01") };
 			D.SoundDeath = TEXT("kerriganDeath"); D.Height = 2.4f; D.DeathHold = 6;
 		}

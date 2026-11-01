@@ -39,6 +39,7 @@ struct FBSTank
 {
 	enum EState : uint8 { Incoming, Unloading, Leaving, Ready } State = Incoming;
 	float X = 0, Y = 0, Hp = BSDefs::TankHp, MaxHp = BSDefs::TankHp, Armor = BSDefs::TankArmor, Cd = 0, T = 0, MedT = 0, Flash = 0, PlagueUntil = 0;
+	float StunUntil = 0;                      // pinned by Kerrigan (no firing) until then
 	FBSShield Shield;
 	ABSModelActor* Actor = nullptr;
 	ABSModelActor* Medivac = nullptr;
@@ -66,6 +67,7 @@ struct FBSMech
 	const FBSMechDef* Def = nullptr;
 	FVector2D Slot = FVector2D::ZeroVector;
 	float X = 0, Y = 0, Yaw = PI / 2, Aim = PI / 2, Hp = 0, MaxHp = 0, CdG = 0.5f, CdA = 0.5f, Flash = 0, PlagueUntil = 0;
+	float StunUntil = 0;                      // pinned by Kerrigan (no firing) until then
 	FBSShield Shield;
 	bool bReady = false, bDead = false;
 	FString Anim;
@@ -88,6 +90,7 @@ struct FBSSpecial
 	int32 Side = 0;
 	float X = 0, Y = 0, Yaw = PI / 2, Hp = 0, MaxHp = 0, Armor = 0, Cd = 0, Kd = 0, Kite = 0, HitAt = -99, JumpUntil = 0, Flash = 0, Radius = 0.375f;
 	float SnipeCd = 3, ChannelUntil = 0, Hold = 0;
+	float StunUntil = 0;                      // pinned by Kerrigan (no firing) until then
 	TWeakPtr<FBSEnemy> Channel;
 	TArray<FVector2D> Route;
 	FString Anim;
@@ -120,6 +123,7 @@ struct FBSTrooper
 	FVector2D Spot = FVector2D::ZeroVector;
 	int32 Team = 0;                           // fire team (0 / 1): the teams take turns to bound forward
 	float RetreatUntil = 0;                   // falling back level with the bunker after heavy losses
+	float StunUntil = 0;                      // pinned by Kerrigan (no firing) until then
 	FBSFwd Fwd;                               // on the expedition to the high ground
 	FString Anim;
 	ABSModelActor* Actor = nullptr;
@@ -213,6 +217,10 @@ struct FBSEnemy
 	float LeapCd = 0, ApocCd = 0, BroodCd = 0, LeapT = -1, BlastAt = -1;
 	FVector2D LeapFrom = FVector2D::ZeroVector, LeapTo = FVector2D::ZeroVector, Blast = FVector2D::ZeroVector;
 	int32 BlastFx = 0;
+	// Kerrigan's kit (ABSGame::KerriganKit): its cooldowns, her swings so far and her Fury; any zerg: under her Wild
+	// Mutation (half damage) until MutatedUntil.
+	float KineticCd = 0, GripCd = 0, ChainCd = 0, WaveCd = 0, MutateCd = 0, BanesCd = 0, FuryUntil = 0, MutatedUntil = 0;
+	int32 Swings = 0;
 	int32 DripFx = 0;                 // creep overlord: its Generate Creep drip
 	float IrrUntil = 0;               // under a science vessel's Irradiate until then (its haze: IrrActor)
 	ABSModelActor* IrrActor = nullptr;
@@ -443,7 +451,7 @@ private:
 	void ApplyCard(const FBSCardDef& C);
 	TSharedPtr<FBSEnemy> SpawnEnemy(const FString& Type, float Ang, const FVector2D* At = nullptr);
 	void PlayEnemyAnim(FBSEnemy& E, const FString& Kind);
-	float EnemyCd(const FBSEnemy& E) const { return E.Def->Cd / (bHard ? 1.05f : 1.f); }
+	float EnemyCd(const FBSEnemy& E) const { return E.Def->Cd / (bHard ? 1.05f : 1.f) / (E.FuryUntil > Time ? 1.5f : 1.f); }
 	void BuildTargets();
 	void DamageDefender(const FBSTarget& T, float Dmg);
 	void HurtEnemy(const TSharedPtr<FBSEnemy>& E, float Dmg, bool bSplash = false);   // bSplash: blasts and flame, which dark swarm does not stop
@@ -584,6 +592,11 @@ private:
 	void DropPods(int32 N, float T0, float Every);
 	void UpdatePods(float Dt);
 	bool UpdateKerrigan(const TSharedPtr<FBSEnemy>& E, const FBSTarget& T, float Dt);   // true while she leaps or channels
+	bool KerriganKit(FBSEnemy& E, float Dt);                                            // true when she casts something
+	void KerriganCast(FBSEnemy& E, const FString& Anim, float Dur, const TCHAR* Label, const FBSTarget* At);
+	void KerriganSwing(FBSEnemy& E, float Cd);
+	bool DensestDefender(const FBSEnemy& E, float Range, float Radius, int32 Min, FBSTarget& Out) const;
+	void PinDefender(const FBSTarget& T, float S);
 	void UpdateLeviathan(const TSharedPtr<FBSEnemy>& E, float Dt);
 	void BossDown(FBSEnemy& E);
 	TArray<FBSPod> Pods;
