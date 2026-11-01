@@ -56,7 +56,7 @@ window.BS = window.BS || {};
       const hull = T().bunker.hp + 50 * BS.Meta.perk('hull');
       this.bunker = { x: 0, y: 0, yaw: Math.PI / 2, hp: hull, maxHp: hull, armor: T().bunker.armor, slots: T().bunker.slots, units: [], handle: null, dead: false, flash: 0 };
       this.tanks = []; this.scvs = []; this.banshees = []; this.squad = []; this.structures = []; this.squadDeaths = []; this.boundTeam = 0; this.boundT = 0; this.nextTeam = 0;
-      this.up = { stim: 0, weapons: 0, vehicle: 0, neosteel: 0, plating: 0, hisec: 0, medivac: 0, rails: 0 };
+      this.up = { stim: 0, weapons: 0, vehicle: 0, vplate: 0, ship: 0, splate: 0, neosteel: 0, plating: 0, hisec: 0, medivac: 0, rails: 0 };
       this.ab = { stimUntil: 0, stimCd: 0, strikeCd: 0, repairCd: 0, yamatoCd: 0 };
       this.techUnlocked = {}; this.techCd = { nuke: 0, vikings: 0, wraiths: 0, vessel: 0 };
       this.swarms = []; this.abductions = []; this.airTgs = [];      // late-game zerg: dark swarm clouds, viper pulls
@@ -78,15 +78,21 @@ window.BS = window.BS || {};
     layout() {
       if (this.mode === 'lane') {
         this.tankSlots = [[-3.4, -0.4], [3.4, -0.4], [-5.4, -2.8], [5.4, -2.8]];
+        this.tankHigh = [[-12.6, 1.2], [12.6, 1.2]];             // High Ground: two more, out on the plateaus
         this.scvIdle = [[-2.6, -2.9], [2.6, -2.9], [-4.4, -2.4], [4.4, -2.4]];
         this.tankMax = T().tank.maxLane;
         this.samSlots = [[-5.6, 1.2], [5.6, 1.2], [-3.6, -4.6]];
         this.sensorSlot = [3.6, -4.6];
         this.strikePosts = [[-3.4, 3.6], [3.4, 3.6], [-1.4, 6.4], [1.4, 6.4]];   // in view: covering both ledges and the stem
-        // High-tech walkers: goliaths and thors take the plateaus either side of the stem (up the arms' ramps, see
-        // mechRoute), clear of the lane and with the high ground's reach; the odin is too big for them and fires
-        // long-range from behind the bunker.
-        this.mechSlots = { goliath: [[-7.6, 3.2], [7.6, 3.2], [-9.4, 1.6], [9.4, 1.6]], thor: [[-9.6, -0.4], [9.6, -0.4]], odin: [[0, -10.5]] };
+        // High-tech walkers: goliaths flank the bunker and thors stand behind it; with the High Ground card they take
+        // the plateaus either side of the stem instead (up the arms' ramps, see mechRoute), clear of the lane and with
+        // the high ground's reach. The odin is too big for them and fires long-range from behind the bunker.
+        this.mechLow = { goliath: [[-3.9, 1.6], [3.9, 1.6], [-2.3, 2.3], [2.3, 2.3]], thor: [[-5.0, -5.8], [5.0, -5.8]], odin: [[0, -10.5]] };
+        this.mechHigh = { goliath: [[-7.6, 3.2], [7.6, 3.2], [-9.4, 1.6], [9.4, 1.6]], thor: [[-9.6, -0.4], [9.6, -0.4]], odin: [[0, -10.5]] };
+        this.mechSlots = this.mechLow;
+        // The reapers' beat on each plateau: along the cliff edge over the stem, up to the arm's ramp top, back along
+        // the far side.
+        this.reaperBeats = [-1, 1].map(s => [[9.4, -1.2], [8.6, 3.8], [9.8, 9.0], [12.4, 11.6], [13.2, 6.0], [12.6, -0.5]].map(([x, y]) => [s * x, y]));
         // Forward base on the plateau east of the stem (see updateExpansion): the way up, the command center's site and
         // the SCV's spot beside it, the Odin, goliaths over the arm, and three ranks of troopers on the cliff edge over the stem.
         this.fwdRoute = BS.Terrain.ledgeRoute(1);
@@ -101,12 +107,16 @@ window.BS = window.BS || {};
         this.samSlots = [[0, 4.0], [-4.0, 0], [4.0, 0]];
         this.sensorSlot = [-4.2, -4.2];
         this.strikePosts = [45, 135, 225, 315].map(a => [Math.cos(a * Math.PI / 180) * 7, Math.sin(a * Math.PI / 180) * 7]);
-        this.mechSlots = { goliath: [[0, 2.7], [2.7, 0], [-2.7, 0], [0, -2.7]], thor: [[-4.6, -3.6], [4.6, 3.6]], odin: [[-5.2, 3.2]] };
+        this.mechSlots = this.mechLow = this.mechHigh = { goliath: [[0, 2.7], [2.7, 0], [-2.7, 0], [0, -2.7]], thor: [[-4.6, -3.6], [4.6, 3.6]], odin: [[-5.2, 3.2]] };
+        this.tankHigh = [];
+        // The reapers' beat: a ring round the bunker, the two fire teams on opposite sides of it.
+        const ring = Array.from({ length: 16 }, (_, i) => [Math.cos(i * Math.PI / 8) * 7.5, Math.sin(i * Math.PI / 8) * 7.5]);
+        this.reaperBeats = [ring, ring.slice(8).concat(ring.slice(0, 8))];
         this.fwdRoute = null;                     // the arena is flat: no high ground to take
       }
       // Ranks of eight behind the bunker (the side away from the lane), stepping round the tanks, SCVs, turrets and
       // sensor tower, as deep as it takes to fit the whole squad.
-      const taken = this.tankSlots.concat(this.scvIdle, this.samSlots, [this.sensorSlot], ...Object.values(this.mechSlots));
+      const taken = this.tankSlots.concat(this.scvIdle, this.samSlots, [this.sensorSlot], ...Object.values(this.mechLow));
       this.squadSpots = [];
       for (let y = -2.3; this.squadSpots.length < T().squad.max; y -= 0.7)
         for (let i = 0; i < 8 && this.squadSpots.length < T().squad.max; i++) {
@@ -587,11 +597,26 @@ window.BS = window.BS || {};
       this.toast('Medivac inbound with a siege tank');
       return true;
     }
+    // The High Ground card (lane): goliaths and thors walk up to their plateau posts, and two more siege tank slots open
+    // up there.
+    takeHighGround() {
+      if (this.mode !== 'lane') return;
+      const was = this.mechSlots;
+      this.mechSlots = this.mechHigh;
+      for (const m of this.mechs) {
+        const i = was[m.kind].indexOf(m.slot);
+        if (i < 0 || m.kind === 'odin') continue;
+        m.slot = this.mechSlots[m.kind][i];
+        if (!m.fwd) { m.state = 'walking'; m.route = null; }
+      }
+      this.tankSlots = this.tankSlots.concat(this.tankHigh);
+      this.tankMax = T().tank.maxLane + T().tank.high;
+    }
     upgradeLevel(id) { return this.up[id] || 0; }
     upgradeCost(id) { const u = BS.UPGRADES[id], l = this.upgradeLevel(id); return u.costs[Math.min(l, u.costs.length - 1)]; }
     upgradeAvailable(id) {
       if (id === 'medivac' && !this.up.stim) return false;
-      if (id === 'vehicle' && !this.tanks.length) return false;
+      if ((id === 'vehicle' || id === 'vplate') && !this.tanks.length && !this.mechs.length) return false;
       if (id === 'rails' && !this.up.hisec) return false;
       return this.upgradeLevel(id) < BS.UPGRADES[id].costs.length;
     }
@@ -603,6 +628,9 @@ window.BS = window.BS || {};
         case 'stim': this.toast('Stimpack researched - hit STIM'); break;
         case 'weapons': this.toast('Infantry Weapons level ' + up.weapons); break;
         case 'vehicle': this.toast('Vehicle Weapons level ' + up.vehicle); break;
+        case 'vplate': this.toast('Vehicle Plating level ' + up.vplate); break;
+        case 'ship': this.toast('Ship Weapons level ' + up.ship); break;
+        case 'splate': this.toast('Ship Plating level ' + up.splate); break;
         case 'neosteel': this.bunker.slots = T().bunker.slotsUpgraded; this.toast('Bunker expanded to 6 slots'); break;
         case 'plating': this.bunker.maxHp += 150; this.bunker.hp += 150; if (up.plating <= 3) this.bunker.armor += 1; this.toast('Building Armor level ' + up.plating); break;
         case 'hisec': this.toast('Hi-Sec Auto Tracking online'); break;
@@ -648,9 +676,11 @@ window.BS = window.BS || {};
     cardIcon(c) { if (!c.up) return c.icon; const u = BS.UPGRADES[c.up]; return u.icons[Math.min(this.up[c.up], u.icons.length - 1)]; }
     cardDesc(c) { return c.desc || BS.UPGRADES[c.up].short; }
     // What this run needs first (BS.CARDS req).
-    cardReq(c) {
-      const r = c.req;
+    cardReq(c, req) {
+      const r = req === undefined ? c.req : req;
       if (!r) return true;
+      if (Array.isArray(r)) return r.every(x => this.cardReq(c, x));
+      if (r === 'highground') return this.mode !== 'lane' || this.cardLevel('highground') > 0;
       if (r === 'tank') return this.tanks.length > 0;
       if (r === 'stim' || r === 'hisec' || r === 'medivac') return this.up[r] > 0;
       if (r === 'bc' || BS.TECH.some(t => t.id === r)) return !!this.techUnlocked[r];
@@ -659,7 +689,7 @@ window.BS = window.BS || {};
       return this.up[m[1]] >= +m[2];
     }
     cardOpen(c) {
-      return BS.Meta.unlocked(c) && this.cardLevel(c) < this.cardMax(c) && this.cardReq(c) && this.wave >= BS.RARITY[c.rarity].from;
+      return BS.Meta.unlocked(c) && (!c.lane || this.mode === 'lane') && this.cardLevel(c) < this.cardMax(c) && this.cardReq(c) && this.wave >= BS.RARITY[c.rarity].from;
     }
     // Weighted by rarity (Field Intelligence shifts weight from common cards to the rarer ones); no repeats in one offer,
     // and the first card is always research while there is any left.
@@ -712,6 +742,8 @@ window.BS = window.BS || {};
       this.cards[c.id] = (this.cards[c.id] || 0) + 1;
       if (c.id === 'refinery') this.income += 1;
       if (c.id === 'fortified') { this.bunker.maxHp += 150; this.bunker.hp += 150; }
+      if (c.id === 'highground') this.takeHighGround();
+      if (c.id === 'reaper') this.fillReapers();
       this.toast(this.cardName(c) + (this.cardMax(c) > 1 ? ' level ' + this.cards[c.id] : ''));
     }
     troopCost(type) { return Math.round(BS.INFANTRY[type].cost * (1 - 0.15 * this.cardLevel('recruit'))); }
@@ -723,7 +755,7 @@ window.BS = window.BS || {};
     techCount(kind) { return this.mechs.filter(m => m.kind === kind).length; }
     techState(id) {
       if (id === 'nuke' || id === 'vikings' || id === 'wraiths' || id === 'vessel') return { state: this.techCd[id] > 0 ? 'wait' : '', cost: id === 'nuke' ? this.nukeCost() : T()[id].cost, wait: this.techCd[id] };
-      if (id === 'reaper' || id === 'ghost') return { state: this[id + 's'].length >= T()[id].max ? 'max' : '', cost: T()[id].cost };
+      if (id === 'ghost') return { state: this.ghosts.length >= T().ghost.max ? 'max' : '', cost: T().ghost.cost };
       if (id === 'bc') return { state: this.bc ? 'max' : '', cost: T().bc.cost };
       return { state: this.techCount(id) >= T()[id].max ? 'max' : '', cost: T()[id].cost };
     }
@@ -733,7 +765,6 @@ window.BS = window.BS || {};
       if (id === 'vikings') return this.callVikings();
       if (id === 'wraiths') return this.callWraiths();
       if (id === 'vessel') return this.callVessel();
-      if (id === 'reaper') return this.addReaper();
       if (id === 'ghost') return this.addGhost();
       if (id === 'bc') return this.callBattlecruiser();
       return this.addMech(id);
@@ -765,7 +796,7 @@ window.BS = window.BS || {};
     }
     restore(s) {
       Object.assign(this, { time: s.time, wave: s.wave, wavesCleared: s.wavesCleared, kills: s.kills, score: s.score, income: s.income,
-        cards: s.cards, up: s.up, techUnlocked: s.techUnlocked, techCd: s.techCd, ab: s.ab });
+        cards: s.cards, up: Object.assign(this.up, s.up), techUnlocked: s.techUnlocked, techCd: s.techCd, ab: s.ab });
       Object.assign(this.bunker, { hp: s.bunker.hp, maxHp: s.bunker.maxHp, armor: s.bunker.armor, slots: s.bunker.slots });
       for (const [type, hp] of s.bunker.units) this.bunker.units.push({ type, def: BS.INFANTRY[type], hp, maxHp: this.trooperHp(type), cd: Math.random() * 0.3 });
       if (this.bunker.units.length) this.bunker.handle.play(/^stand work/i, true);
@@ -773,11 +804,12 @@ window.BS = window.BS || {};
       // Everything else is bought back for free and flown or walked in, fast-forwarded to its post.
       this.minerals = 1e7;
       for (let i = 1; i < s.scvs; i++) this.addScv(true);
+      if (this.cards.highground) this.takeHighGround();
       s.tanks.forEach(() => this.dropTank());
       for (const [kind] of s.structures) this.buildStructure(kind);
       for (const [kind] of s.mechs) this.addMech(kind);
       if (s.bc) this.callBattlecruiser();
-      (s.reapers || []).forEach(() => this.addReaper());
+      (s.reapers || []).forEach(() => this.addReaper(true));
       (s.ghosts || []).forEach(() => this.addGhost());
       this.tgs = this.targets(); this.airTgs = [];
       const play = BS.audio.play; BS.audio.play = () => {};
@@ -983,7 +1015,7 @@ window.BS = window.BS || {};
           else if (!t || t.hp <= 0 || dist(at[0], at[1], t.x, t.y) - t.radius > D.range) tu.target = near.length ? near[Math.floor(Math.random() * Math.min(4, near.length))] : null;
           const e = tu.target;
           if (!e) continue;
-          this.hurtEnemy(e, e.def.flying ? D.laserA : D.laserG);
+          this.hurtEnemy(e, (e.def.flying ? D.laserA : D.laserG) + this.airBonus());
           const hit = [e.x + rnd(-0.15, 0.15), e.y + rnd(-0.15, 0.15), e.z + e.def.height * 0.5];
           this.fx.beam(at, hit, 0.1, [1, 0.62, 0.18], 0.08);
           this.fx.play('laserImpact', hit[0], hit[1], hit[2], Math.atan2(at[1] - hit[1], at[0] - hit[0]), 1.2);
@@ -1102,7 +1134,7 @@ window.BS = window.BS || {};
       for (const e of this.enemiesInRange(u.x, u.y, range, pred)) if (ahead(e)) { const dd = dist(u.x, u.y, e.x, e.y); if (dd < bd) { bd = dd; best = e; } }
       return (u[lockKey] = best);
     }
-    airBonus() { return this.up.vehicle + (this.cards.maelstrom || 0); }
+    airBonus() { return this.up.ship || 0; }
     callVikings() {
       const D = T().vikings;
       if (this.techCd.vikings > 0) return this.toast('Vikings are rearming');
@@ -1452,6 +1484,7 @@ window.BS = window.BS || {};
     startWave() {
       this.wave++;
       this.lingerT = 0;
+      this.fillReapers();
       const w = this.wave;
       const mule = 30 * this.cardLevel('mule');
       if (mule) { this.minerals += mule; this.floater(0, -3, 2, '+' + mule + ' MULE', '#7fd8ff'); }
@@ -1463,7 +1496,7 @@ window.BS = window.BS || {};
       // Late game: every high-tech card unlocked brings stranger zerg, and more of them. Guardians come for the mechs;
       // scourge and devourers only when there is Terran air to hunt. The last push throws in the whole late roster.
       // Rare units (max: brood queens) never number more than max on the field and on their way, counting this wave.
-      const tier = push ? Math.max(this.lateTier(), BS.TECH.length) : this.lateTier(), air = this.airPresence();
+      const tier = push ? Math.max(this.lateTier(), BS.TECH.length + 1) : this.lateTier(), air = this.airPresence();
       const wt = d => d.weight * (d.late ? 0.6 + 0.4 * tier : 1) * (d.prefer === 'mech' && this.mechs.length ? 2 : 1) * (d.antiAir && !air ? 0 : 1);
       // Winged zerglings only in lane mode, where they hop the mesa in the middle of the Y.
       const types = Object.entries(BS.ZERG).filter(([, d]) => d.budget > 0 && w >= Math.ceil(d.unlock * (this.hard ? 0.85 : 1)) && (!d.late || tier >= d.late) && (!d.hops || this.mode === 'lane'));
@@ -1614,7 +1647,7 @@ window.BS = window.BS || {};
         e.blast = null;
         this.fx.stop(b.fx);
         this.fx.play('apocalypse', b.x, b.y, BS.Terrain.height(b.x, b.y), 0, 1.2);
-        for (const tg of this.tgs) if (dist(b.x, b.y, tg.x, tg.y) - tg.radius <= A.radius) this.damageDefender(tg, A.dmg);
+        for (const tg of this.tgs) if (dist(b.x, b.y, tg.x, tg.y) - tg.radius <= A.radius) this.damageDefender(tg, A.dmg * (tg.structure ? F.structure : 1));
         BS.audio.play('explosion', { vol: 0.9 });
         this.shake = Math.min(1, this.shake + 0.5);
       }
@@ -1625,7 +1658,7 @@ window.BS = window.BS || {};
         if (k >= 1) {
           e.leap = null; e.z = BS.Terrain.height(e.x, e.y); e.anim = '';
           this.fx.play('leapImpact', e.x, e.y, e.z, e.yaw, 1.4);
-          for (const tg of this.tgs) if (dist(e.x, e.y, tg.x, tg.y) - tg.radius <= L.radius) this.damageDefender(tg, L.dmg);
+          for (const tg of this.tgs) if (dist(e.x, e.y, tg.x, tg.y) - tg.radius <= L.radius) this.damageDefender(tg, L.dmg * (tg.structure ? F.structure : 1));
           BS.audio.play('ultraliskAttack', { vol: 0.6 });
           this.shake = Math.min(1, this.shake + 0.4);
         }
@@ -1894,7 +1927,7 @@ window.BS = window.BS || {};
     // How far into high tech the player is (0-6 tech cards unlocked): drives the late-game zerg.
     lateTier() {
       const W = BS.WAVES, byWave = Math.max(0, Math.floor((this.wave - W.tierFrom) / W.tierEvery) + (this.wave >= W.tierFrom ? 1 : 0));
-      return Math.min(BS.TECH.length, Math.max(Object.keys(this.techUnlocked).length, byWave));
+      return Math.min(BS.TECH.length + 1, Math.max(Object.keys(this.techUnlocked).length + (this.cards.reaper ? 1 : 0), byWave));
     }
     airPresence() { return !!this.bc || this.vikingWing.length > 0 || this.banshees.length > 0 || this.wraiths.length > 0 || !!this.vessel; }
     // Gone without a kill (an overlord flying off, a nydus worm burrowing away).
@@ -2096,24 +2129,45 @@ window.BS = window.BS || {};
       this.toast((kind === 'reaper' ? 'Reaper' : 'Ghost') + ' down');
       this.floater(o.x, o.y, BS.Terrain.height(o.x, o.y) + 2.5, 'KIA', '#ff6a5a');
     }
-    // Reapers drop in behind the bunker and take a spot just ahead of it.
+    // The Reaper Squad card: bring the squad up to strength (on buying it, and at the start of every wave).
+    fillReapers() {
+      const n = T().reaper.squad[Math.min(this.cardLevel('reaper'), T().reaper.squad.length - 1)];
+      if (this.reapers.length >= n) return;
+      const fresh = !this.reapers.length;
+      while (this.reapers.length < n) this.addReaper();
+      this.toast(fresh ? 'Reaper squad inbound' : 'Reaper reinforcements inbound');
+    }
+    // A reaper drops in behind the bunker and joins the smaller fire team, which it catches up with on its beat.
     addReaper() {
-      const D = T().reaper, lane = this.mode === 'lane';
-      if (this.reapers.length >= D.max) return this.toast('No room for more');
-      if (this.minerals < D.cost) return this.toast('Not enough minerals');
-      this.minerals -= D.cost;
-      const homes = Array.from({ length: D.max }, (_, i) => lane ? [-2.5 + i, 2.2] : [Math.cos(i * Math.PI / 3) * 3.6, Math.sin(i * Math.PI / 3) * 3.6]);
-      const home = homes.find(h => !this.reapers.some(r => r.home[0] === h[0] && r.home[1] === h[1])) || homes[0];
-      const r = { home, x: home[0], y: lane ? -9 : -12, yaw: Math.PI / 2, hp: D.hp, maxHp: D.hp, cd: 0, kd: rnd(2, 5), kite: 0, hitAt: -99, anim: '', jumpUntil: 0, dead: false, flash: 0, radius: 0.375 };
+      const lane = this.mode === 'lane', team = this.reapers.filter(r => r.team === 0).length <= this.reapers.filter(r => r.team === 1).length ? 0 : 1;
+      const r = { team, x: (team ? 1 : -1) * 2, y: lane ? -9 : -12, yaw: Math.PI / 2, hp: T().reaper.hp, maxHp: T().reaper.hp, cd: 0, kd: rnd(2, 5), kite: 0, hitAt: -99, anim: '', jumpUntil: 0, dead: false, flash: 0, radius: 0.375 };
       r.handle = this.r.spawn('reaper', r.x, r.y, BS.Terrain.height(r.x, r.y), r.yaw).setTeam(1);
       this.reapers.push(r);
-      this.toast('Reaper inbound');
       return true;
     }
-    // Hit and run: harass the nearest ground zerg near our lines from pistol range, back off from anything that closes
-    // while reloading, lob a KD8 charge into a pack now and then, and jump-pack straight over the cliffs either way.
+    // A point s metres along a closed beat.
+    beatAt(pts, s) {
+      let len = 0;
+      for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; len += dist(a[0], a[1], b[0], b[1]); }
+      s = ((s % len) + len) % len;
+      for (let i = 0; ; i++) {
+        const a = pts[i], b = pts[(i + 1) % pts.length], l = dist(a[0], a[1], b[0], b[1]);
+        if (s <= l || i === pts.length - 1) { const k = clamp(s / (l || 1), 0, 1); return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k]; }
+        s -= l;
+      }
+    }
+    // Two fire teams walk their beat (strung out along it, the team waiting for stragglers) and, hit and run, harass
+    // the nearest ground zerg near it from pistol range: back off from anything that closes while reloading, lob a KD8
+    // charge into a pack now and then, and jump-pack straight over the cliffs either way.
     updateReapers(dt) {
       const D = T().reaper, lane = this.mode === 'lane';
+      this.reaperBeat = this.reaperBeat || [0, 0];
+      for (let team = 0; team < 2; team++) {
+        const Q = this.reapers.filter(r => !r.dead && r.team === team);
+        Q.forEach((r, i) => { r.post = this.beatAt(this.reaperBeats[team], this.reaperBeat[team] - i * D.gap); });
+        const busy = Q.some(r => r.tg), behind = Q.some(r => dist(r.x, r.y, r.post[0], r.post[1]) > 2.5);
+        if (Q.length && !busy && !behind) this.reaperBeat[team] += D.patrol * dt;
+      }
       for (const r of this.reapers.slice()) {
         if (r.dead) continue;
         r.cd -= dt; r.kd -= dt;
@@ -2123,11 +2177,12 @@ window.BS = window.BS || {};
           if (e.hp <= 0 || e.def.flying || e.def.untouchable || e.burrowed) continue;
           const dd = dist(r.x, r.y, e.x, e.y);
           if (dd < near) { near = dd; nearE = e; }
-          if (dd < td && Math.hypot(e.x, e.y) < D.hunt) { td = dd; tg = e; }
+          if (dd < td && dd < D.hunt && dist(e.x, e.y, r.post[0], r.post[1]) < D.leash) { td = dd; tg = e; }
         }
+        r.tg = tg;
         if (tg && r.cd <= 0 && td - tg.radius <= D.range && !(r.stunUntil > this.time)) { this.reaperFire(r, tg); r.cd = D.cd; r.kite = this.time + 0.7; }
         if (r.kd <= 0) r.kd = this.throwKD8(r) ? D.kd8.cd : 0.5;
-        let gx = r.home[0], gy = r.home[1];
+        let gx = r.post[0], gy = r.post[1];
         const hurt = r.hp < r.maxHp * D.fallBack;
         if (hurt && !(nearE && near < D.kite)) { /* pull back home to heal */ }
         else if (nearE && near < D.kite && (hurt || r.cd > 0.2 || r.kite > this.time)) {     // run while reloading
@@ -2474,7 +2529,7 @@ window.BS = window.BS || {};
         this.shake = Math.min(1, this.shake + real / 60);
         if (o.hp <= 0) this.gameOver();
       } else if (tg.kind === 'tank') {
-        o.hp -= Math.max(0.5, dmg - o.armor); o.flash = 1;
+        o.hp -= Math.max(0.5, dmg - o.armor - (this.up.vplate || 0)); o.flash = 1;
         if (o.hp <= 0 && !o.dead) {
           o.dead = true;
           this.corpse('siegetankDeath', o.x, o.y, 0, Math.PI / 2, 6, 1, true);
@@ -2490,10 +2545,10 @@ window.BS = window.BS || {};
         o.hp -= Math.max(0.5, dmg - (o.type === 'marauder' ? 1 : 0)); o.flash = 1;
         if (o.hp <= 0 && !o.dead) this.killTrooper(o);
       } else if (tg.kind === 'mech') {
-        o.hp -= Math.max(0.5, dmg - o.armor); o.flash = 1;
+        o.hp -= Math.max(0.5, dmg - o.armor - (this.up.vplate || 0)); o.flash = 1;
         if (o.hp <= 0 && !o.dead) this.killMech(o);
       } else if (tg.kind === 'bc' || tg.kind === 'viking' || tg.kind === 'banshee' || tg.kind === 'wraith' || tg.kind === 'vessel') {
-        o.hp -= Math.max(0.5, dmg - (o.armor || 0)); o.flash = 1;
+        o.hp -= Math.max(0.5, dmg - (o.armor || 0) - (this.up.splate || 0)); o.flash = 1;
         if (o.hp <= 0 && !o.dead) this.killAir(o, tg.kind);
         else if (tg.kind === 'wraith' && !o.cloakUntil && this.time >= o.cloakReady) {
           const C = T().wraiths.cloak;
@@ -2799,9 +2854,10 @@ window.BS = window.BS || {};
             const tg = e.hitTarget;
             if (this.valid(tg)) {
               let dmg = d.dmg + (tg.light && d.dmgLight ? d.dmgLight : 0) + (tg.armored && d.dmgArmored ? d.dmgArmored : 0);
-              this.damageDefender(tg, dmg);
+              this.damageDefender(tg, tg.structure && d.dmgStructure ? d.dmgStructure : dmg);
               if (d.impactFx) { const a = Math.atan2(e.y - tg.y, e.x - tg.x); this.fx.play(d.impactFx, tg.x + Math.cos(a) * tg.radius, tg.y + Math.sin(a) * tg.radius, 0.5, a); }
-              if (d.cleave) for (const o of targets) if (o !== tg && dist(tg.x, tg.y, o.x, o.y) - o.radius < d.cleave) this.damageDefender(o, dmg * 0.5);
+              // Cleave sweeps through troops and machines, never into the walls of a building.
+              if (d.cleave) for (const o of targets) if (o !== tg && !o.structure && dist(tg.x, tg.y, o.x, o.y) - o.radius < d.cleave) this.damageDefender(o, dmg * 0.5);
             }
           }
         } else if (e.perched) {
@@ -2967,7 +3023,7 @@ window.BS = window.BS || {};
           t.cd -= dt;
           if (t.stunUntil > this.time) continue;                            // pinned by Kerrigan
           if (t.cd > 0) continue;
-          const range = D.range + (this.up.hisec ? T().hiSecRange : 0) + 2 * this.cardLevel('siegerange');
+          const range = D.range + (this.up.hisec ? T().hiSecRange : 0) + 2 * this.cardLevel('siegerange') + (BS.Terrain.onHigh(t.x, t.y) ? 1 : 0);
           const pred = e => !e.def.flying && dist(t.x, t.y, e.x, e.y) > D.minRange;
           let target = null;
           if (this.focus && this.focus.hp > 0 && pred(this.focus) && dist(t.x, t.y, this.focus.x, this.focus.y) <= range) target = this.focus;
@@ -3042,7 +3098,7 @@ window.BS = window.BS || {};
             const tg = list[0];
             for (let k = 0; k < D.shots; k++) {
               const ox = -Math.sin(b.yaw) * (k ? 0.4 : -0.4), oy = Math.cos(b.yaw) * (k ? 0.4 : -0.4);
-              const p = { kind: 'rocket', friendly: true, fx: b.x + ox, fy: b.y + oy, fz: b.z - 0.3, tx: tg.x, ty: tg.y, tz: tg.z + 0.3, t: -k * 0.1, dur: 0.35, dmg: D.dmg, target: tg, impact: 'bansheeImpact' };
+              const p = { kind: 'rocket', friendly: true, fx: b.x + ox, fy: b.y + oy, fz: b.z - 0.3, tx: tg.x, ty: tg.y, tz: tg.z + 0.3, t: -k * 0.1, dur: 0.35, dmg: D.dmg + this.airBonus(), target: tg, impact: 'bansheeImpact' };
               this.projectileModel(p, 'projBanshee', 'bansheeMissile');
               this.projectiles.push(p);
             }

@@ -119,13 +119,14 @@ struct FBSUpgradeDef
 
 // A shop card (see ABSGame::EndWave). Up: one level of that research (its costs, icons and text); Tech: puts that
 // BSDefs::Tech entry in the armoury; otherwise a passive with Max levels at Costs[level]. Req: what this run needs
-// before it is offered ("tank", "stim", "hisec", "medivac", "bc", or a research or "wave" and a number). Unlock: what
-// it takes over all runs before the card joins the pool at all: UnlockBuys bought UnlockBuysN times, or wave
-// UnlockBest cleared (see BSMeta).
+// before it is offered ("tank", "stim", "hisec", "medivac", "bc", "highground", or a research or "wave" and a number;
+// several, comma-separated, all needed). bLane: offered in the lane only. Unlock: what it takes over all runs before the
+// card joins the pool at all: UnlockBuys bought UnlockBuysN times, or wave UnlockBest cleared (see BSMeta).
 struct FBSCardDef
 {
 	FString Id, Up, Tech, Name, Icon, Desc, Rarity, Req, UnlockBuys;
 	int32 Max = 1, UnlockBuysN = 0, UnlockBest = 0;
+	bool bLane = false;
 	TArray<int32> Costs;
 	int32 Grow = 0;                       // endless cards: Costs[0] + Grow x level
 };
@@ -172,7 +173,7 @@ namespace BSDefs
 	constexpr int32 ScvCost = 50, ScvMax = 4;
 	constexpr float TankHp = 175, TankArmor = 1, TankDmg = 40, TankDmgArmored = 30, TankCd = 2.14f, TankRange = 13, TankMinRange = 2, TankRadius = 0.9f;
 	constexpr float TankSplash1 = 0.47f, TankSplash2 = 0.78f, TankSplash3 = 1.25f;
-	constexpr int32 TankCost = 300, TankCostStep = 100, TankMaxLane = 4, TankMaxArena = 4;
+	constexpr int32 TankCost = 300, TankCostStep = 100, TankMaxLane = 4, TankMaxArena = 4, TankHigh = 2;   // TankHigh: more with the High Ground card
 	// Air strike: four banshees hover over the lane (and its ledges) and fire missiles at passing zerg.
 	constexpr float BansheeDmg = 12, BansheeCd = 1.1f, BansheeRange = 6, BansheeSpeed = 9, BansheeFly = 2.4f, BansheeHover = 14, BansheeCooldown = 32;
 	constexpr int32 BansheeShots = 2, BansheeCost = 200, BansheeCount = 4;
@@ -197,12 +198,15 @@ namespace BSDefs
 	// A ghost calls a tactical nuke on the densest pack well away from the bunker.
 	constexpr float NukeDmg = 300, NukeRadius = 7, NukeDelay = 3, NukeMinDist = 9, NukeCooldown = 45;
 	constexpr int32 NukeCost = 400;
-	// Reapers: fast, light, hit-and-run pistoleers that hop cliffs both ways; every Kd8Cd s a KD8 charge on a pack (damage
-	// and a knock back). They regenerate out of combat, and below ReaperFallBack of their hit points pull back home to do
-	// so. Up to ReaperMax at a time.
-	constexpr float ReaperHp = 60, ReaperDmg = 4, ReaperDmgLight = 5, ReaperCd = 1.1f, ReaperRange = 5, ReaperSpeed = 5.25f, ReaperHunt = 11, ReaperKite = 4;
+	// Reapers (the Reaper Squad card: ReaperSquad[level] of them, losses replaced every wave): fast, light, hit-and-run
+	// pistoleers that hop cliffs both ways. Two fire teams walk a beat round the plateaus (the arena's ring) at ReaperPatrol
+	// m/s, strung out ReaperGap m apart, and hunt ground zerg within ReaperHunt m that stay within ReaperLeash m of their
+	// beat; every Kd8Cd s a KD8 charge on a pack (damage and a knock back). They regenerate out of combat, and below
+	// ReaperFallBack of their hit points keep to the beat to do so.
+	constexpr float ReaperHp = 60, ReaperDmg = 4, ReaperDmgLight = 5, ReaperCd = 1.1f, ReaperRange = 5, ReaperSpeed = 5.25f, ReaperKite = 4;
+	constexpr float ReaperPatrol = 2.2f, ReaperGap = 1.1f, ReaperHunt = 7, ReaperLeash = 9;
 	constexpr float ReaperRegen = 3, ReaperRegenAfter = 4, ReaperFallBack = 0.4f;
-	constexpr int32 ReaperCost = 100, ReaperMax = 6, ReaperShots = 2;
+	constexpr int32 ReaperSquad[3] = { 0, 4, 6 }, ReaperShots = 2;
 	constexpr float Kd8Cd = 12, Kd8Dmg = 10, Kd8Radius = 1.6f, Kd8Knock = 2.2f, Kd8Range = 5;
 	constexpr int32 Kd8MinPack = 3;
 	// Ghosts: cloaked snipers on the high ground (lane: over the ramp tops, then the cliffs over the stem). C-10 rifle at
@@ -215,7 +219,7 @@ namespace BSDefs
 	constexpr float SnipeDmg = 170, SnipeRange = 10, SnipeCd = 8, SnipeChannel = 1.43f, SnipeMinHp = 300;
 	// Vikings and wraiths fly close air support: long strafing passes up and down the lane (round the arena) in a spread
 	// wedge, always flying straight on, firing on whatever lies within *Cone radians of their nose and staying on that
-	// target while it does. Vehicle Weapons and Maelstrom Rounds add to every shot (ABSGame::AirBonus).
+	// target while it does. Ship Weapons adds to every shot (ABSGame::AirBonus).
 	// Four viking fighters hunt air (VikingPatrol: metres a second round the patrol loop).
 	constexpr float VikingDmg = 7, VikingCd = 0.7f, VikingRange = 9, VikingCone = 1.0f, VikingHover = 20, VikingFly = 4.2f, VikingSpeed = 9, VikingCooldown = 35, VikingPatrol = 6.5f;
 	constexpr int32 VikingShots = 2, VikingCost = 300, VikingCount = 4;
@@ -282,6 +286,7 @@ namespace BSDefs
 	constexpr float FinaleBudget = 1.5f, PodStart = 6, PodEvery = 2, PodLand = 2.7f, PodDmg = 60, PodRadius = 2, PodMinR = 7, PodMaxR = 13;
 	constexpr float LeapCd = 8, LeapMin = 3, LeapMax = 9, LeapDur = 0.7f, LeapDmg = 90, LeapRadius = 1.8f;           // Leaping Strike onto a defender out of reach
 	constexpr float ApocCd = 13, ApocRange = 9, ApocDelay = 1.2f, ApocDmg = 70, ApocRadius = 2;                      // a psionic blast on the thickest knot of defenders
+	constexpr float BossStructure = 0.4f;                                                                            // what Apocalypse and Leaping Strike do to buildings
 	constexpr float BroodCd = 15; constexpr int32 BroodCount = 3;                                                    // the leviathan spawns mutalisks
 	// The rest of a maxed-out Heart of the Swarm kit (ABSGame::KerriganKit). Her swings use every attack she has and sweep
 	// the wings (cleave); every FuryEvery-th swing sends her into a Fury (half again the attack speed for FuryDur s). Kinetic Blast

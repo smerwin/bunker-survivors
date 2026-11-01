@@ -190,7 +190,7 @@ namespace
 		{
 			FBSZergDef& D = Add(TEXT("kerrigan"), TEXT("Kerrigan"), TEXT("kerrigan"), TEXT("kerriganDeath"), TEXT("btn-unit-zerg-kerriganinfested"));
 			D.ImpactFx = TEXT("ultraliskImpact");
-			D.Scale = 1.3f; D.Hp = 6000; D.Armor = 3; D.Dmg = 45; D.Cd = 0.7f; D.Range = 1.2f; D.Speed = 3.4f; D.Radius = 0.9f; D.bArmored = true; D.Cleave = 1.4f; D.Boss = TEXT("kerrigan"); D.bUntouchable = true; D.bPreferBunker = true;
+			D.Scale = 1.3f; D.Hp = 6000; D.Armor = 3; D.Dmg = 45; D.DmgStructure = 18; D.Cd = 0.7f; D.Range = 1.2f; D.Speed = 3.4f; D.Radius = 0.9f; D.bArmored = true; D.Cleave = 1.4f; D.Boss = TEXT("kerrigan"); D.bUntouchable = true; D.bPreferBunker = true;
 			D.Bounty = 2500; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0.4f; D.AttackAnims = { TEXT("attack"), TEXT("attack 01") };
 			D.SoundDeath = TEXT("kerriganDeath"); D.Height = 2.4f; D.DeathHold = 6;
 		}
@@ -241,7 +241,15 @@ namespace
 		Add(TEXT("neosteel"), TEXT("Neosteel Frame"), TEXT("Bunker holds 6 units."), { TEXT("btn-upgrade-terran-neosteelframe") }, { 115 });
 		Add(TEXT("plating"), TEXT("Building Armor"), TEXT("+150 bunker HP per level, +1 armour for the first three."), { TEXT("btn-upgrade-terran-buildingarmor") }, { 190, 265, 340, 450, 600, 750, 900, 1050 });
 		Add(TEXT("hisec"), TEXT("Hi-Sec Auto Tracking"), TEXT("+1 range for the bunker and siege tanks."), { TEXT("btn-upgrade-terran-hisecautotracking") }, { 150 });
-		Add(TEXT("vehicle"), TEXT("Vehicle Weapons"), TEXT("+5 (+3 armoured) siege tank damage."), { TEXT("btn-upgrade-terran-vehicleweaponslevel1") }, { 115, 170, 225, 300, 395, 490, 600, 715, 865, 1015 });
+		Add(TEXT("vehicle"), TEXT("Vehicle Weapons"), TEXT("+5 (+3 armoured) siege tank damage, +2 for goliaths, thors and the Odin."),
+			{ TEXT("btn-upgrade-terran-vehicleweaponslevel1"), TEXT("btn-upgrade-terran-vehicleweaponslevel2"), TEXT("btn-upgrade-terran-vehicleweaponslevel3") }, { 115, 170, 225, 300, 395, 490, 600, 715, 865, 1015 });
+		Add(TEXT("vplate"), TEXT("Vehicle Plating"), TEXT("+1 armour for siege tanks, goliaths, thors and the Odin."),
+			{ TEXT("btn-upgrade-terran-vehicleplatinglevel1"), TEXT("btn-upgrade-terran-vehicleplatinglevel2"), TEXT("btn-upgrade-terran-vehicleplatinglevel3") }, { 130, 190, 260, 350, 460 });
+		// Ships: the air strike's banshees, vikings, wraiths, the science vessel and the battlecruiser.
+		Add(TEXT("ship"), TEXT("Ship Weapons"), TEXT("+1 damage for every ship: banshees, vikings, wraiths, battlecruiser lasers."),
+			{ TEXT("btn-upgrade-terran-shipweaponslevel1"), TEXT("btn-upgrade-terran-shipweaponslevel2"), TEXT("btn-upgrade-terran-shipweaponslevel3") }, { 115, 170, 225, 300, 395, 490, 600, 715, 865, 1015 });
+		Add(TEXT("splate"), TEXT("Ship Plating"), TEXT("+1 armour for every ship."),
+			{ TEXT("btn-upgrade-terran-shipplatinglevel1"), TEXT("btn-upgrade-terran-shipplatinglevel2"), TEXT("btn-upgrade-terran-shipplatinglevel3") }, { 130, 190, 260, 350, 460 });
 		Add(TEXT("medivac"), TEXT("Medivac on Station"), TEXT("Heals bunker infantry 9 HP/s so they can stim again."), { TEXT("btn-ability-terran-heal") }, { 150 });
 		Add(TEXT("rails"), TEXT("Magnetic Rails"), TEXT("+2 range for the troops in the bunker."), { TEXT("btn-upgrade-terran-magrailmunitions") }, { 225 });
 		return Out;
@@ -278,7 +286,6 @@ namespace
 			{ TEXT("goliath"), TEXT("Goliath"), TEXT("btn-unit-terran-goliath"), TEXT("GOLIATHS") },
 			{ TEXT("nuke"), TEXT("Tactical Nuke"), TEXT("btn-ability-terran-nuclearstrike"), TEXT("TACTICAL NUKE") },
 			{ TEXT("vikings"), TEXT("Viking Wing"), TEXT("btn-unit-terran-vikingfighter"), TEXT("VIKING WING") },
-			{ TEXT("reaper"), TEXT("Reaper"), TEXT("btn-unit-terran-reaper"), TEXT("REAPERS") },
 			{ TEXT("ghost"), TEXT("Ghost"), TEXT("btn-unit-terran-ghost"), TEXT("GHOSTS") },
 			{ TEXT("wraiths"), TEXT("Wraith Squadron"), TEXT("btn-unit-terran-wraith"), TEXT("WRAITH SQUADRON") },
 			{ TEXT("vessel"), TEXT("Science Vessel"), TEXT("btn-unit-terran-sciencevessel"), TEXT("SCIENCE VESSEL") },
@@ -303,6 +310,7 @@ namespace
 			return C;
 		};
 		Up(TEXT("weapons"), TEXT("common")); Up(TEXT("neosteel"), TEXT("common")); Up(TEXT("plating"), TEXT("common")); Up(TEXT("vehicle"), TEXT("common"), TEXT("tank"));
+		Up(TEXT("vplate"), TEXT("common"), TEXT("vehicle3")); Up(TEXT("ship"), TEXT("common"), TEXT("vikings")); Up(TEXT("splate"), TEXT("common"), TEXT("ship2"));
 		Up(TEXT("stim"), TEXT("common")); Up(TEXT("hisec"), TEXT("rare")); Up(TEXT("medivac"), TEXT("common"), TEXT("stim")); Up(TEXT("rails"), TEXT("epic"), TEXT("hisec"));
 		Card(TEXT("refinery"), TEXT("Refinery"), TEXT("btn-building-terran-refinery"), TEXT("common"), { 100, 150, 200, 250, 300 }, TEXT("+1 mineral a second"));
 		Card(TEXT("shield"), TEXT("Combat Shield"), TEXT("btn-techupgrade-terran-combatshield-color"), TEXT("common"), { 100, 150, 200 }, TEXT("Troopers +10 HP"));
@@ -331,12 +339,15 @@ namespace
 		{ FBSCardDef& C = Card(TEXT("siegerange"), TEXT("Siege Optics"), TEXT("btn-upgrade-swann-vehiclerangeincrease"), TEXT("epic"), { 300 }, TEXT("Siege tanks +2 range"), TEXT("tank")); C.UnlockBuys = TEXT("vehicle"); C.UnlockBuysN = 3; }
 		{ FBSCardDef& C = Card(TEXT("goliath"), TEXT("Factory"), TEXT("btn-building-terran-factory"), TEXT("epic"), { 300 }, TEXT("Goliaths in the armoury"), TEXT("vehicle2")); C.UnlockBuys = TEXT("vehicle"); C.UnlockBuysN = 5; }
 		{ FBSCardDef& C = Card(TEXT("nuke"), TEXT("Ghost Academy"), TEXT("btn-building-terran-ghostacademy"), TEXT("epic"), { 350 }, TEXT("Tactical nukes in the armoury"), TEXT("weapons3")); C.UnlockBuys = TEXT("weapons"); C.UnlockBuysN = 10; }
-		Card(TEXT("reaper"), TEXT("Reaper Squad"), TEXT("btn-unit-terran-reaper"), TEXT("rare"), { 200 }, TEXT("Reapers in the armoury: hit-and-run pistols, KD8 charges"), TEXT("wave8")).UnlockBest = 10;
-		{ FBSCardDef& C = Card(TEXT("ghost"), TEXT("Ghost Program"), TEXT("btn-unit-terran-ghost"), TEXT("epic"), { 400 }, TEXT("Cloaked ghosts on the high ground; each makes nukes cheaper"), TEXT("nuke")); C.UnlockBuys = TEXT("nuke"); C.UnlockBuysN = 1; }
+		Card(TEXT("reaper"), TEXT("Reaper Squad"), TEXT("btn-unit-terran-reaper"), TEXT("rare"), { 250, 300 }, TEXT("Reapers patrol the high ground (4, then 6); losses replaced every wave"), TEXT("wave8")).UnlockBest = 10;
+		// Lane only: the plateaus either side of the stem. Goliaths and thors take posts up there (below them without it),
+		// two more siege tanks deploy up there, and the Ghost Program needs it.
+		Card(TEXT("highground"), TEXT("High Ground"), TEXT("btn-building-terran-sensordome"), TEXT("epic"), { 350 }, TEXT("Plateau posts: +2 siege tanks; goliaths and thors move up; ghosts"), TEXT("tank,wave12")).bLane = true;
+		{ FBSCardDef& C = Card(TEXT("ghost"), TEXT("Ghost Program"), TEXT("btn-unit-terran-ghost"), TEXT("epic"), { 400 }, TEXT("Cloaked ghosts on the high ground; each makes nukes cheaper"), TEXT("nuke,highground")); C.UnlockBuys = TEXT("nuke"); C.UnlockBuysN = 1; }
 		{ FBSCardDef& C = Card(TEXT("thor"), TEXT("Armory"), TEXT("btn-building-terran-armory"), TEXT("epic"), { 450 }, TEXT("Thors in the armoury"), TEXT("plating3")); C.UnlockBuys = TEXT("plating"); C.UnlockBuysN = 6; }
 		Card(TEXT("bc"), TEXT("Fusion Core"), TEXT("btn-building-terran-fusioncore"), TEXT("legendary"), { 800 }, TEXT("The battlecruiser in the armoury"), TEXT("wave20")).UnlockBest = 25;
 		{ FBSCardDef& C = Card(TEXT("odin"), TEXT("The Odin"), TEXT("btn-unit-terran-odin"), TEXT("legendary"), { 1200 }, TEXT("The Odin in the armoury"), TEXT("bc")); C.UnlockBuys = TEXT("bc"); C.UnlockBuysN = 1; }
-		for (FBSCardDef& C : Out) if (C.Id == TEXT("vikings") || C.Id == TEXT("wraiths") || C.Id == TEXT("vessel") || C.Id == TEXT("goliath") || C.Id == TEXT("nuke") || C.Id == TEXT("reaper") || C.Id == TEXT("ghost") || C.Id == TEXT("thor") || C.Id == TEXT("bc") || C.Id == TEXT("odin")) C.Tech = C.Id;
+		for (FBSCardDef& C : Out) if (C.Id == TEXT("vikings") || C.Id == TEXT("wraiths") || C.Id == TEXT("vessel") || C.Id == TEXT("goliath") || C.Id == TEXT("nuke") || C.Id == TEXT("ghost") || C.Id == TEXT("thor") || C.Id == TEXT("bc") || C.Id == TEXT("odin")) C.Tech = C.Id;
 		return Out;
 	}
 

@@ -208,7 +208,7 @@ void ABSGameMode::Tick(float Dt)
 			for (int32 i = 0; i < 4; i++) Game->BuyTech(TEXT("goliath"));
 			Game->BuyTech(TEXT("thor")); Game->BuyTech(TEXT("thor")); Game->BuyTech(TEXT("bc")); Game->BuyTech(TEXT("odin")); Game->BuyTech(TEXT("vikings"));
 			Game->BuyTech(TEXT("wraiths")); Game->BuyTech(TEXT("vessel")); Game->CallAirStrike();
-			for (int32 i = 0; i < 6; i++) Game->BuyTech(TEXT("reaper"));
+			// (GrantAllTech dealt the Reaper Squad card at its top level: a full squad of six reapers.)
 			for (int32 i = 0; i < 4; i++) Game->BuyTech(TEXT("ghost"));
 			Game->Minerals = FMath::Min(Game->Minerals, 1850);   // a normal-looking bank again (GrantAllTech banks a million)
 			Game->BuildStructure(false);              // sensor tower, for the radar

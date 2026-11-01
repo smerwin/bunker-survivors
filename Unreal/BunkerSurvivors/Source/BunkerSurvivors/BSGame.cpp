@@ -218,17 +218,27 @@ void ABSGame::Init(UBSAssets* InAssets, EBSMode InMode)
 	if (Mode == EBSMode::Lane)
 	{
 		TankSlots = { FVector2D(-3.4f, -0.4f), FVector2D(3.4f, -0.4f), FVector2D(-5.4f, -2.8f), FVector2D(5.4f, -2.8f) };
+		TankHigh = { FVector2D(-12.6f, 1.2f), FVector2D(12.6f, 1.2f) };   // High Ground: two more, out on the plateaus
 		ScvIdle = { FVector2D(-2.6f, -2.9f), FVector2D(2.6f, -2.9f), FVector2D(-4.4f, -2.4f), FVector2D(4.4f, -2.4f) };
 		TankMax = BSDefs::TankMaxLane;
 		SamSlots = { FVector2D(-5.6f, 1.2f), FVector2D(5.6f, 1.2f), FVector2D(-3.6f, -4.6f) };
 		SensorSlot = FVector2D(3.6f, -4.6f);
 		StrikePosts = { FVector2D(-3.4f, 3.6f), FVector2D(3.4f, 3.6f), FVector2D(-1.4f, 6.4f), FVector2D(1.4f, 6.4f) };   // in view: covering both ledges and the lane
-		// High-tech walkers: goliaths and thors take the plateaus either side of the stem (up the arms' ramps, see
-		// MechRoute), clear of the lane and with the high ground's reach; the odin is too big for them and fires long-range
-		// from behind the bunker.
-		MechSlots.Add(TEXT("goliath"), { FVector2D(-7.6f, 3.2f), FVector2D(7.6f, 3.2f), FVector2D(-9.4f, 1.6f), FVector2D(9.4f, 1.6f) });
-		MechSlots.Add(TEXT("thor"), { FVector2D(-9.6f, -0.4f), FVector2D(9.6f, -0.4f) });
-		MechSlots.Add(TEXT("odin"), { FVector2D(0, -10.5f) });
+		// High-tech walkers: goliaths flank the bunker and thors stand behind it; with the High Ground card they take the
+		// plateaus either side of the stem instead (up the arms' ramps, see MechRoute), clear of the lane and with the high
+		// ground's reach. The odin is too big for them and fires long-range from behind the bunker.
+		MechLow.Add(TEXT("goliath"), { FVector2D(-3.9f, 1.6f), FVector2D(3.9f, 1.6f), FVector2D(-2.3f, 2.3f), FVector2D(2.3f, 2.3f) });
+		MechLow.Add(TEXT("thor"), { FVector2D(-5.0f, -5.8f), FVector2D(5.0f, -5.8f) });
+		MechLow.Add(TEXT("odin"), { FVector2D(0, -10.5f) });
+		MechHigh.Add(TEXT("goliath"), { FVector2D(-7.6f, 3.2f), FVector2D(7.6f, 3.2f), FVector2D(-9.4f, 1.6f), FVector2D(9.4f, 1.6f) });
+		MechHigh.Add(TEXT("thor"), { FVector2D(-9.6f, -0.4f), FVector2D(9.6f, -0.4f) });
+		MechHigh.Add(TEXT("odin"), { FVector2D(0, -10.5f) });
+		MechSlots = MechLow;
+		// The reapers' beat on each plateau: along the cliff edge over the stem, up to the arm's ramp top, back along the far
+		// side.
+		for (int32 Team = 0; Team < 2; Team++)
+			for (const FVector2D& P : { FVector2D(9.4f, -1.2f), FVector2D(8.6f, 3.8f), FVector2D(9.8f, 9.0f), FVector2D(12.4f, 11.6f), FVector2D(13.2f, 6.0f), FVector2D(12.6f, -0.5f) })
+				ReaperBeats[Team].Add(FVector2D((Team ? 1 : -1) * P.X, P.Y));
 		// Forward base on the plateau east of the stem (see UpdateExpansion): the way up, the command center's site and the
 		// SCV's spot beside it, the Odin, goliaths over the arm, and three ranks of troopers on the cliff edge over the stem.
 		FwdRoute = BSTerrain::LedgeRoute(1);
@@ -247,12 +257,19 @@ void ABSGame::Init(UBSAssets* InAssets, EBSMode InMode)
 		MechSlots.Add(TEXT("goliath"), { FVector2D(0, 2.7f), FVector2D(2.7f, 0), FVector2D(-2.7f, 0), FVector2D(0, -2.7f) });
 		MechSlots.Add(TEXT("thor"), { FVector2D(-4.6f, -3.6f), FVector2D(4.6f, 3.6f) });
 		MechSlots.Add(TEXT("odin"), { FVector2D(-5.2f, 3.2f) });
+		MechLow = MechHigh = MechSlots;
+		// The reapers' beat: a ring round the bunker, the two fire teams on opposite sides of it.
+		for (int32 i = 0; i < 16; i++)
+		{
+			ReaperBeats[0].Add(FVector2D(FMath::Cos(i * PI / 8) * 7.5f, FMath::Sin(i * PI / 8) * 7.5f));
+			ReaperBeats[1].Add(FVector2D(FMath::Cos((i + 8) * PI / 8) * 7.5f, FMath::Sin((i + 8) * PI / 8) * 7.5f));
+		}
 		for (const float A : { 45.f, 135.f, 225.f, 315.f }) StrikePosts.Add(FVector2D(FMath::Cos(FMath::DegreesToRadians(A)) * 7, FMath::Sin(FMath::DegreesToRadians(A)) * 7));
 	}
 	// Ranks of eight behind the bunker (the side away from the lane), stepping round the tanks, SCVs, turrets and sensor
 	// tower, as deep as it takes to fit the whole squad.
 	TArray<FVector2D> Taken = TankSlots; Taken.Append(ScvIdle); Taken.Append(SamSlots); Taken.Add(SensorSlot);
-	for (const auto& Pair : MechSlots) Taken.Append(Pair.Value);
+	for (const auto& Pair : MechLow) Taken.Append(Pair.Value);
 	for (float Y = -2.3f; SquadSpots.Num() < BSDefs::SquadMax; Y -= 0.7f)
 		for (int32 i = 0; i < 8 && SquadSpots.Num() < BSDefs::SquadMax; i++)
 		{
@@ -1377,7 +1394,8 @@ bool ABSGame::EmergencyRepair()
 int32 ABSGame::UpgradeLevel(const FString& Id) const
 {
 	if (Id == TEXT("weapons")) return Up.Weapons;
-	if (Id == TEXT("vehicle")) return Up.Vehicle;
+	if (Id == TEXT("vehicle")) return Up.Vehicle; if (Id == TEXT("vplate")) return Up.VPlate;
+	if (Id == TEXT("ship")) return Up.Ship; if (Id == TEXT("splate")) return Up.SPlate;
 	if (Id == TEXT("stim")) return Up.bStim; if (Id == TEXT("neosteel")) return Up.bNeosteel;
 	if (Id == TEXT("plating")) return Up.Plating; if (Id == TEXT("medivac")) return Up.bMedivac;
 	if (Id == TEXT("hisec")) return Up.bHiSec;
@@ -1398,7 +1416,7 @@ bool ABSGame::UpgradeAvailable(const FString& Id) const
 	const FBSUpgradeDef* D = BSDefs::FindUpgrade(Id);
 	if (!D) return false;
 	if (Id == TEXT("medivac") && !Up.bStim) return false;
-	if (Id == TEXT("vehicle") && Tanks.Num() == 0) return false;
+	if ((Id == TEXT("vehicle") || Id == TEXT("vplate")) && Tanks.Num() == 0 && Mechs.Num() == 0) return false;
 	if (Id == TEXT("rails") && !Up.bHiSec) return false;
 	return UpgradeLevel(Id) < D->Costs.Num();
 }
@@ -1410,6 +1428,9 @@ bool ABSGame::Research(const FString& Id)
 	if (Id == TEXT("stim")) { Up.bStim = true; Toast(TEXT("Stimpack researched - hit STIM")); }
 	else if (Id == TEXT("weapons")) { Up.Weapons++; Toast(FString::Printf(TEXT("Infantry Weapons level %d"), Up.Weapons)); }
 	else if (Id == TEXT("vehicle")) { Up.Vehicle++; Toast(FString::Printf(TEXT("Vehicle Weapons level %d"), Up.Vehicle)); }
+	else if (Id == TEXT("vplate")) { Up.VPlate++; Toast(FString::Printf(TEXT("Vehicle Plating level %d"), Up.VPlate)); }
+	else if (Id == TEXT("ship")) { Up.Ship++; Toast(FString::Printf(TEXT("Ship Weapons level %d"), Up.Ship)); }
+	else if (Id == TEXT("splate")) { Up.SPlate++; Toast(FString::Printf(TEXT("Ship Plating level %d"), Up.SPlate)); }
 	else if (Id == TEXT("neosteel")) { Up.bNeosteel = true; Bunker.Slots = BSDefs::BunkerSlotsUpgraded; Toast(TEXT("Bunker expanded to 6 slots")); }
 	else if (Id == TEXT("plating")) { Up.Plating++; Bunker.MaxHp += 150; Bunker.Hp += 150; if (Up.Plating <= 3) Bunker.Armor += 1; Toast(FString::Printf(TEXT("Building Armor level %d"), Up.Plating)); }
 	else if (Id == TEXT("hisec")) { Up.bHiSec = true; Toast(TEXT("Hi-Sec Auto Tracking online")); }
@@ -1487,11 +1508,19 @@ FString ABSGame::CardDesc(const FBSCardDef& C) const
 	return BSDefs::FindUpgrade(C.Up)->Desc;
 }
 
-// What this run needs first (FBSCardDef Req).
+// What this run needs first (FBSCardDef Req: every one of a comma-separated list).
 bool ABSGame::CardReq(const FBSCardDef& C) const
 {
-	const FString& R = C.Req;
+	TArray<FString> Rs;
+	C.Req.ParseIntoArray(Rs, TEXT(","));
+	for (const FString& R : Rs) if (!ReqMet(R.TrimStartAndEnd())) return false;
+	return true;
+}
+
+bool ABSGame::ReqMet(const FString& R) const
+{
 	if (R.IsEmpty()) return true;
+	if (R == TEXT("highground")) return Mode != EBSMode::Lane || Cards.FindRef(TEXT("highground")) > 0;
 	if (R == TEXT("tank")) return Tanks.Num() > 0;
 	if (R == TEXT("stim")) return Up.bStim;
 	if (R == TEXT("hisec")) return Up.bHiSec;
@@ -1506,7 +1535,7 @@ bool ABSGame::CardReq(const FBSCardDef& C) const
 
 bool ABSGame::CardOpen(const FBSCardDef& C) const
 {
-	return BSMeta::Unlocked(C) && CardLevel(C) < CardMax(C) && CardReq(C) && Wave >= BSDefs::FindRarity(C.Rarity).From;
+	return BSMeta::Unlocked(C) && (!C.bLane || Mode == EBSMode::Lane) && CardLevel(C) < CardMax(C) && CardReq(C) && Wave >= BSDefs::FindRarity(C.Rarity).From;
 }
 
 // Weighted by rarity (Field Intelligence shifts weight from common cards to the rarer ones, research weighs double); no
@@ -1577,6 +1606,8 @@ void ABSGame::ApplyCard(const FBSCardDef& C)
 	const int32 L = ++Cards.FindOrAdd(C.Id);
 	if (C.Id == TEXT("refinery")) Income += 1;
 	if (C.Id == TEXT("fortified")) { Bunker.MaxHp += 150; Bunker.Hp += 150; }
+	if (C.Id == TEXT("highground")) TakeHighGround();
+	if (C.Id == TEXT("reaper")) FillReapers();
 	Toast(C.Max > 1 ? FString::Printf(TEXT("%s level %d"), *C.Name, L) : C.Name);
 }
 
@@ -1589,7 +1620,6 @@ bool ABSGame::TechReady(const FString& Id, int32& OutCost, FString& OutTag) cons
 	if (Id == TEXT("wraiths")) { OutCost = BSDefs::WraithCost; OutTag = FString::Printf(TEXT("%ds"), FMath::CeilToInt(WraithCd)); return WraithCd <= 0; }
 	if (Id == TEXT("vessel")) { OutCost = BSDefs::VesselCost; OutTag = FString::Printf(TEXT("%ds"), FMath::CeilToInt(VesselCd)); return VesselCd <= 0 && !Vessel; }
 	OutTag = TEXT("MAX");
-	if (Id == TEXT("reaper")) { OutCost = BSDefs::ReaperCost; return Reapers.Num() < BSDefs::ReaperMax; }
 	if (Id == TEXT("ghost")) { OutCost = BSDefs::GhostCost; return Ghosts.Num() < BSDefs::GhostMax; }
 	if (Id == TEXT("bc")) { OutCost = BSDefs::BcCost; return !Bc.IsValid(); }
 	const FBSMechDef* D = BSDefs::FindMech(Id);
@@ -1604,7 +1634,6 @@ bool ABSGame::BuyTech(const FString& Id)
 	if (Id == TEXT("vikings")) return CallVikings();
 	if (Id == TEXT("wraiths")) return CallWraiths();
 	if (Id == TEXT("vessel")) return CallVessel();
-	if (Id == TEXT("reaper")) return AddReaper();
 	if (Id == TEXT("ghost")) return AddGhost();
 	if (Id == TEXT("bc")) return CallBattlecruiser();
 	return AddMech(Id);
@@ -1617,6 +1646,25 @@ void ABSGame::GrantAllTech()
 	for (const FBSCardDef& C : BSDefs::Cards())
 		if (!C.Grow) for (int32 Guard = 0; Guard < 20 && CardLevel(C) < CardMax(C); Guard++) ApplyCard(C);
 	Minerals += 20000;
+}
+
+// The High Ground card (lane): goliaths and thors walk up to their plateau posts, and two more siege tank slots open up
+// there.
+void ABSGame::TakeHighGround()
+{
+	if (Mode != EBSMode::Lane) return;
+	const TMap<FString, TArray<FVector2D>> Was = MechSlots;
+	MechSlots = MechHigh;
+	for (const TSharedPtr<FBSMech>& M : Mechs)
+	{
+		const TArray<FVector2D>* Old = Was.Find(M->Def->Key);
+		const int32 i = Old ? Old->IndexOfByKey(M->Slot) : INDEX_NONE;
+		if (i == INDEX_NONE || M->Def->Key == TEXT("odin")) continue;
+		M->Slot = MechSlots[M->Def->Key][i];
+		if (!M->Fwd.bOn) { M->bReady = false; M->bRoute = false; }
+	}
+	TankSlots.Append(TankHigh);
+	TankMax = BSDefs::TankMaxLane + BSDefs::TankHigh;
 }
 
 // Goliaths, thors and the odin walk in from the south to their posts, then fight with separate anti-ground and
@@ -1900,7 +1948,7 @@ void ABSGame::UpdateBc(float Dt)
 				E = L.Num() ? L[FMath::RandRange(0, FMath::Min(4, L.Num()) - 1)] : nullptr;
 			Tu.Target = E;
 			if (!E) continue;
-			HurtEnemy(E, E->Def->bFlying ? BSDefs::BcLaserA : BSDefs::BcLaserG);
+			HurtEnemy(E, (E->Def->bFlying ? BSDefs::BcLaserA : BSDefs::BcLaserG) + AirBonus());
 			const FVector Hit(E->X + Rnd(-0.15f, 0.15f), E->Y + Rnd(-0.15f, 0.15f), E->Z + E->Def->Height * 0.5f);
 			AddFx(EBSFxKind::Tracer, At, Hit, 0.1f, 0.05f, FLinearColor(1.f, 0.62f, 0.18f), 22);
 			PlayFx(TEXT("laserImpact"), Hit, FMath::Atan2(At.Y - Hit.Y, At.X - Hit.X), 1.2f);
@@ -2450,6 +2498,7 @@ void ABSGame::StartWave()
 	Tele.KillsAtStart = Kills; Tele.WaveStart = Time;
 	Wave++;
 	LingerT = 0;
+	FillReapers();
 	const int32 Mule = 30 * CardLevel(TEXT("mule"));
 	if (Mule) { Minerals += Mule; Floater(0, -3, 2, FString::Printf(TEXT("+%d MULE"), Mule), FLinearColor(0.5f, 0.85f, 1)); }
 	const int32 Wv = Wave;
@@ -2461,7 +2510,7 @@ void ABSGame::StartWave()
 	// Late game: every high-tech card unlocked brings stranger zerg, and more of them. Guardians come for the mechs;
 	// scourge and devourers only when there is Terran air to hunt. The last push throws in the whole late roster.
 	// Rare units (Max: brood queens) never number more than Max on the field and on their way, counting this wave.
-	const int32 Tier = bPush ? FMath::Max(LateTier(), BSDefs::Tech().Num()) : LateTier();
+	const int32 Tier = bPush ? FMath::Max(LateTier(), BSDefs::Tech().Num() + 1) : LateTier();
 	const bool bAirUp = AirPresence();
 	auto Wt = [&](const FBSZergDef* D) { return D->Weight * (D->Late ? 0.6f + 0.4f * Tier : 1.f) * (D->bPreferMech && Mechs.Num() ? 2.f : 1.f) * (D->bAntiAir && !bAirUp ? 0.f : 1.f); };
 	TArray<const FBSZergDef*> Types;
@@ -2677,7 +2726,7 @@ bool ABSGame::UpdateKerrigan(const TSharedPtr<FBSEnemy>& EP, const FBSTarget& T,
 		const FVector At(E.Blast.X, E.Blast.Y, BSTerrain::Height(E.Blast.X, E.Blast.Y));
 		if (!PlayFx(TEXT("apocalypse"), At, 0, 1.2f)) EmitExplosion(At + FVector(0, 0, 0.3f), BSDefs::ApocRadius, FLinearColor(0.85f, 0.5f, 1.f), FLinearColor(0.35f, 0.1f, 0.6f), 24);
 		const TArray<FBSTarget> Under = Targets;
-		for (const FBSTarget& O : Under) if (FMath::Sqrt(Dist2(E.Blast.X, E.Blast.Y, O.X, O.Y)) - O.Radius <= BSDefs::ApocRadius) DamageDefender(O, BSDefs::ApocDmg);
+		for (const FBSTarget& O : Under) if (FMath::Sqrt(Dist2(E.Blast.X, E.Blast.Y, O.X, O.Y)) - O.Radius <= BSDefs::ApocRadius) DamageDefender(O, BSDefs::ApocDmg * (O.bStructure ? BSDefs::BossStructure : 1.f));
 		PlaySound(BSSounds::Explosion, 0.9f);
 		Shake = FMath::Min(1.f, Shake + 0.5f);
 	}
@@ -2692,7 +2741,7 @@ bool ABSGame::UpdateKerrigan(const TSharedPtr<FBSEnemy>& EP, const FBSTarget& T,
 			E.LeapT = -1; E.Z = BSTerrain::Height(E.X, E.Y); E.Anim.Reset();
 			PlayFx(TEXT("leapImpact"), FVector(E.X, E.Y, E.Z), E.Yaw, 1.4f);
 			const TArray<FBSTarget> Under = Targets;
-			for (const FBSTarget& O : Under) if (FMath::Sqrt(Dist2(E.X, E.Y, O.X, O.Y)) - O.Radius <= BSDefs::LeapRadius) DamageDefender(O, BSDefs::LeapDmg);
+			for (const FBSTarget& O : Under) if (FMath::Sqrt(Dist2(E.X, E.Y, O.X, O.Y)) - O.Radius <= BSDefs::LeapRadius) DamageDefender(O, BSDefs::LeapDmg * (O.bStructure ? BSDefs::BossStructure : 1.f));
 			PlaySound(TEXT("ultraliskAttack"), 0.6f);
 			Shake = FMath::Min(1.f, Shake + 0.4f);
 		}
@@ -3096,7 +3145,7 @@ void ABSGame::UpdateOverlord(const TSharedPtr<FBSEnemy>& EP, float Dt)
 	PlayEnemyAnim(E, TEXT("walk"));
 }
 
-// ---- Reapers and ghosts (armoury special infantry) ----------------------------------------------------------------
+// ---- Reapers and ghosts (special infantry) -----------------------------------------------------------------------------
 void ABSGame::KillSpecial(const TSharedPtr<FBSSpecial>& O)
 {
 	O->bDead = true;
@@ -3108,31 +3157,65 @@ void ABSGame::KillSpecial(const TSharedPtr<FBSSpecial>& O)
 	Floater(O->X, O->Y, Gz + 2.5f, TEXT("KIA"), FLinearColor(1, 0.42f, 0.35f));
 }
 
-// Reapers drop in behind the bunker and take a spot just ahead of it.
+// The Reaper Squad card: bring the squad up to strength (on buying it, and at the start of every wave).
+void ABSGame::FillReapers()
+{
+	const int32 N = BSDefs::ReaperSquad[FMath::Min(CardLevel(TEXT("reaper")), (int32)UE_ARRAY_COUNT(BSDefs::ReaperSquad) - 1)];
+	if (Reapers.Num() >= N) return;
+	const bool bFresh = !Reapers.Num();
+	while (Reapers.Num() < N) AddReaper();
+	Toast(bFresh ? TEXT("Reaper squad inbound") : TEXT("Reaper reinforcements inbound"));
+}
+
+// A reaper drops in behind the bunker and joins the smaller fire team, which it catches up with on its beat.
 bool ABSGame::AddReaper()
 {
 	const bool bLane = Mode == EBSMode::Lane;
-	if (Reapers.Num() >= BSDefs::ReaperMax) { Toast(TEXT("No room for more")); return false; }
-	if (Minerals < BSDefs::ReaperCost) { Toast(TEXT("Not enough minerals")); return false; }
-	Minerals -= BSDefs::ReaperCost;
-	TArray<FVector2D> Homes;
-	for (int32 i = 0; i < BSDefs::ReaperMax; i++) Homes.Add(bLane ? FVector2D(-2.5f + i, 2.2f) : FVector2D(FMath::Cos(i * PI / 3) * 3.6f, FMath::Sin(i * PI / 3) * 3.6f));
-	const FVector2D* Free = Homes.FindByPredicate([this](const FVector2D& H) { return !Reapers.ContainsByPredicate([&H](const TSharedPtr<FBSSpecial>& O) { return O->Home == H; }); });
+	int32 N[2] = { 0, 0 };
+	for (const TSharedPtr<FBSSpecial>& O : Reapers) N[O->Team]++;
 	TSharedPtr<FBSSpecial> R = MakeShared<FBSSpecial>();
-	R->Home = Free ? *Free : Homes[0]; R->X = R->Home.X; R->Y = bLane ? -9.f : -12.f;
+	R->Team = N[0] <= N[1] ? 0 : 1;
+	R->X = (R->Team ? 1 : -1) * 2.f; R->Y = bLane ? -9.f : -12.f; R->Home = FVector2D(R->X, R->Y);
 	R->Hp = R->MaxHp = BSDefs::ReaperHp; R->Kd = Rnd(2, 5);
 	R->Actor = AcquireModel(TEXT("reaper"));
 	if (R->Actor) { R->Actor->SetTeamColor(TerranColor); R->Actor->SetSim(R->X, R->Y, BSTerrain::Height(R->X, R->Y), R->Yaw); }
 	Reapers.Add(R);
-	Toast(TEXT("Reaper inbound"));
 	return true;
 }
 
-// Hit and run: harass the nearest ground zerg near our lines from pistol range, back off from anything that closes
-// while reloading, lob a KD8 charge into a pack now and then, and jump-pack straight over the cliffs either way.
+FVector2D ABSGame::BeatAt(const TArray<FVector2D>& Pts, float S) const
+{
+	float Len = 0;
+	for (int32 i = 0; i < Pts.Num(); i++) Len += FVector2D::Distance(Pts[i], Pts[(i + 1) % Pts.Num()]);
+	if (Len <= 0) return Pts.Num() ? Pts[0] : FVector2D::ZeroVector;
+	S = FMath::Fmod(FMath::Fmod(S, Len) + Len, Len);
+	for (int32 i = 0; ; i++)
+	{
+		const FVector2D& A = Pts[i]; const FVector2D& B = Pts[(i + 1) % Pts.Num()];
+		const float L = FVector2D::Distance(A, B);
+		if (S <= L || i == Pts.Num() - 1) return A + (B - A) * FMath::Clamp(S / (L > 0 ? L : 1.f), 0.f, 1.f);
+		S -= L;
+	}
+}
+
+// Two fire teams walk their beat (strung out along it, the team waiting for stragglers) and, hit and run, harass the
+// nearest ground zerg near it from pistol range: back off from anything that closes while reloading, lob a KD8 charge
+// into a pack now and then, and jump-pack straight over the cliffs either way.
 void ABSGame::UpdateReapers(float Dt)
 {
 	const bool bLane = Mode == EBSMode::Lane;
+	for (int32 Team = 0; Team < 2; Team++)
+	{
+		int32 i = 0; bool bBusy = false, bBehind = false;
+		for (const TSharedPtr<FBSSpecial>& R : Reapers)
+		{
+			if (R->bDead || R->Team != Team) continue;
+			R->Home = BeatAt(ReaperBeats[Team], ReaperBeat[Team] - i++ * BSDefs::ReaperGap);
+			bBusy |= R->bHunting;
+			bBehind |= Dist2(R->X, R->Y, R->Home.X, R->Home.Y) > 2.5f * 2.5f;
+		}
+		if (i && !bBusy && !bBehind) ReaperBeat[Team] += BSDefs::ReaperPatrol * Dt;
+	}
 	const TArray<TSharedPtr<FBSSpecial>> Snapshot = Reapers;
 	for (const TSharedPtr<FBSSpecial>& RP : Snapshot)
 	{
@@ -3146,11 +3229,12 @@ void ABSGame::UpdateReapers(float Dt)
 			if (!E->Alive() || E->Def->bFlying || E->Def->bUntouchable || E->bBurrowed) continue;
 			const float Dd = FMath::Sqrt(Dist2(R.X, R.Y, E->X, E->Y));
 			if (Dd < Near) { Near = Dd; NearE = E; }
-			if (Dd < Td && FMath::Sqrt(E->X * E->X + E->Y * E->Y) < BSDefs::ReaperHunt) { Td = Dd; Tg = E; }
+			if (Dd < Td && Dd < BSDefs::ReaperHunt && Dist2(E->X, E->Y, R.Home.X, R.Home.Y) < BSDefs::ReaperLeash * BSDefs::ReaperLeash) { Td = Dd; Tg = E; }
 		}
+		R.bHunting = Tg.IsValid();
 		if (Tg && R.Cd <= 0 && Td - Tg->Radius <= BSDefs::ReaperRange && R.StunUntil <= Time) { ReaperFire(R, Tg); R.Cd = BSDefs::ReaperCd; R.Kite = Time + 0.7f; }
 		if (R.Kd <= 0) R.Kd = ThrowKD8(R) ? BSDefs::Kd8Cd : 0.5f;
-		// Hurt: pull back home to heal, unless something is on top of it. Otherwise run while reloading, close to pistol
+		// Hurt: keep to the beat to heal, unless something is on top of it. Otherwise run while reloading, close to pistol
 		// range, or hold and shoot.
 		float Gx = R.Home.X, Gy = R.Home.Y;
 		const bool bHurt = R.Hp < R.MaxHp * BSDefs::ReaperFallBack, bClose = NearE && Near < BSDefs::ReaperKite;
@@ -4021,7 +4105,7 @@ void ABSGame::DamageDefender(const FBSTarget& T, float Dmg)
 	else if (T.Kind == FBSTarget::Tank)
 	{
 		TSharedPtr<FBSTank> K = T.TankRef.Pin();
-		K->Hp -= FMath::Max(0.5f, Dmg - K->Armor); K->Flash = 1;
+		K->Hp -= FMath::Max(0.5f, Dmg - K->Armor - Up.VPlate); K->Flash = 1;
 		if (K->Hp <= 0 && !K->bDead)
 		{
 			K->bDead = true;
@@ -4066,19 +4150,19 @@ void ABSGame::DamageDefender(const FBSTarget& T, float Dmg)
 	else if (T.Kind == FBSTarget::Mech)
 	{
 		TSharedPtr<FBSMech> M = T.MechRef.Pin();
-		M->Hp -= FMath::Max(0.5f, Dmg - M->Def->Armor); M->Flash = 1;
+		M->Hp -= FMath::Max(0.5f, Dmg - M->Def->Armor - Up.VPlate); M->Flash = 1;
 		if (M->Hp <= 0 && !M->bDead) KillMech(M);
 	}
 	else if (T.Kind == FBSTarget::Bc)
 	{
 		TSharedPtr<FBSBattlecruiser> B = T.BcRef.Pin();
-		B->Hp -= FMath::Max(0.5f, Dmg - B->Armor); B->Flash = 1;
+		B->Hp -= FMath::Max(0.5f, Dmg - B->Armor - Up.SPlate); B->Flash = 1;
 		if (B->Hp <= 0 && !B->bDead) KillAir(T);
 	}
 	else if (T.Kind == FBSTarget::Air)
 	{
 		TSharedPtr<FBSBanshee> A = T.AirRef.Pin();
-		A->Hp -= FMath::Max(0.5f, Dmg - (T.AirType == FBSTarget::Vessel ? BSDefs::VesselArmor : 0.f)); A->Flash = 1;
+		A->Hp -= FMath::Max(0.5f, Dmg - (T.AirType == FBSTarget::Vessel ? BSDefs::VesselArmor : 0.f) - Up.SPlate); A->Flash = 1;
 		if (A->Hp <= 0 && !A->bDead) KillAir(T);
 		else if (T.AirType == FBSTarget::Wraith && A->CloakUntil <= 0 && Time >= A->CloakReady)
 		{
@@ -4491,15 +4575,15 @@ void ABSGame::UpdateEnemies(float Dt)
 					float Dmg = D->Dmg;
 					if (Tg.bLight) Dmg += D->DmgLight;
 					if (Tg.bArmored) Dmg += D->DmgArmored;
-					DamageDefender(Tg, Dmg);
+					DamageDefender(Tg, Tg.bStructure && D->DmgStructure > 0 ? D->DmgStructure : Dmg);
 					if (!D->ImpactFx.IsEmpty())
 					{
 						const float A = FMath::Atan2(E.Y - Tg.Y, E.X - Tg.X);
 						PlayFx(D->ImpactFx, FVector(Tg.X + FMath::Cos(A) * Tg.Radius, Tg.Y + FMath::Sin(A) * Tg.Radius, 0.5f), A);
 					}
-					if (D->Cleave > 0)
+					if (D->Cleave > 0)                       // through troops and machines, never into the walls of a building
 						for (const FBSTarget& O : Targets)
-							if (!O.Same(Tg) && FMath::Sqrt(Dist2(Tg.X, Tg.Y, O.X, O.Y)) - O.Radius < D->Cleave) DamageDefender(O, Dmg * 0.5f);
+							if (!O.Same(Tg) && !O.bStructure && FMath::Sqrt(Dist2(Tg.X, Tg.Y, O.X, O.Y)) - O.Radius < D->Cleave) DamageDefender(O, Dmg * 0.5f);
 				}
 			}
 		}
@@ -4714,7 +4798,7 @@ void ABSGame::UpdateTanks(float Dt)
 			K.Cd -= Dt;
 			if (K.StunUntil > Time) continue;                               // pinned by Kerrigan
 			if (K.Cd > 0) continue;
-			const float Reach = BSDefs::TankRange + (Up.bHiSec ? BSDefs::HiSecRange : 0.f) + 2 * CardLevel(TEXT("siegerange"));
+			const float Reach = BSDefs::TankRange + (Up.bHiSec ? BSDefs::HiSecRange : 0.f) + 2 * CardLevel(TEXT("siegerange")) + (BSTerrain::OnHigh(K.X, K.Y) ? 1.f : 0.f);   // the high ground's reach
 			auto Pred = [&K](const FBSEnemy& E) { return !E.Def->bFlying && FMath::Sqrt(Dist2(K.X, K.Y, E.X, E.Y)) > BSDefs::TankMinRange; };
 			TSharedPtr<FBSEnemy> Target;
 			if (TSharedPtr<FBSEnemy> F = Focus.Pin())
@@ -4839,7 +4923,7 @@ void ABSGame::UpdateBanshees(float Dt)
 					const float Off = k ? 0.4f : -0.4f;
 					FBSProjectile P; P.Kind = EBSProjKind::Rocket; P.bFriendly = true;
 					P.From = FVector(B.X - FMath::Sin(B.Yaw) * Off, B.Y + FMath::Cos(B.Yaw) * Off, B.Z - 0.3f);
-					P.To = FVector(L[0]->X, L[0]->Y, L[0]->Z + 0.3f); P.T = -k * 0.1f; P.Dur = 0.35f; P.Dmg = BSDefs::BansheeDmg; P.TargetEnemy = L[0]; P.ImpactFx = TEXT("bansheeImpact");
+					P.To = FVector(L[0]->X, L[0]->Y, L[0]->Z + 0.3f); P.T = -k * 0.1f; P.Dur = 0.35f; P.Dmg = BSDefs::BansheeDmg + AirBonus(); P.TargetEnemy = L[0]; P.ImpactFx = TEXT("bansheeImpact");
 					AddProjectileModel(P, TEXT("projBanshee"), TEXT("bansheeMissile"));
 					if (!P.Model) AddProjectileVisual(P, FLinearColor(1, 0.7f, 0.3f), 0.15f);
 					Projectiles.Add(P);

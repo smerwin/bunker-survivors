@@ -190,7 +190,10 @@ alone would give.
 
 | Card | Rarity | What it does |
 | --- | --- | --- |
-| Infantry Weapons, Vehicle Weapons, Building Armor | common | One level of that research (many levels; Vehicle Weapons once you have a tank). |
+| Infantry Weapons, Vehicle Weapons, Building Armor | common | One level of that research (many levels; Vehicle Weapons once you have a tank). Vehicle Weapons: siege tanks +5, goliaths, thors and the Odin +2. |
+| Vehicle Plating | common, 5 levels | Siege tanks, goliaths, thors and the Odin +1 armour a level (needs Vehicle Weapons 3). |
+| Ship Weapons | common, 10 levels, needs the Starport | Every ship +1 damage a shot: the air strike's banshees, vikings, wraiths and the battlecruiser's lasers. |
+| Ship Plating | common, 5 levels, needs Ship Weapons 2 | Every ship +1 armour a level: banshees, vikings, wraiths, the science vessel and the battlecruiser. |
 | Stimpack, Neosteel Frame, Medivac on Station | common | Unlock STIM; bunker holds six; a medivac heals the troops (needs Stimpack). |
 | Hi-Sec Auto Tracking / Magnetic Rails | rare / epic | +1 range for the bunker and tanks / +2 bunker range (needs Hi-Sec). |
 | Refinery | common, 5 levels | +1 mineral a second. |
@@ -211,8 +214,9 @@ alone would give.
 | Starport | common, from wave 16 | Puts the viking wing in the armoury. |
 | Wraith Squadron | common | Puts the wraith squadron in the armoury (needs the Starport). |
 | Science Facility | rare | Puts the science vessel in the armoury (needs the Starport). |
-| Reaper Squad | rare, from wave 8 | Puts reapers in the armoury. Joins the pool once a run has cleared wave 10. |
-| Ghost Program | epic | Puts ghosts in the armoury (needs Ghost Academy). Joins the pool once you have bought Ghost Academy in an earlier run. |
+| Reaper Squad | rare, 2 levels, from wave 8 | A squad of four reapers (six at level 2) in two fire teams that patrol the high ground (lane: a beat round each plateau; arena: a ring round the bunker). They hit and run against ground zerg near their beat: dual pistols, backing off from anything that closes while they reload, and a KD8 charge every 12 s that knocks a pack back. They jump-pack over the cliffs both ways and heal out of combat. Losses are replaced at the start of every wave. Joins the pool once a run has cleared wave 10. |
+| High Ground | epic, lane only, from wave 12 | Opens the plateaus beside the stem: goliaths and thors walk up to posts there (until then goliaths flank the bunker and thors stand behind it), two more siege tanks can deploy out on the plateaus, and the Ghost Program needs it. Tanks and walkers up there get +1 range. Needs a siege tank. |
+| Ghost Program | epic | Puts ghosts in the armoury (needs Ghost Academy, and in the lane the High Ground). Joins the pool once you have bought Ghost Academy in an earlier run. |
 | Siege Optics | epic | Siege tanks +2 range. Unlocked by buying Vehicle Weapons 3 times. |
 | Factory | epic | Puts goliaths in the armoury (needs Vehicle Weapons 2). Unlocked by buying Vehicle Weapons 5 times. |
 | Ghost Academy | epic | Puts the tactical nuke in the armoury (needs Infantry Weapons 3). Unlocked by buying Infantry Weapons 10 times. |
@@ -229,14 +233,13 @@ minerals for the first level (450 for the armor), 125 more for each one after.
 
 | Unit | What it does |
 | --- | --- |
-| Goliath (250, up to 4) | Walkers that take the plateaus beside the stem (lane: up the arms' ramps), with the high ground's extra reach: autocannons against ground, missiles against air. |
+| Goliath (250, up to 4) | Walkers flanking the bunker; with the High Ground card (lane) they take the plateaus beside the stem instead (up the arms' ramps), with the high ground's extra reach: autocannons against ground, missiles against air. |
 | Tactical Nuke (400) | A ghost calls a nuke on the densest pack clear of the bunker. 45 s to reload. |
-| Viking Wing (300) | Close air support for 20 s: four fighters fly long strafing passes up and down the lane (round the bunker in the arena) in a spread wedge, firing fast missile pairs at the air ahead of them and staying on a target while it is there. Vehicle Weapons and Maelstrom Rounds add to every shot. |
-| Wraith Squadron (350) | Three wraiths fly the same strafing passes for 20 s: rapid lasers raking the ground ahead, missiles at air; Vehicle Weapons and Maelstrom Rounds add to every shot. A wraith that is fired upon cloaks for 6 s (an overseer still sees it). 40 s to rearm. |
-| Reaper (100, up to 6) | Fast hit-and-run skirmishers: dual pistols on the nearest zerg near your lines, backing off from anything that closes while they reload, and a KD8 charge every 12 s that knocks a pack back. They jump-pack over the cliffs both ways, and pull back to heal when hurt. |
+| Viking Wing (300) | Close air support for 20 s: four fighters fly long strafing passes up and down the lane (round the bunker in the arena) in a spread wedge, firing fast missile pairs at the air ahead of them and staying on a target while it is there. Ship Weapons adds to every shot. |
+| Wraith Squadron (350) | Three wraiths fly the same strafing passes for 20 s: rapid lasers raking the ground ahead, missiles at air; Ship Weapons adds to every shot. A wraith that is fired upon cloaks for 6 s (an overseer still sees it). 40 s to rearm. |
 | Ghost (200, up to 4) | Cloaked snipers that take the high ground over the ramps and the stem: the C-10 rifle on anything climbing to them, Steady Targeting (170) on anything big and armoured. Each ghost on the field takes 15% off the tactical nuke's price and reload. From wave 18, overseers come hunting them: a revealed ghost turns its guns on the overseer and sidesteps away from it until it is hidden again. |
 | Science Vessel (400) | On station over the lane for 30 s: Irradiate on the densest pack (damage over time to everything around its target), and a Defensive Matrix (soaks 250 damage for 12 s) on the most battered of the bunker, tanks and mechs. Fired upon, it pulls back behind the bunker and returns once it has gone 3 s unhit. 50 s to refit. |
-| Thor (600, up to 2) | Heavy walkers firing long-range from the plateaus beside the bunker. |
+| Thor (600, up to 2) | Heavy walkers firing long-range from behind the bunker, or with the High Ground card from the plateaus beside it. |
 | Battlecruiser (1500) | Parks nose-south over the fork of the lane. As in StarCraft II, its laser batteries fire rapid amber bolts along six hardpoints (8 against ground, 5 against air), taking scourge (then devourers) first, a little beyond their usual range; missile pods fire at air only, and the Yamato charges at the bow for two seconds before it fires. |
 | Odin (2500) | Heavy artillery from behind the bunker. |
 
@@ -279,7 +282,7 @@ plateau finds their own way back down.
 | Overlords (from wave 3) | Never counted against the swarm on the field. Overseers (from wave 18, only while you have ghosts) hunt cloaked ghosts and wraiths. Watchers drift to a vantage point out of reach and glare at the bunker for half a minute; drop overlords unload zerg up the lane, worse as the waves go on: zerglings from wave 3, banelings from 8, roaches and hydralisks from 14, infested marines from 22, and from wave 30 a whole ultralisk. |
 | Nydus worm | Heavily armoured; breaches behind the bunker or (lane) up on the plateaus among your walkers and ghosts, and disgorges zerg until it is killed or sinks away. |
 | Creep (from wave 8, whatever your tech) | Queens walk with the waves planting creep tumors; each tumor spreads creep and buds one more toward the bunker, and from wave 10 overlords drift in overhead dribbling creep onto the field (shoot them down with anti-air). Zerg on creep move 30% faster, and creep lingers after its tumors die. Firebat flames burn it back and singe tumors. |
-| Kerrigan (28 minutes in) | The finale, the swarm's last push. The Queen of Blades comes for the bunker in person with a leviathan and a maxed-out wave: nothing you have can hurt her, so your guns ignore her while she uses everything a maxed-out Heart of the Swarm Kerrigan has: wing and claw attacks that sweep everything round her target, Fury, Leaping Strike onto your lines, Apocalypse on the thickest knot of defenders, Kinetic Blast on your biggest machine, Crushing Grip and the Immobilization Wave (which pin defenders so they cannot fire), Chain Lightning through your troops, Wild Mutation on the zerg round her (half damage) and fresh banelings. The leviathan (which can be killed) bombards from the air and spawns mutalisks, and zerg drop pods slam down all round the base. Hold on until the Hyperion takes you off. Try it with `?clock=28&tech=max` (Unreal: `-BSClock=28 -BSTechMax`), or the evac with `?clock=29.5`. |
+| Kerrigan (28 minutes in) | The finale, the swarm's last push. The Queen of Blades comes for the bunker in person with a leviathan and a maxed-out wave: nothing you have can hurt her, so your guns ignore her while she uses everything a maxed-out Heart of the Swarm Kerrigan has: wing and claw attacks that sweep everything round her target, Fury, Leaping Strike onto your lines, Apocalypse on the thickest knot of defenders, Kinetic Blast on your biggest machine, Crushing Grip and the Immobilization Wave (which pin defenders so they cannot fire), Chain Lightning through your troops, Wild Mutation on the zerg round her (half damage) and fresh banelings. Buildings stand up to her better than troops: her blows on the bunker land for 18, her sweeps never reach into its walls, and Apocalypse and Leaping Strike do 40% to buildings. The leviathan (which can be killed) bombards from the air and spawns mutalisks, and zerg drop pods slam down all round the base. Hold on until the Hyperion takes you off. Try it with `?clock=28&tech=max` (Unreal: `-BSClock=28 -BSTechMax`), or the evac with `?clock=29.5`. |
 
 **Stimpacks** send the soldiers standing outside charging at the nearest zerg until they are in range.
 

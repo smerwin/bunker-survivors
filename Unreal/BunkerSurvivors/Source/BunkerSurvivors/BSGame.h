@@ -79,15 +79,16 @@ struct FBSMech
 
 struct FBSEnemy;
 
-// Armoury special infantry. A reaper fights hit and run from Home (Cd: pistols, Kd: next KD8 charge, Kite: backing off
-// until then, JumpUntil: mid jump-pack hop over a cliff). A ghost holds Home, its post on the high ground (Side: the
+// Special infantry. A reaper fights hit and run from Home, its post on its fire team's beat (Team; Cd: pistols, Kd: next
+// KD8 charge, Kite: backing off until then, JumpUntil: mid jump-pack hop over a cliff, bHunting: it has a target). A
+// ghost holds Home, its post on the high ground (Side: the
 // ledge route up to it in the lane), walking Route there; cloaked unless bDetected, it channels Steady Targeting on
 // Channel until ChannelUntil (bChannel), and holds still until Hold after a rifle shot.
 struct FBSSpecial
 {
-	bool bGhost = false, bDead = false, bDetected = false, bChannel = false;
+	bool bGhost = false, bDead = false, bDetected = false, bChannel = false, bHunting = false;
 	FVector2D Home = FVector2D::ZeroVector;
-	int32 Side = 0;
+	int32 Side = 0, Team = 0;
 	float X = 0, Y = 0, Yaw = PI / 2, Hp = 0, MaxHp = 0, Armor = 0, Cd = 0, Kd = 0, Kite = 0, HitAt = -99, JumpUntil = 0, Flash = 0, Radius = 0.375f;
 	float SnipeCd = 3, ChannelUntil = 0, Hold = 0;
 	float StunUntil = 0;                      // pinned by Kerrigan (no firing) until then
@@ -358,7 +359,7 @@ public:
 	TSharedPtr<FBSBanshee> Vessel;
 	TArray<TSharedPtr<FBSEnemy>> Irradiated;
 	TArray<FBSMatrix> Matrices;
-	TArray<TSharedPtr<FBSSpecial>> Reapers, Ghosts;     // armoury special infantry (UpdateReapers, UpdateGhosts)
+	TArray<TSharedPtr<FBSSpecial>> Reapers, Ghosts;     // the Reaper Squad card and armoury ghosts (UpdateReapers, UpdateGhosts)
 	// Each ghost on the field takes GhostNukeCut off the tactical nuke's price and reload (up to four).
 	float NukeCut() const { return 1 - BSDefs::GhostNukeCut * FMath::Min(4, Ghosts.Num()); }
 	int32 NukeCost() const { return FMath::RoundToInt(BSDefs::NukeCost * NukeCut()); }
@@ -401,7 +402,7 @@ public:
 	float CreepAt(float X, float Y) const;
 	bool OnCreep(float X, float Y) const { return CreepAt(X, Y) > BSCreep::On; }
 	int32 TumorCount() const;
-	struct FUp { bool bStim = false, bNeosteel = false, bMedivac = false, bHiSec = false, bRails = false; int32 Weapons = 0, Vehicle = 0, Plating = 0; } Up;
+	struct FUp { bool bStim = false, bNeosteel = false, bMedivac = false, bHiSec = false, bRails = false; int32 Weapons = 0, Vehicle = 0, VPlate = 0, Ship = 0, SPlate = 0, Plating = 0; } Up;
 	struct FAb { float StimUntil = 0, StimCd = 0, StrikeCd = 0, RepairCd = 0, YamatoCd = 0; } Ab;
 	bool UseYamato();
 	int32 TankCost() const { return BSDefs::TankCost + BSDefs::TankCostStep * FMath::Max(0, Tanks.Num() - 1); }
@@ -446,6 +447,7 @@ private:
 	void Step(float Dt);
 	void StartWave();
 	bool CardReq(const FBSCardDef& C) const;
+	bool ReqMet(const FString& R) const;      // one CardReq requirement
 	bool CardOpen(const FBSCardDef& C) const;
 	TArray<FString> RollOffers();
 	void ApplyCard(const FBSCardDef& C);
@@ -506,9 +508,13 @@ private:
 	// What a strafing flier shoots: its locked target while that stays in reach and within Cone of Heading, else the nearest
 	// that is.
 	TSharedPtr<FBSEnemy> StrafeTarget(const FBSBanshee& U, TWeakPtr<FBSEnemy>& Lock, float Heading, float Range, float Cone, TFunctionRef<bool(const FBSEnemy&)> Pred) const;
-	float AirBonus() const { return Up.Vehicle + Cards.FindRef(TEXT("maelstrom")); }
+	float AirBonus() const { return Up.Ship; }
 	// Reapers and ghosts.
+	void FillReapers();                       // the Reaper Squad card: up to strength (on buying it, and every wave)
 	bool AddReaper();
+	FVector2D BeatAt(const TArray<FVector2D>& Pts, float S) const;   // the point S metres along a closed beat
+	TArray<FVector2D> ReaperBeats[2];         // each fire team's beat (lane: a loop round its plateau; arena: a ring)
+	float ReaperBeat[2] = { 0, 0 };           // how far along it each team has walked
 	void UpdateReapers(float Dt);
 	void ReaperFire(FBSSpecial& R, const TSharedPtr<FBSEnemy>& E);
 	bool ThrowKD8(FBSSpecial& R);
@@ -523,7 +529,10 @@ private:
 	TSharedPtr<FBSEnemy> DetectorAt(float X, float Y) const;   // the overseer that sees (X, Y), if any
 	void UpdateOverseer(const TSharedPtr<FBSEnemy>& E, float Dt);
 	TArray<FBSNuke> Nukes;
-	TMap<FString, TArray<FVector2D>> MechSlots;
+	// Walker posts: MechLow by default, MechHigh (the lane's plateaus) with the High Ground card (TakeHighGround).
+	TMap<FString, TArray<FVector2D>> MechSlots, MechLow, MechHigh;
+	TArray<FVector2D> TankHigh;               // High Ground: two more siege tank slots, out on the plateaus
+	void TakeHighGround();
 	void BuildTerrain();                      // the lane chokepoint's ground mesh (BSTerrain heights)
 	bool StepGround(float& X, float& Y, float Mx, float My, bool bDrop = false) const;
 	void UpdateStructures(float Dt);
@@ -557,7 +566,7 @@ private:
 	int32 LateTier() const
 	{
 		const int32 ByWave = Wave >= BSDefs::TierFrom ? (Wave - BSDefs::TierFrom) / BSDefs::TierEvery + 1 : 0;
-		return FMath::Min(BSDefs::Tech().Num(), FMath::Max(TechUnlocked.Num(), ByWave));
+		return FMath::Min(BSDefs::Tech().Num() + 1, FMath::Max(TechUnlocked.Num() + (Cards.FindRef(TEXT("reaper")) ? 1 : 0), ByWave));   // the Reaper Squad counts as tech
 	}
 	bool AirPresence() const { return Bc.IsValid() || VikingWing.Num() || Banshees.Num() || Wraiths.Num() || Vessel.IsValid(); }
 	void Despawn(const TSharedPtr<FBSEnemy>& E);
