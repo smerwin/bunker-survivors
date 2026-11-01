@@ -1708,6 +1708,22 @@ window.BS = window.BS || {};
           return true;
         } else e.leapCd = 1;
       }
+      // Making no headway on foot for 3 s (wedged on a cliff or against the mesa): Leaping Strike to a clear spot beside
+      // the bunker, on her side of it.
+      if (e.attacking || e.wx === undefined || dist(e.x, e.y, e.wx, e.wy) > 0.6) { e.wx = e.x; e.wy = e.y; e.stuck = 0; }
+      else if ((e.stuck = (e.stuck || 0) + dt) > 3) {
+        const a0 = Math.atan2(e.y, e.x), off = T().bunker.halfSize + e.radius + 0.4;
+        for (const da of [0, 0.5, -0.5, 1, -1, 1.6, -1.6]) {
+          const tx = Math.cos(a0 + da) * off, ty = Math.sin(a0 + da) * off;
+          if (!BS.Terrain.walkable(tx, ty)) continue;
+          e.stuck = 0; e.route = null; e.perched = false;
+          e.leap = { fx: e.x, fy: e.y, tx, ty, t: 0 };
+          e.yaw = Math.atan2(ty - e.y, tx - e.x); e.anim = 'leap'; e.handle.play(/^jump$/i, true);
+          this.fx.play('psionicShift', e.x, e.y, e.z + 1, e.yaw);
+          BS.audio.play('kerriganLeap', { vol: 0.8 });
+          return true;
+        }
+      }
       return false;
     }
     // Kerrigan casts: face the target, play that spell's animation over dur s and name it.
@@ -2881,6 +2897,9 @@ window.BS = window.BS || {};
           if (e.route && e.route.length) {
             [gx, gy] = e.route[0];
             if (Math.hypot(gx - e.x, gy - e.y) < 0.9) { e.route.shift(); if (!e.route.length && e.highRoute) e.perched = true; }
+          } else if (d.boss === 'kerrigan' && this.mode === 'lane' && !BS.Terrain.clearPath(e.x, e.y, gx, gy)) {
+            // Off her route (after a leap) with a cliff in the way: down the flow towards the bunker.
+            const f = BS.Terrain.homeFlow(e.x, e.y); if (f) { gx = e.x + f[0]; gy = e.y + f[1]; }
           }
           const gd = Math.hypot(gx - e.x, gy - e.y) || 1;
           // Zerg on creep move faster (ground units only).
@@ -2889,7 +2908,8 @@ window.BS = window.BS || {};
           const mx = nx * sp * dt + e.sx * 0.8, my = ny * sp * dt + e.sy * 0.8;
           // Cliffs: ground units steer around them; flyers ignore them.
           // Winged zerglings hop straight over cliffs and the mesa.
-          if (d.flying || d.hops) { e.x += mx; e.y += my; } else this.stepGround(e, mx, my);
+          // (Kerrigan drops down cliff faces as infantry do, so a leap onto the high ground never strands her there.)
+          if (d.flying || d.hops) { e.x += mx; e.y += my; } else this.stepGround(e, mx, my, d.boss === 'kerrigan');
           if (this.mode === 'lane') e.x = clamp(e.x, -21, 21);
           if (d.hops) { const gz = BS.Terrain.height(e.x, e.y); e.z = Math.max(gz, e.z + (gz - e.z) * Math.min(1, dt * 5)) + Math.abs(Math.sin(this.time * 7 + e.seed)) * 0.06; }
           else if (!d.flying) e.z = BS.Terrain.height(e.x, e.y);
