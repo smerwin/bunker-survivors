@@ -155,8 +155,11 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .modal .over h2 { color: var(--red); }
 .modal .card.over.won { border-color: rgba(120, 220, 140, 0.5); }
 .modal .over.won h2 { color: var(--green); }
-.stats { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 12px; }
-.stats b { display: block; font: 500 24px var(--wide); margin-top: 6px; }
+/* One stat a row (label left, figure right): six- and seven-figure scores no longer run into each other. */
+.stats { display: flex; flex-direction: column; margin: 0 auto 14px; max-width: 300px; }
+.stats div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 7px 4px; border-bottom: 1px solid var(--hair); }
+.stats div:last-child { border-bottom: none; }
+.stats b { font: 500 clamp(18px, 6vw, 24px) var(--wide); white-space: nowrap; }
 .pill { display: inline-block; padding: 4px 12px; border-radius: 99px; background: rgba(255, 255, 255, 0.08); font: 700 11px var(--body); letter-spacing: 0.1em; color: var(--muted); }
 .pill.new { color: var(--amber); background: rgba(255, 191, 60, 0.14); }
 .btns { display: flex; gap: 10px; margin-top: 22px; }
@@ -283,4 +286,24 @@ button { font: inherit; color: inherit; cursor: pointer; }
   #stimTag { display: none; }
   #hpText { font-size: 12px; }
   #squad { width: calc(100% - 136px); }
+}
+
+/* ---- Wear: a weathered, sandblasted finish over the whole UI ------------------------------------------------------
+   Panels and buttons carry fine grain, small pits with a lit lower rim (tiny impact craters) and faint scratches, plus a
+   bevel; display text is embossed and gently pitted. All generated SVG noise: no image files. */
+:root {
+  --grit: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E %3Cfilter id='g' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' seed='3' stitchTiles='stitch'/%3E %3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0.9 0 0 0 -0.42'/%3E%3C/filter%3E %3Cfilter id='p' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.16' numOctaves='3' seed='11' stitchTiles='stitch' result='t'/%3E %3CfeColorMatrix in='t' values='0 0 0 0 0 0 0 0 0 0.02 0 0 0 0 0.04 -14 0 0 0 3.85' result='pit'/%3E %3CfeOffset in='pit' dx='1' dy='1' result='o'/%3E %3CfeColorMatrix in='o' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.28 0' result='rim'/%3E %3CfeMerge%3E%3CfeMergeNode in='rim'/%3E%3CfeMergeNode in='pit'/%3E%3C/feMerge%3E%3C/filter%3E %3Cfilter id='s' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.004 0.55' numOctaves='2' seed='5' stitchTiles='stitch'/%3E %3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 1.6 0 0 0 -1.02'/%3E%3C/filter%3E %3Crect width='100%' height='100%' filter='url(%23g)' opacity='0.5'/%3E %3Crect width='100%' height='100%' filter='url(%23s)' opacity='0.55' transform='rotate(-8 120 120)'/%3E %3Crect width='100%' height='100%' filter='url(%23p)' opacity='0.65'/%3E%3C/svg%3E");
+  --wear: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E %3Cfilter id='m' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='2' seed='21' stitchTiles='stitch'/%3E %3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 -16 0 0 0 12.6'/%3E%3C/filter%3E %3Crect width='100%' height='100%' filter='url(%23m)'/%3E%3C/svg%3E");
+  --bevel: inset 0 1px 0 rgba(255, 255, 255, 0.09), inset 0 -2px 0 rgba(0, 0, 0, 0.35), 0 3px 10px rgba(0, 0, 0, 0.35);
+  --emboss: 0 1px 0 rgba(0, 0, 0, 0.9), 0 2px 3px rgba(0, 0, 0, 0.55), 0 -1px 0 rgba(255, 255, 255, 0.1);
+}
+.glass, .btns button, .item, .offer, .mode, #hyperionBtn, .perk, .codex, #relink, .pill {
+  background-image: var(--grit); background-size: 240px 240px; box-shadow: var(--bevel);
+}
+.btns button.primary { background-image: var(--grit), linear-gradient(#b4f4ff, #86e2f5); background-size: 240px 240px, 100% 100%; }
+h1, h2, #banner, #topbar .stat b, .stats b, .mode b, .offer b, #hpText, #shopTitle, #overTitle, .btns button, .ability b, .item b {
+  text-shadow: var(--emboss);
+}
+h1, h2, #banner, #topbar .stat b, .stats b, .mode b, #overTitle {
+  -webkit-mask-image: var(--wear); mask-image: var(--wear); -webkit-mask-size: 180px 180px; mask-size: 180px 180px;
 }
