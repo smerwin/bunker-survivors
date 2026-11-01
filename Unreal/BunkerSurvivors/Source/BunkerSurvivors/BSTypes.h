@@ -286,7 +286,7 @@ namespace BSDefs
 	constexpr float FinaleBudget = 1.5f, PodStart = 6, PodEvery = 2, PodLand = 2.7f, PodDmg = 60, PodRadius = 2, PodMinR = 7, PodMaxR = 13;
 	constexpr float LeapCd = 8, LeapMin = 3, LeapMax = 9, LeapDur = 0.7f, LeapDmg = 90, LeapRadius = 1.8f;           // Leaping Strike onto a defender out of reach
 	constexpr float ApocCd = 13, ApocRange = 9, ApocDelay = 1.2f, ApocDmg = 70, ApocRadius = 2;                      // a psionic blast on the thickest knot of defenders
-	constexpr float BossStructure = 0.4f;                                                                            // what Apocalypse and Leaping Strike do to buildings
+	constexpr float BossStructure = 0.7f;                                                                            // what Apocalypse and Leaping Strike do to buildings
 	constexpr float BroodCd = 15; constexpr int32 BroodCount = 3;                                                    // the leviathan spawns mutalisks
 	// The rest of a maxed-out Heart of the Swarm kit (ABSGame::KerriganKit). Her swings use every attack she has and sweep
 	// the wings (cleave); every FuryEvery-th swing sends her into a Fury (half again the attack speed for FuryDur s). Kinetic Blast

@@ -190,7 +190,7 @@ namespace
 		{
 			FBSZergDef& D = Add(TEXT("kerrigan"), TEXT("Kerrigan"), TEXT("kerrigan"), TEXT("kerriganDeath"), TEXT("btn-unit-zerg-kerriganinfested"));
 			D.ImpactFx = TEXT("ultraliskImpact");
-			D.Scale = 1.3f; D.Hp = 6000; D.Armor = 3; D.Dmg = 45; D.DmgStructure = 18; D.Cd = 0.7f; D.Range = 1.2f; D.Speed = 3.4f; D.Radius = 0.9f; D.bArmored = true; D.Cleave = 1.4f; D.Boss = TEXT("kerrigan"); D.bUntouchable = true; D.bPreferBunker = true;
+			D.Scale = 1.3f; D.Hp = 6000; D.Armor = 3; D.Dmg = 45; D.DmgStructure = 30; D.Cd = 0.7f; D.Range = 1.2f; D.Speed = 3.4f; D.Radius = 0.9f; D.bArmored = true; D.Cleave = 1.4f; D.Boss = TEXT("kerrigan"); D.bUntouchable = true; D.bPreferBunker = true;
 			D.Bounty = 2500; D.Budget = 0; D.Unlock = 999; D.Weight = 0; D.HitFrac = 0.4f; D.AttackAnims = { TEXT("attack"), TEXT("attack 01") };
 			D.SoundDeath = TEXT("kerriganDeath"); D.Height = 2.4f; D.DeathHold = 6;
 		}
@@ -244,12 +244,12 @@ namespace
 		Add(TEXT("vehicle"), TEXT("Vehicle Weapons"), TEXT("+5 (+3 armoured) siege tank damage, +2 for goliaths, thors and the Odin."),
 			{ TEXT("btn-upgrade-terran-vehicleweaponslevel1"), TEXT("btn-upgrade-terran-vehicleweaponslevel2"), TEXT("btn-upgrade-terran-vehicleweaponslevel3") }, { 115, 170, 225, 300, 395, 490, 600, 715, 865, 1015 });
 		Add(TEXT("vplate"), TEXT("Vehicle Plating"), TEXT("+1 armour for siege tanks, goliaths, thors and the Odin."),
-			{ TEXT("btn-upgrade-terran-vehicleplatinglevel1"), TEXT("btn-upgrade-terran-vehicleplatinglevel2"), TEXT("btn-upgrade-terran-vehicleplatinglevel3") }, { 130, 190, 260, 350, 460 });
+			{ TEXT("btn-upgrade-terran-vehicleplatinglevel1"), TEXT("btn-upgrade-terran-vehicleplatinglevel2"), TEXT("btn-upgrade-terran-vehicleplatinglevel3") }, { 130, 190, 260, 350, 460, 575, 700, 840, 1000, 1170 });
 		// Ships: the air strike's banshees, vikings, wraiths, the science vessel and the battlecruiser.
 		Add(TEXT("ship"), TEXT("Ship Weapons"), TEXT("+1 damage for every ship: banshees, vikings, wraiths, battlecruiser lasers."),
 			{ TEXT("btn-upgrade-terran-shipweaponslevel1"), TEXT("btn-upgrade-terran-shipweaponslevel2"), TEXT("btn-upgrade-terran-shipweaponslevel3") }, { 115, 170, 225, 300, 395, 490, 600, 715, 865, 1015 });
 		Add(TEXT("splate"), TEXT("Ship Plating"), TEXT("+1 armour for every ship."),
-			{ TEXT("btn-upgrade-terran-shipplatinglevel1"), TEXT("btn-upgrade-terran-shipplatinglevel2"), TEXT("btn-upgrade-terran-shipplatinglevel3") }, { 130, 190, 260, 350, 460 });
+			{ TEXT("btn-upgrade-terran-shipplatinglevel1"), TEXT("btn-upgrade-terran-shipplatinglevel2"), TEXT("btn-upgrade-terran-shipplatinglevel3") }, { 130, 190, 260, 350, 460, 575, 700, 840, 1000, 1170 });
 		Add(TEXT("medivac"), TEXT("Medivac on Station"), TEXT("Heals bunker infantry 9 HP/s so they can stim again."), { TEXT("btn-ability-terran-heal") }, { 150 });
 		Add(TEXT("rails"), TEXT("Magnetic Rails"), TEXT("+2 range for the troops in the bunker."), { TEXT("btn-upgrade-terran-magrailmunitions") }, { 225 });
 		return Out;

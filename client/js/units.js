@@ -343,7 +343,7 @@ window.BS = window.BS || {};
     // whatever the alive cap. Kerrigan casts Leaping Strike and Apocalypse and is untouchable (nothing aims at her or hurts
     // her: you hold on until the Hyperion comes) and makes for the bunker; the leviathan bombards (bombard = splash radius) and spawns mutalisks.
     // See BS.FINALE.
-    kerrigan: { name: 'Kerrigan', model: 'kerrigan', death: 'kerriganDeath', scale: 1.3, hp: 6000, armor: 3, dmg: 45, dmgStructure: 18, cd: 0.7, range: 1.2, speed: 3.4, radius: 0.9, armored: true, cleave: 1.4, boss: 'kerrigan', untouchable: true, prefer: 'bunker', bounty: 2500, budget: 0, unlock: 999, weight: 0, hitFrac: 0.4, attackSeq: /^attack/i, soundDeath: 'kerriganDeath', height: 2.4, deathHold: 6, impactFx: 'ultraliskImpact' },
+    kerrigan: { name: 'Kerrigan', model: 'kerrigan', death: 'kerriganDeath', scale: 1.3, hp: 6000, armor: 3, dmg: 45, dmgStructure: 30, cd: 0.7, range: 1.2, speed: 3.4, radius: 0.9, armored: true, cleave: 1.4, boss: 'kerrigan', untouchable: true, prefer: 'bunker', bounty: 2500, budget: 0, unlock: 999, weight: 0, hitFrac: 0.4, attackSeq: /^attack/i, soundDeath: 'kerriganDeath', height: 2.4, deathHold: 6, impactFx: 'ultraliskImpact' },
     leviathan: { name: 'Leviathan', model: 'leviathan', death: 'leviathanDeath', scale: 1.6, hp: 6000, armor: 1, dmg: 40, cd: 2.4, range: 6, speed: 1.6, radius: 3.0, armored: true, flying: true, fly: 7.5, boss: 'leviathan', bombard: 2.4, bounty: 2500, budget: 0, unlock: 999, weight: 0, hitFrac: 0.45, projectile: 'bile', soundAttack: 'guardianFire', soundDeath: 'finaleRoar', height: 4, deathHold: 6 },
   };
 
@@ -415,7 +415,7 @@ window.BS = window.BS || {};
     podZerg: ['hydralisk', 'hydralisk', 'roach', 'roach', 'lurker'],        // every other pod brings an ultralisk too
     leap: { cd: 8, min: 3, max: 9, dur: 0.7, dmg: 90, radius: 1.8 },        // Leaping Strike onto a defender out of reach
     apocalypse: { cd: 13, range: 9, delay: 1.2, dmg: 70, radius: 2 },       // a psionic blast on the thickest knot of defenders
-    structure: 0.4,                                                         // what Apocalypse and Leaping Strike do to buildings
+    structure: 0.7,                                                         // what Apocalypse and Leaping Strike do to buildings
     // The rest of a maxed-out Heart of the Swarm kit. Her swings use every attack she has and sweep the wings (cleave);
     // every fury.every-th swing sends her into a Fury (half again the attack speed for fury.dur s). Kinetic Blast hits the
     // biggest machine in reach, Crushing Grip and the Immobilization Wave crush defenders (never buildings) and pin them (no firing for
@@ -503,9 +503,9 @@ window.BS = window.BS || {};
     plating: { name: 'Building Armor', icons: ['btn-upgrade-terran-buildingarmor'], costs: [190, 265, 340, 450, 600, 750, 900, 1050], short: '+150 HP per level' },
     hisec: { name: 'Hi-Sec Auto Tracking', icons: ['btn-upgrade-terran-hisecautotracking'], costs: [150], short: '+1 range, bunker and tanks' },
     vehicle: { name: 'Vehicle Weapons', icons: ['btn-upgrade-terran-vehicleweaponslevel1', 'btn-upgrade-terran-vehicleweaponslevel2', 'btn-upgrade-terran-vehicleweaponslevel3'], costs: [115, 170, 225, 300, 395, 490, 600, 715, 865, 1015], short: '+5 tank damage, +2 walkers' },
-    vplate: { name: 'Vehicle Plating', icons: ['btn-upgrade-terran-vehicleplatinglevel1', 'btn-upgrade-terran-vehicleplatinglevel2', 'btn-upgrade-terran-vehicleplatinglevel3'], costs: [130, 190, 260, 350, 460], short: '+1 armour, tanks and walkers' },
+    vplate: { name: 'Vehicle Plating', icons: ['btn-upgrade-terran-vehicleplatinglevel1', 'btn-upgrade-terran-vehicleplatinglevel2', 'btn-upgrade-terran-vehicleplatinglevel3'], costs: [130, 190, 260, 350, 460, 575, 700, 840, 1000, 1170], short: '+1 armour, tanks and walkers' },
     ship: { name: 'Ship Weapons', icons: ['btn-upgrade-terran-shipweaponslevel1', 'btn-upgrade-terran-shipweaponslevel2', 'btn-upgrade-terran-shipweaponslevel3'], costs: [115, 170, 225, 300, 395, 490, 600, 715, 865, 1015], short: '+1 damage, every ship' },
-    splate: { name: 'Ship Plating', icons: ['btn-upgrade-terran-shipplatinglevel1', 'btn-upgrade-terran-shipplatinglevel2', 'btn-upgrade-terran-shipplatinglevel3'], costs: [130, 190, 260, 350, 460], short: '+1 armour, every ship' },
+    splate: { name: 'Ship Plating', icons: ['btn-upgrade-terran-shipplatinglevel1', 'btn-upgrade-terran-shipplatinglevel2', 'btn-upgrade-terran-shipplatinglevel3'], costs: [130, 190, 260, 350, 460, 575, 700, 840, 1000, 1170], short: '+1 armour, every ship' },
     medivac: { name: 'Medivac on Station', icons: ['btn-ability-terran-heal'], costs: [150], short: 'Heals troops and SCVs' },
     rails: { name: 'Magnetic Rails', icons: ['btn-upgrade-terran-magrailmunitions'], costs: [225], short: '+2 bunker range' },
   };
