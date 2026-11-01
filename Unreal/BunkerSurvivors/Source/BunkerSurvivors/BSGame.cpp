@@ -4109,7 +4109,7 @@ void ABSGame::DamageDefender(const FBSTarget& T, float Dmg)
 		if (K->Hp <= 0 && !K->bDead)
 		{
 			K->bDead = true;
-			Corpse(TEXT("siegetankDeath"), K->X, K->Y, 0, PI / 2, 6, 1, true);
+			Corpse(TEXT("siegetankDeath"), K->X, K->Y, BSTerrain::Height(K->X, K->Y), PI / 2, 6, 1, true);
 			PlaySound(BSSounds::TankDeath, 0.8f);
 			ReleaseModel(K->Actor); K->Actor = nullptr;
 			if (K->Medivac) { ReleaseModel(K->Medivac); K->Medivac = nullptr; }
@@ -4749,7 +4749,7 @@ void ABSGame::UpdateTanks(float Dt)
 		if (K.State == FBSTank::Incoming)
 		{
 			K.T += Dt;
-			const FVector Goal(K.X, K.Y, 5.5f);
+			const FVector Goal(K.X, K.Y, 5.5f + BSTerrain::Height(K.X, K.Y));
 			const FVector D = Goal - K.Med;
 			if (D.Size() > 0.3f && K.T < 10) { K.Med += D.GetSafeNormal() * 9 * Dt; }
 			else
@@ -4766,8 +4766,8 @@ void ABSGame::UpdateTanks(float Dt)
 			if (K.T > 1.6f && !K.Actor)
 			{
 				K.Actor = AcquireModel(TEXT("siegetankMorph"));
-				if (K.Actor) { K.Actor->SetTeamColor(TerranColor); K.Actor->SetSim(K.X, K.Y, 0, PI / 2); K.Actor->Play(TEXT("morph start"), false); }
-				AddFx(EBSFxKind::Blast, FVector(K.X, K.Y, 0.05f), FVector::ZeroVector, 0.6f, 1.6f, FLinearColor(0.6f, 0.75f, 1), 3);
+				if (K.Actor) { K.Actor->SetTeamColor(TerranColor); K.Actor->SetSim(K.X, K.Y, BSTerrain::Height(K.X, K.Y), PI / 2); K.Actor->Play(TEXT("morph start"), false); }
+				AddFx(EBSFxKind::Blast, FVector(K.X, K.Y, BSTerrain::Height(K.X, K.Y) + 0.05f), FVector::ZeroVector, 0.6f, 1.6f, FLinearColor(0.6f, 0.75f, 1), 3);
 				Shake = FMath::Min(1.f, Shake + 0.2f);
 			}
 			if (K.T > 2.2f && K.Medivac) K.Medivac->Play(TEXT("stand work end"), false);
@@ -4782,7 +4782,7 @@ void ABSGame::UpdateTanks(float Dt)
 			{
 				if (K.Actor) ReleaseModel(K.Actor);
 				K.Actor = AcquireModel(TEXT("siegetank"));
-				if (K.Actor) { K.Actor->SetTeamColor(TerranColor); K.Actor->SetSim(K.X, K.Y, 0, PI / 2); K.Actor->Play(TEXT("stand"), true); K.Actor->EnableTurret(TEXT("Ref_TurretZ"), TankTurretOffsetDeg); }
+				if (K.Actor) { K.Actor->SetTeamColor(TerranColor); K.Actor->SetSim(K.X, K.Y, BSTerrain::Height(K.X, K.Y), PI / 2); K.Actor->Play(TEXT("stand"), true); K.Actor->EnableTurret(TEXT("Ref_TurretZ"), TankTurretOffsetDeg); }
 				K.State = FBSTank::Ready; K.MedT = 0;
 				Toast(TEXT("Siege tank in position"));
 			}
@@ -4819,8 +4819,8 @@ void ABSGame::UpdateTanks(float Dt)
 			// The hull stays put; only the turret traverses to the target.
 			if (K.Actor) { K.Actor->SetTurretAim(Ang); K.Actor->Play(TEXT("attack"), false); }
 			FBSProjectile P; P.Kind = EBSProjKind::Shell; P.bFriendly = true;
-			P.From = FVector(K.X + FMath::Cos(Ang) * 1.4f, K.Y + FMath::Sin(Ang) * 1.4f, 1.3f);
-			P.To = FVector(Target->X, Target->Y, 0.1f); P.Dur = 0.55f; P.Arc = 4;
+			P.From = FVector(K.X + FMath::Cos(Ang) * 1.4f, K.Y + FMath::Sin(Ang) * 1.4f, BSTerrain::Height(K.X, K.Y) + 1.3f);
+			P.To = FVector(Target->X, Target->Y, BSTerrain::Height(Target->X, Target->Y) + 0.1f); P.Dur = 0.55f; P.Arc = 4;
 			const int32 Vw = Up.Vehicle + Cards.FindRef(TEXT("maelstrom"));
 			P.Dmg = BSDefs::TankDmg + 5 * Vw; P.DmgArmored = BSDefs::TankDmgArmored + 3 * Vw;
 			P.ImpactFx = TEXT("tankImpact");

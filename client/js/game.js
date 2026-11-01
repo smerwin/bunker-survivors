@@ -2532,7 +2532,7 @@ window.BS = window.BS || {};
         o.hp -= Math.max(0.5, dmg - o.armor - (this.up.vplate || 0)); o.flash = 1;
         if (o.hp <= 0 && !o.dead) {
           o.dead = true;
-          this.corpse('siegetankDeath', o.x, o.y, 0, Math.PI / 2, 6, 1, true);
+          this.corpse('siegetankDeath', o.x, o.y, BS.Terrain.height(o.x, o.y), Math.PI / 2, 6, 1, true);
           BS.audio.play('tankDeath', { vol: 0.8 });
           o.handle && o.handle.release(); if (o.medivac) o.medivac.release();
           this.tanks.splice(this.tanks.indexOf(o), 1);
@@ -3000,13 +3000,13 @@ window.BS = window.BS || {};
         if (t.dead) continue;
         if (t.state === 'incoming') {
           t.t += dt;
-          const dx = t.x - t.mx, dy = t.y - t.my, dz = 5.5 - t.mz, dd = Math.hypot(dx, dy, dz);
+          const dx = t.x - t.mx, dy = t.y - t.my, dz = 5.5 + BS.Terrain.height(t.x, t.y) - t.mz, dd = Math.hypot(dx, dy, dz);
           if (dd > 0.3 && t.t < 10) { const s = Math.min(dd, 9 * dt) / dd; t.mx += dx * s; t.my += dy * s; t.mz += dz * s; }
           else { t.state = 'unloading'; t.t = 0; t.medivac.play(/^stand work start/i, false); BS.audio.play('medivacUnload', { vol: 0.6 }); }
           t.medivac.setPos(t.mx, t.my, t.mz).setYaw(Math.PI / 2);
         } else if (t.state === 'unloading') {
           t.t += dt;
-          if (t.t > 1.6 && !t.handle) { t.handle = this.r.spawn('siegetankMorph', t.x, t.y, 0, Math.PI / 2).setTeam(1); t.handle.play(/^morph start/i, false); this.shake = Math.min(1, this.shake + 0.2); }
+          if (t.t > 1.6 && !t.handle) { t.handle = this.r.spawn('siegetankMorph', t.x, t.y, BS.Terrain.height(t.x, t.y), Math.PI / 2).setTeam(1); t.handle.play(/^morph start/i, false); this.shake = Math.min(1, this.shake + 0.2); }
           if (t.t > 2.2 && !t.endPlayed) { t.endPlayed = true; t.medivac.play(/^stand work end/i, false); }
           if (t.t > 3.6) { t.state = 'leaving'; t.t = 0; t.medivac.play(/^walk|^fly/i, true); }
         } else if (t.state === 'leaving') {
@@ -3014,7 +3014,7 @@ window.BS = window.BS || {};
           t.medivac.setPos(t.mx, t.my, t.mz).setYaw(-Math.PI / 2);
           if (t.t > 2) {
             if (t.handle) t.handle.release();
-            t.handle = this.r.spawn('siegetank', t.x, t.y, 0, Math.PI / 2).setTeam(1); t.handle.play(/^stand$/i, true);
+            t.handle = this.r.spawn('siegetank', t.x, t.y, BS.Terrain.height(t.x, t.y), Math.PI / 2).setTeam(1); t.handle.play(/^stand$/i, true);
             t.state = 'ready'; t.mt = 0;
             this.toast('Siege tank in position');
           }
@@ -3038,8 +3038,9 @@ window.BS = window.BS || {};
           t.aim = ang; t.handle.play(/^attack/i, false);           // the hull stays put; the turret traverses (updateVisuals)
           const fx = t.x + Math.cos(ang) * 1.4, fy = t.y + Math.sin(ang) * 1.4, vw = this.up.vehicle + (this.cards.maelstrom || 0);
           // SC2 siege shells are not drawn: launch flash, then the impact.
-          this.fx.play('tankLaunch', fx, fy, 1.3, ang);
-          this.projectiles.push({ kind: 'shell', friendly: true, fx, fy, fz: 1.3, tx: target.x, ty: target.y, tz: 0.1, t: 0, dur: 0.35, arc: 4,
+          const fz = BS.Terrain.height(t.x, t.y) + 1.3;
+          this.fx.play('tankLaunch', fx, fy, fz, ang);
+          this.projectiles.push({ kind: 'shell', friendly: true, fx, fy, fz, tx: target.x, ty: target.y, tz: BS.Terrain.height(target.x, target.y) + 0.1, t: 0, dur: 0.35, arc: 4,
             dmg: D.dmg + 5 * vw, dmgArmored: D.dmgArmored + 3 * vw, impact: 'tankImpact' });
           BS.audio.play('tankFire', { vol: 0.7, gap: 0.2 });
           this.shake = Math.min(1, this.shake + 0.15);
