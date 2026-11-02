@@ -274,7 +274,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #link .path code { flex: 1; min-width: 0; overflow-wrap: anywhere; text-align: left; font: 12px ui-monospace, Consolas, monospace; color: #cfeff7; }
 #link .path button { padding: 6px 10px; border-radius: 8px; border: 1px solid rgba(156, 239, 255, 0.4); background: transparent; color: #9cefff; font: 700 11px var(--body); }
 #start .foot p { margin: 4px 0; font: 700 11px var(--body); letter-spacing: 0.1em; color: var(--muted); }
-#start .foot p.rung { color: var(--amber); }
 #start #status { color: var(--green); opacity: 0.8; }
 
 /* Narrow phones: tighter command bar; the stim state shows on the troop portraits instead of a label. */
