@@ -27,7 +27,14 @@ ABSCameraPawn::ABSCameraPawn()
 }
 
 void ABSCameraPawn::SetGame(ABSGame* InGame) { Game = InGame; }
-void ABSCameraPawn::SetArena(bool bInArena) { bArena = bInArena; ResetView(); Zoom = TargetZoom; Pan = TargetPan; Yaw = TargetYaw; }
+void ABSCameraPawn::SetArena(bool bInArena, bool bInFlip) { bArena = bInArena; bFlip = bInFlip && !bInArena; ResetView(); Zoom = TargetZoom; Pan = TargetPan; Yaw = TargetYaw; }
+
+float ABSCameraPawn::FlipFocus() const
+{
+	FVector2D Size(16, 9);
+	if (GEngine && GEngine->GameViewport) GEngine->GameViewport->GetViewportSize(Size);
+	return Size.Y > Size.X ? 24.f : 20.f;
+}
 
 void ABSCameraPawn::SetBunkerView(bool bOn)
 {
@@ -55,13 +62,25 @@ void ABSCameraPawn::PanPixels(float Dx, float Dy, float ViewHeightPx)
 	TargetPan.X -= Dx * MetresPerPx;
 	TargetPan.Y += Dy * MetresPerPx;
 	const float Lim = bArena ? 18.f : 6.f;
+	if (bFlip)
+	{
+		// Facing down the lane: keep the focus within 14 m of the middle and 4 m south of the bunker to 40 m north of it.
+		TargetPan.X = FMath::Clamp(TargetPan.X, -14.f, 14.f);
+		TargetPan.Y = FMath::Clamp(TargetPan.Y, FlipFocus() - 40.f, FlipFocus() + 4.f);
+		return;
+	}
 	TargetPan.X = FMath::Clamp(TargetPan.X, -Lim, Lim);
 	TargetPan.Y = FMath::Clamp(TargetPan.Y, bArena ? -Lim : -6.f, bArena ? Lim : 14.f);
 }
 
 void ABSCameraPawn::Orbit(float DeltaYawDeg) { if (bArena) TargetYaw += DeltaYawDeg; }
 
-void ABSCameraPawn::ResetView() { if (bBunkerView) { FpYaw = bArena ? Yaw : 0; FpPitch = 10; return; } TargetZoom = 0.38f; TargetPan = FVector2D::ZeroVector; if (!bArena) TargetYaw = 0; }
+void ABSCameraPawn::ResetView()
+{
+	if (bBunkerView) { FpYaw = bArena ? Yaw : 0; FpPitch = 10; return; }
+	TargetZoom = bFlip ? FlipZoom : 0.38f; TargetPan = FVector2D::ZeroVector;
+	if (!bArena) TargetYaw = bFlip ? 180.f : 0.f;
+}
 
 void ABSCameraPawn::Tick(float Dt)
 {
@@ -71,14 +90,23 @@ void ABSCameraPawn::Tick(float Dt)
 	Zoom += (TargetZoom - Zoom) * K;
 	Pan += (TargetPan - Pan) * K;
 	Yaw += (TargetYaw - Yaw) * K;
-	const bool bSquadOut = !bArena && !bAttract && Game.IsValid() && Game->Squad.Num() > 0;
+	const bool bSquadOut = !bArena && !bFlip && !bAttract && Game.IsValid() && Game->Squad.Num() > 0;
 	const float Want = bSquadOut ? 2.f + 1.5f * FMath::Clamp((Game->Squad.Num() - 24) / 24.f, 0.f, 1.f) : 0.f;   // deeper ranks, further back
 	SquadBack += (Want - SquadBack) * (1 - FMath::Exp(-Dt * 2.f));
 
 	const float Z = Zoom, E = EaseInOut(Z);
-	const float Arm = ArmLength(Z, bArena);
-	const float Pitch = FMath::Lerp(28.f, 68.f, E);                // degrees below horizontal
-	const float VFov = FMath::Lerp(52.f, 40.f, Z);
+	float Arm = ArmLength(Z, bArena);
+	float Pitch = FMath::Lerp(28.f, 68.f, E);                // degrees below horizontal
+	float VFov = FMath::Lerp(52.f, 40.f, Z);
+	if (bFlip)
+	{
+		// The flipped view (swarm mode), as the browser's: from behind the zerg base, portrait 48 m out at 50 degrees with a
+		// 55-degree field of view, landscape 44 m at 54 degrees and 42; zooming scales the distance (up to 56 m) and tilts.
+		const bool bPort = FlipFocus() > 22;
+		Arm = FMath::Min(5600.f, (bPort ? 4800.f : 4400.f) * ArmLength(Z, false) / ArmLength(FlipZoom, false));
+		Pitch = FMath::Clamp((bPort ? 50.f : 54.f) + (E - EaseInOut(FlipZoom)) * 30.f, 30.f, 75.f);
+		VFov = bPort ? 55.f : 42.f;
+	}
 
 	// Focus: lane looks ahead of the bunker toward the threat; the arena centres on the bunker.
 	// The bottom deck covers roughly the lower quarter of the screen, so the lane focus stays close enough
@@ -86,7 +114,8 @@ void ABSCameraPawn::Tick(float Dt)
 	const float Ahead = bArena ? FMath::Lerp(1.5f, -2.f, Z) : FMath::Lerp(1.2f, 3.2f, Z) - SquadBack;
 	const float YawRad = FMath::DegreesToRadians(Yaw);
 	const FVector2D Fwd(FMath::Cos(YawRad), FMath::Sin(YawRad)), Right(-FMath::Sin(YawRad), FMath::Cos(YawRad));
-	const FVector2D FocusXY = Fwd * (Ahead + Pan.Y) + Right * Pan.X;               // world X/Y in metres
+	const FVector2D FocusXY = bFlip ? FVector2D(FlipFocus(), 0) + Fwd * Pan.Y + Right * Pan.X    // world X is up the lane
+		: Fwd * (Ahead + Pan.Y) + Right * Pan.X;               // world X/Y in metres
 	const FVector Focus(FocusXY.X * 100.f, FocusXY.Y * 100.f, bArena ? 60.f : 80.f);
 
 	FRotator Rot(-Pitch, Yaw, 0);

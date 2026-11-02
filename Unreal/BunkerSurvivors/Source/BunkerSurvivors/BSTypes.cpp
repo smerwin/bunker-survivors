@@ -416,8 +416,8 @@ namespace BSSwarm
 	{
 		static const TArray<FTier> V = {
 			{ TEXT("Hatchery"), TEXT("btn-building-zerg-hatchery"), {} },
-			{ TEXT("Lair"), TEXT("btn-building-zerg-lair"), { 200, 150 } },
-			{ TEXT("Hive"), TEXT("btn-building-zerg-hive"), { 400, 300 } },
+			{ TEXT("Lair"), TEXT("btn-building-zerg-lair"), { 200, 100 } },
+			{ TEXT("Hive"), TEXT("btn-building-zerg-hive"), { 400, 200 } },
 		};
 		return V;
 	}
@@ -426,24 +426,24 @@ namespace BSSwarm
 		static const TArray<FStrain> V = {
 			{ TEXT("zergling"), TEXT("Zerglings"), 0, { 0, 0 }, TEXT("btn-unit-zerg-zergling") },
 			{ TEXT("baneling"), TEXT("Banelings"), 0, { 100, 25 }, TEXT("btn-unit-zerg-baneling") },
-			{ TEXT("roach"), TEXT("Roaches"), 0, { 150, 50 }, TEXT("btn-unit-zerg-roach") },
+			{ TEXT("roach"), TEXT("Roaches"), 0, { 150, 25 }, TEXT("btn-unit-zerg-roach") },
 			{ TEXT("queen"), TEXT("Queens"), 0, { 150, 0 }, TEXT("btn-unit-zerg-queen"), 8, 1, 4 },
-			{ TEXT("hydralisk"), TEXT("Hydralisks"), 1, { 100, 75 }, TEXT("btn-unit-zerg-hydralisk") },
-			{ TEXT("wingling"), TEXT("Winglings"), 1, { 100, 50 }, TEXT("btn-unit-zerg-zergling"), 0, 0, 0, true },
-			{ TEXT("infested"), TEXT("Infested Marines"), 1, { 75, 50 }, TEXT("btn-unit-zerg-infestedmarine") },
-			{ TEXT("mutalisk"), TEXT("Mutalisks"), 1, { 150, 150 }, TEXT("btn-unit-zerg-mutalisk") },
-			{ TEXT("lurker"), TEXT("Lurkers"), 1, { 150, 150 }, TEXT("btn-unit-zerg-lurker") },
-			{ TEXT("scourge"), TEXT("Scourge"), 1, { 75, 75 }, TEXT("btn-unit-zerg-scourge") },
-			{ TEXT("overlordCreep"), TEXT("Creep Overlords"), 1, { 100, 50 }, TEXT("btn-unit-zerg-overlord"), 8, 0.8f, 3 },
-			{ TEXT("overlordDrop"), TEXT("Overlord Drops"), 1, { 100, 100 }, TEXT("btn-unit-zerg-overlord"), 14, 0.8f, 3 },
-			{ TEXT("nydus"), TEXT("Nydus Worms"), 1, { 150, 150 }, TEXT("btn-building-zerg-nydusworm"), 26, 0.5f, 1 },
-			{ TEXT("ultralisk"), TEXT("Ultralisks"), 2, { 200, 200 }, TEXT("btn-unit-zerg-ultralisk") },
-			{ TEXT("broodlord"), TEXT("Brood Lords"), 2, { 250, 250 }, TEXT("btn-unit-zerg-broodlord") },
-			{ TEXT("guardian"), TEXT("Guardians"), 2, { 200, 200 }, TEXT("btn-unit-zerg-broodlord"), 0, 1 },
-			{ TEXT("devourer"), TEXT("Devourers"), 2, { 150, 150 }, TEXT("btn-unit-zerg-mutalisk") },
-			{ TEXT("defiler"), TEXT("Defilers"), 2, { 150, 150 }, TEXT("btn-ability-zerg-darkswarm"), 0, 0, 3 },
-			{ TEXT("viper"), TEXT("Vipers"), 2, { 200, 200 }, TEXT("btn-unit-zerg-viper"), 0, 0, 3 },
-			{ TEXT("broodqueen"), TEXT("Brood Queens"), 2, { 150, 150 }, TEXT("btn-unit-zerg-broodqueen") },
+			{ TEXT("hydralisk"), TEXT("Hydralisks"), 1, { 100, 50 }, TEXT("btn-unit-zerg-hydralisk") },
+			{ TEXT("wingling"), TEXT("Winglings"), 1, { 100, 25 }, TEXT("btn-unit-zerg-zergling"), 0, 0, 0, true },
+			{ TEXT("infested"), TEXT("Infested Marines"), 1, { 75, 25 }, TEXT("btn-unit-zerg-infestedmarine") },
+			{ TEXT("mutalisk"), TEXT("Mutalisks"), 1, { 150, 100 }, TEXT("btn-unit-zerg-mutalisk") },
+			{ TEXT("lurker"), TEXT("Lurkers"), 1, { 150, 100 }, TEXT("btn-unit-zerg-lurker") },
+			{ TEXT("scourge"), TEXT("Scourge"), 1, { 75, 50 }, TEXT("btn-unit-zerg-scourge") },
+			{ TEXT("overlordCreep"), TEXT("Creep Overlords"), 1, { 100, 25 }, TEXT("btn-unit-zerg-overlord"), 8, 0.8f, 3 },
+			{ TEXT("overlordDrop"), TEXT("Overlord Drops"), 1, { 100, 50 }, TEXT("btn-unit-zerg-overlord"), 14, 0.8f, 3 },
+			{ TEXT("nydus"), TEXT("Nydus Worms"), 1, { 150, 75 }, TEXT("btn-building-zerg-nydusworm"), 26, 0.5f, 1 },
+			{ TEXT("ultralisk"), TEXT("Ultralisks"), 2, { 200, 150 }, TEXT("btn-unit-zerg-ultralisk") },
+			{ TEXT("broodlord"), TEXT("Brood Lords"), 2, { 250, 150 }, TEXT("btn-unit-zerg-broodlord") },
+			{ TEXT("guardian"), TEXT("Guardians"), 2, { 200, 100 }, TEXT("btn-unit-zerg-broodlord"), 0, 1 },
+			{ TEXT("devourer"), TEXT("Devourers"), 2, { 150, 100 }, TEXT("btn-unit-zerg-mutalisk") },
+			{ TEXT("defiler"), TEXT("Defilers"), 2, { 150, 100 }, TEXT("btn-ability-zerg-darkswarm"), 0, 0, 3 },
+			{ TEXT("viper"), TEXT("Vipers"), 2, { 200, 100 }, TEXT("btn-unit-zerg-viper"), 0, 0, 3 },
+			{ TEXT("broodqueen"), TEXT("Brood Queens"), 2, { 150, 100 }, TEXT("btn-unit-zerg-broodqueen") },
 		};
 		return V;
 	}
@@ -451,15 +451,15 @@ namespace BSSwarm
 	const TArray<FEvo>& Evos()
 	{
 		static const TArray<FEvo> V = {
-			{ TEXT("melee"), TEXT("Melee Attacks"), { TEXT("btn-upgrade-zerg-meleeattacks-level1"), TEXT("btn-upgrade-zerg-meleeattacks-level2"), TEXT("btn-upgrade-zerg-meleeattacks-level3") }, { { 100, 100 }, { 150, 150 }, { 200, 200 } }, { 0, 1, 2 } },
-			{ TEXT("missile"), TEXT("Missile Attacks"), { TEXT("btn-upgrade-zerg-missileattacks-level1"), TEXT("btn-upgrade-zerg-missileattacks-level2"), TEXT("btn-upgrade-zerg-missileattacks-level3") }, { { 100, 100 }, { 150, 150 }, { 200, 200 } }, { 0, 1, 2 } },
-			{ TEXT("carapace"), TEXT("Carapace"), { TEXT("btn-upgrade-zerg-groundcarapace-level1"), TEXT("btn-upgrade-zerg-groundcarapace-level2"), TEXT("btn-upgrade-zerg-groundcarapace-level3") }, { { 150, 150 }, { 225, 225 }, { 300, 300 } }, { 0, 1, 2 } },
-			{ TEXT("boost"), TEXT("Metabolic Boost"), { TEXT("btn-upgrade-zerg-metabolicboost") }, { { 100, 100 } }, { 0 }, TEXT("zergling") },
-			{ TEXT("hooks"), TEXT("Centrifugal Hooks"), { TEXT("btn-upgrade-zerg-centrifugalhooks") }, { { 150, 150 } }, { 1 }, TEXT("baneling") },
-			{ TEXT("glial"), TEXT("Glial Reconstitution"), { TEXT("btn-upgrade-zerg-glialreconstitution") }, { { 100, 100 } }, { 1 }, TEXT("roach") },
-			{ TEXT("spines"), TEXT("Grooved Spines"), { TEXT("btn-upgrade-zerg-groovedspines") }, { { 100, 100 } }, { 1 }, TEXT("hydralisk") },
-			{ TEXT("adrenal"), TEXT("Adrenal Glands"), { TEXT("btn-upgrade-zerg-adrenalglands") }, { { 200, 200 } }, { 2 }, TEXT("zergling") },
-			{ TEXT("chitin"), TEXT("Chitinous Plating"), { TEXT("btn-upgrade-zerg-chitinousplating") }, { { 150, 150 } }, { 2 }, TEXT("ultralisk") },
+			{ TEXT("melee"), TEXT("Melee Attacks"), { TEXT("btn-upgrade-zerg-meleeattacks-level1"), TEXT("btn-upgrade-zerg-meleeattacks-level2"), TEXT("btn-upgrade-zerg-meleeattacks-level3") }, { { 100, 50 }, { 150, 100 }, { 200, 150 } }, { 0, 1, 2 } },
+			{ TEXT("missile"), TEXT("Missile Attacks"), { TEXT("btn-upgrade-zerg-missileattacks-level1"), TEXT("btn-upgrade-zerg-missileattacks-level2"), TEXT("btn-upgrade-zerg-missileattacks-level3") }, { { 100, 50 }, { 150, 100 }, { 200, 150 } }, { 0, 1, 2 } },
+			{ TEXT("carapace"), TEXT("Carapace"), { TEXT("btn-upgrade-zerg-groundcarapace-level1"), TEXT("btn-upgrade-zerg-groundcarapace-level2"), TEXT("btn-upgrade-zerg-groundcarapace-level3") }, { { 150, 75 }, { 225, 125 }, { 300, 175 } }, { 0, 1, 2 } },
+			{ TEXT("boost"), TEXT("Metabolic Boost"), { TEXT("btn-upgrade-zerg-metabolicboost") }, { { 100, 50 } }, { 0 }, TEXT("zergling") },
+			{ TEXT("hooks"), TEXT("Centrifugal Hooks"), { TEXT("btn-upgrade-zerg-centrifugalhooks") }, { { 150, 75 } }, { 1 }, TEXT("baneling") },
+			{ TEXT("glial"), TEXT("Glial Reconstitution"), { TEXT("btn-upgrade-zerg-glialreconstitution") }, { { 100, 50 } }, { 1 }, TEXT("roach") },
+			{ TEXT("spines"), TEXT("Grooved Spines"), { TEXT("btn-upgrade-zerg-groovedspines") }, { { 100, 50 } }, { 1 }, TEXT("hydralisk") },
+			{ TEXT("adrenal"), TEXT("Adrenal Glands"), { TEXT("btn-upgrade-zerg-adrenalglands") }, { { 200, 100 } }, { 2 }, TEXT("zergling") },
+			{ TEXT("chitin"), TEXT("Chitinous Plating"), { TEXT("btn-upgrade-zerg-chitinousplating") }, { { 150, 75 } }, { 2 }, TEXT("ultralisk") },
 		};
 		return V;
 	}
@@ -478,4 +478,14 @@ namespace BSSwarm
 		return V;
 	}
 	const FAbility* FindAbility(const FString& Id) { return Abilities().FindByPredicate([&](const FAbility& A) { return Id == A.Id; }); }
+	const TArray<FTech>& Tech()
+	{
+		static const TArray<FTech> V = {
+			{ TEXT("spawningpool"), { TEXT("zergling"), TEXT("wingling") } }, { TEXT("evolutionchamber"), { TEXT("evo") } },
+			{ TEXT("banelingnest"), { TEXT("baneling") } }, { TEXT("roachwarren"), { TEXT("roach") } }, { TEXT("hydraliskden"), { TEXT("hydralisk"), TEXT("lurker") } },
+			{ TEXT("spire"), { TEXT("mutalisk"), TEXT("scourge"), TEXT("devourer") } }, { TEXT("infestationpit"), { TEXT("infested"), TEXT("defiler"), TEXT("viper"), TEXT("broodqueen") } },
+			{ TEXT("ultraliskcavern"), { TEXT("ultralisk") } }, { TEXT("greaterspire"), { TEXT("broodlord"), TEXT("guardian") } }, { TEXT("nydusnetwork"), { TEXT("nydus"), TEXT("overlordDrop") } },
+		};
+		return V;
+	}
 }

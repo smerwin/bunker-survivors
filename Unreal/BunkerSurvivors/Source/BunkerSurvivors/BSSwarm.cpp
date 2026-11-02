@@ -5,6 +5,7 @@
 // Kerrigan once (BSMeta::SwarmOpen). Data in BSSwarm (BSTypes). Port of client/js/swarm.js; keep the two in step.
 #include "BSGame.h"
 #include "BSTerrain.h"
+#include "BSModelActor.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 
@@ -34,6 +35,7 @@ void ABSGame::InitSwarm()
 	Sw = FSwarmState();
 	Sw.Strains.Add(TEXT("zergling"));
 	Income *= BSSwarm::TerranIncome;
+	SyncBase();
 }
 
 // ---- The swarm's economy --------------------------------------------------------------------------------------
@@ -47,6 +49,7 @@ void ABSGame::UpdateSwarm(float Dt)
 	if (Sw.Hero.IsValid() && Sw.Hero->Hp <= 0) { Sw.Hero.Reset(); Sw.HeroAt = Time + BSSwarm::HeroRespawn; Toast(TEXT("Kerrigan has fallen: summon her again when the hive recovers")); }
 	// The Terran commander.
 	if ((Sw.Think -= Dt) <= 0) { Sw.Think = 0.5f; TerranThink(); }
+	if ((Sw.BaseT -= Dt) <= 0) { Sw.BaseT = 0.5f; SyncBase(); }
 }
 
 // The strains the hives can hatch now (bought, and not at their cap; anti-air ones only while there is Terran air).
@@ -200,12 +203,14 @@ const FBSZergDef* ABSGame::SwarmDef(const FString& Type)
 // Summoned: she comes down the lane while drop pods slam down all round the base.
 void ABSGame::SpawnHero()
 {
-	TSharedPtr<FBSEnemy> E = SpawnEnemy(TEXT("kerrigan"), 0);
+	// Out of her chrysalis at the base in the lane.
+	TSharedPtr<FBSEnemy> E = SpawnEnemy(TEXT("kerrigan"), 0, Mode == EBSMode::Lane ? &BSSwarm::Chrysalis : nullptr);
 	if (!E) return;
 	E->bHero = true; E->bOrder = false; E->bHold = false; E->Power = BSSwarm::HeroPower;
 	// Her spells start ready.
 	E->LeapCd = E->ApocCd = E->KineticCd = E->GripCd = E->ChainCd = E->WaveCd = E->MutateCd = E->BanesCd = 0;
 	Sw.Hero = E;
+	SyncBase();
 	DropPods(BSSwarm::HeroPods, 2, BSDefs::PodEvery);
 	WaveBanner = TEXT("THE QUEEN OF BLADES TAKES THE FIELD"); WaveBannerT = Time; WaveSerial++;
 	Toast(TEXT("Kerrigan answers the swarm: tap the ground to send her"));
@@ -300,6 +305,138 @@ bool ABSGame::HeroCast(const FString& Id)
 	if (!Cd || *Cd > 0) return false;
 	E->Queued = Id;
 	return true;
+}
+
+// ---- The hive cluster on the field -------------------------------------------------------------------------------
+// North of the lane, where the broods have always come from: the main hatchery (morphing to lair and hive) in the middle,
+// scaled-down hatcheries and extractors round it, a tech building for each strain line and the evolution chamber, drones
+// at work, larva by every hatchery, the queens, and Kerrigan's chrysalis once the hive can summon her. Everything grows in
+// as it is bought (BSSwarm base data). Purely visual: the Terrans never reach it.
+ABSGame::FSwarmState::FPart* ABSGame::BasePart(const FString& Key, const FString& Model, float X, float Y, float Scale, float Yaw)
+{
+	FSwarmState::FPart* Old = Sw.Parts.Find(Key);
+	if (Old && Old->Model == Model) return Old;
+	const bool bMorph = Old != nullptr;
+	if (Old) ReleaseModel(Old->Actor);
+	FSwarmState::FPart P;
+	P.Model = Model; P.X = X; P.Y = Y; P.Scale = Scale; P.T = bMorph ? 0.6f : 0.f;
+	P.Actor = AcquireModel(Model);                // (null if the model is not imported: the part is skipped quietly)
+	if (P.Actor)
+	{
+		P.Actor->SetTeamColor(ZergColor);
+		P.Actor->SetSim(X, Y, BSTerrain::Height(X, Y), Yaw);
+		P.Actor->SetScale(0.01f);
+		P.Actor->Play(TEXT("stand"), true);
+	}
+	return &Sw.Parts.Add(Key, P);
+}
+
+void ABSGame::DropPart(const FString& Key)
+{
+	if (FSwarmState::FPart* P = Sw.Parts.Find(Key)) { ReleaseModel(P->Actor); Sw.Parts.Remove(Key); }
+}
+
+// What the base should show for what has been bought.
+void ABSGame::SyncBase()
+{
+	if (Mode != EBSMode::Lane) return;
+	const FVector2D At = BSSwarm::BaseAt;
+	static const TCHAR* Main[] = { TEXT("hatchery"), TEXT("lair"), TEXT("hive") };
+	BasePart(TEXT("main"), Main[FMath::Clamp(Sw.Tier, 0, 2)], At.X, At.Y, BSSwarm::BaseMain);
+	TArray<FVector> Hatch = { FVector(At.X, At.Y, BSSwarm::BaseMain) };
+	for (int32 i = 0; i < Sw.Hatcheries - 1 && i < UE_ARRAY_COUNT(BSSwarm::HatchSpots); i++)
+	{
+		const FVector2D P = BSSwarm::HatchSpots[i];
+		BasePart(FString::Printf(TEXT("hatch%d"), i), TEXT("hatchery"), P.X, P.Y, BSSwarm::HatchScale);
+		Hatch.Add(FVector(P.X, P.Y, BSSwarm::HatchScale));
+	}
+	for (int32 i = 0; i < Sw.Extractors && i < UE_ARRAY_COUNT(BSSwarm::ExtractorSpots); i++)
+		BasePart(FString::Printf(TEXT("extractor%d"), i), TEXT("extractor"), BSSwarm::ExtractorSpots[i].X, BSSwarm::ExtractorSpots[i].Y, BSSwarm::ExtractorScale);
+	// Tech: each building once anything it serves is bred (or, for the evolution chamber, evolved), in the next free spot.
+	bool bEvolved = false;
+	for (const auto& V : Sw.Evo) bEvolved |= V.Value > 0;
+	for (const BSSwarm::FTech& T : BSSwarm::Tech())
+	{
+		bool bOn = false;
+		for (const TCHAR* S : T.Serves) bOn |= FCString::Strcmp(S, TEXT("evo")) == 0 ? bEvolved : Sw.Strains.Contains(S);
+		if (!bOn) continue;
+		if (!Sw.TechSpot.Contains(T.Model)) Sw.TechSpot.Add(T.Model, Sw.TechSpot.Num());
+		const FVector2D P = BSSwarm::TechSpots[Sw.TechSpot[T.Model] % UE_ARRAY_COUNT(BSSwarm::TechSpots)];
+		BasePart(FString(TEXT("tech:")) + T.Model, T.Model, P.X, P.Y, BSSwarm::TechScale);
+	}
+	// Larva wriggling at every hatchery's foot, the queens round the main one.
+	for (int32 i = 0; i < Hatch.Num(); i++)
+		for (int32 k = 0; k < BSSwarm::BaseLarva; k++)
+		{
+			const float A = -PI / 2 + (k - (BSSwarm::BaseLarva - 1) / 2.f) * 0.5f, R = 3.1f * Hatch[i].Z / BSSwarm::BaseMain + 0.4f;
+			BasePart(FString::Printf(TEXT("larva%d:%d"), i, k), TEXT("larva"), Hatch[i].X + FMath::Cos(A) * R, Hatch[i].Y + FMath::Sin(A) * R, 0.9f, Rand01() * 2 * PI);
+		}
+	for (int32 i = 0; i < 6; i++)
+	{
+		const FString Key = FString::Printf(TEXT("queen%d"), i);
+		if (i < Sw.Queens) { const float A = PI * (0.15f + 0.14f * i); BasePart(Key, TEXT("queen"), At.X + FMath::Cos(A) * 4.2f, At.Y - FMath::Sin(A) * 3.6f, 0.85f); }
+		else DropPart(Key);
+	}
+	// Kerrigan's chrysalis: there from the moment the hive can summon her until she breaks out of it.
+	const FVector2D Ch = BSSwarm::Chrysalis;
+	if (Sw.Tier >= BSSwarm::HeroTier && !HeroAlive()) BasePart(TEXT("chrysalis"), TEXT("chrysalis"), Ch.X, Ch.Y, 0.9f);
+	else if (Sw.Parts.Contains(TEXT("chrysalis"))) { PlayFx(TEXT("nydusBirth"), FVector(Ch.X, Ch.Y, BSTerrain::Height(Ch.X, Ch.Y)), 0, 1.6f); DropPart(TEXT("chrysalis")); }
+	// Drones: up to BaseDrones of them shuttling between the hatcheries and the extractors.
+	const int32 Want = FMath::Min(Sw.Drones, BSSwarm::BaseDrones);
+	while (Sw.Drones2.Num() < Want)
+	{
+		const FVector H = Hatch[Sw.Drones2.Num() % Hatch.Num()];
+		FSwarmState::FDrone Dr;
+		Dr.X = Dr.Tx = H.X; Dr.Y = Dr.Ty = H.Y - 2; Dr.Wait = Rand01() * 2;
+		Dr.Actor = AcquireModel(TEXT("drone"));
+		if (Dr.Actor) { Dr.Actor->SetTeamColor(ZergColor); Dr.Actor->SetScale(0.8f); Dr.Actor->SetSim(Dr.X, Dr.Y, BSTerrain::Height(Dr.X, Dr.Y), 0); Dr.Actor->Play(TEXT("stand"), true); }
+		Sw.Drones2.Add(Dr);
+	}
+}
+
+// Every frame: growing in, drones at work.
+void ABSGame::UpdateBase(float Dt)
+{
+	for (auto& Pr : Sw.Parts)
+	{
+		FSwarmState::FPart& P = Pr.Value;
+		if (P.T >= 1) continue;
+		P.T = FMath::Min(1.f, P.T + Dt / BSSwarm::BaseGrow);
+		const float K = 1 - (1 - P.T) * (1 - P.T);
+		if (P.Actor) P.Actor->SetScale(FMath::Max(0.01f, P.Scale * K));
+	}
+	TArray<FVector2D> Stops = { BSSwarm::BaseAt };
+	for (int32 i = 0; i < Sw.Hatcheries - 1 && i < UE_ARRAY_COUNT(BSSwarm::HatchSpots); i++) Stops.Add(BSSwarm::HatchSpots[i]);
+	for (int32 i = 0; i < Sw.Extractors && i < UE_ARRAY_COUNT(BSSwarm::ExtractorSpots); i++) Stops.Add(BSSwarm::ExtractorSpots[i]);
+	for (FSwarmState::FDrone& D : Sw.Drones2)
+	{
+		if (D.bMoving)
+		{
+			const float Dx = D.Tx - D.X, Dy = D.Ty - D.Y, L = FMath::Sqrt(Dx * Dx + Dy * Dy), S = BSSwarm::DroneSpeed * Dt;
+			if (L <= S) { D.X = D.Tx; D.Y = D.Ty; D.bMoving = false; D.Wait = 1 + Rand01() * 2.5f; if (D.Actor) D.Actor->Play({ TEXT("stand work"), TEXT("stand") }, true); }
+			else { D.X += Dx / L * S; D.Y += Dy / L * S; D.Yaw = FMath::Atan2(Dy, Dx); }
+			if (D.Actor) D.Actor->SetSim(D.X, D.Y, BSTerrain::Height(D.X, D.Y), D.Yaw);
+		}
+		else if ((D.Wait -= Dt) <= 0)
+		{
+			const FVector2D S = Stops[FMath::RandRange(0, Stops.Num() - 1)];
+			const float A = Rand01() * 2 * PI;
+			D.Tx = S.X + FMath::Cos(A) * 2.2f; D.Ty = S.Y + FMath::Sin(A) * 1.6f; D.bMoving = true;
+			if (D.Actor) D.Actor->Play(TEXT("walk"), true);
+		}
+	}
+}
+
+// Where a brood member comes out: at the foot of one of the hatcheries (the east or west ones for the arms).
+FVector2D ABSGame::BroodSpawn(float Ang) const
+{
+	TArray<FVector2D> List = { BSSwarm::BaseAt };
+	for (int32 i = 0; i < Sw.Hatcheries - 1 && i < UE_ARRAY_COUNT(BSSwarm::HatchSpots); i++) List.Add(BSSwarm::HatchSpots[i]);
+	const int32 Side = FMath::RoundToInt(Ang);         // 1 north-east arm, 2 north-west
+	TArray<FVector2D> Pool = List.FilterByPredicate([Side](const FVector2D& P) { return Side == 1 ? P.X > 0.5f : Side == 2 ? P.X < -0.5f : true; });
+	if (!Pool.Num()) Pool = List;
+	const FVector2D P = Pool[FMath::RandRange(0, Pool.Num() - 1)];
+	return FVector2D(P.X + FMath::FRandRange(-1.6f, 1.6f), P.Y - FMath::FRandRange(2.2f, 3.4f));
 }
 
 // ---- The Terran commander --------------------------------------------------------------------------------------

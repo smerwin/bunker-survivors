@@ -3076,6 +3076,7 @@ TSharedPtr<FBSEnemy> ABSGame::SpawnEnemy(const FString& Type, float Ang, const F
 	else if (D->bNydus && bLane && FMath::FRand() < 0.45f) { X = SideS * Rnd(10, 12.5f); Y = Rnd(-4, 6); }   // up on a plateau beside the bunker
 	else if (D->bNydus) { const float R = Rnd(5.5f, 8); X = bLane ? SideS * Rnd(2.5f, 4.5f) : FMath::Cos(Ar) * R; Y = bLane ? Rnd(-8.5f, -7) : FMath::Sin(Ar) * R; }   // behind our lines
 	else if (D->bCreeper || D->bWatcher || D->bDetector) { X = bLane ? SideS * Rnd(10, 18) : FMath::Cos(Ar) * 29; Y = bLane ? Rnd(30, 34) : FMath::Sin(Ar) * 29; }   // creep overlords and watchers drift in from afar
+	else if (bSwarm && bLane) { const FVector2D P = BroodSpawn(Ang); X = P.X; Y = P.Y; }       // from the zerg base's hatcheries
 	else if (Mode == EBSMode::Lane)
 	{
 		const int32 Side = FMath::RoundToInt(Ang);         // 0 north, 1 north-east, 2 north-west
@@ -5223,6 +5224,7 @@ void ABSGame::UpdateProjectiles(float Dt)
 void ABSGame::UpdateVisuals(float Dt)
 {
 	UpdateEvac(Dt);
+	if (bSwarm) UpdateBase(Dt);
 	// -BSShowSlits: mark the bunker's four gun slits (red Weapon, green 02, blue 04, yellow 06).
 	static const bool bShowSlits = FParse::Param(FCommandLine::Get(), TEXT("BSShowSlits"));
 	if (bShowSlits && Bunker.Actor)

@@ -141,8 +141,12 @@ are the zerg and the Terrans play themselves (the same commander the balance bot
 research and high tech). Minerals come in from your drones and every Terran you kill, vespene from extractors. They buy
 more hatcheries and Spawn Larva (more larva, so bigger broods), the lair and then the hive, new strains to breed and
 evolutions (melee and missile attacks, carapace, Metabolic Boost, Glial Reconstitution and the rest). Every six seconds
-the larva banked hatches as a brood of whatever strains you breed and sweeps down the lane on its own. The goal is a
-hive and the economy to summon Kerrigan (4000 minerals and 3500 vespene); she drops in with four drop pods of zerg and
+the larva banked hatches as a brood of whatever strains you breed and sweeps down the lane on its own. The lane is seen
+from your side, the broods advancing up the screen at the bunker, and your base grows at the bottom of it, where the
+swarm has always come from: the main hatchery morphing to lair and hive, smaller hatcheries and extractors round it, a
+spawning pool, evolution chamber, warren, den, spire, pit or cavern for each strain line you breed, drones at work,
+larva, your queens and, once the hive can summon her, Kerrigan's chrysalis. The goal is a
+hive and the economy to summon Kerrigan (4000 minerals and 4500 vespene); she breaks out of her chrysalis with four drop pods of zerg and
 then answers to you: tap the ground to send her (she fights whatever she meets on the way, then holds the spot), the
 KERRIGAN button sends her back to advancing with the swarm, and her six spells are on the bar. If she falls, the hive
 can summon her again a minute later. Raze the bunker before the Hyperion takes the Terrans off at 30 minutes and the

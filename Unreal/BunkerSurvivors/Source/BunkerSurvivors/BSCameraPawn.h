@@ -18,7 +18,9 @@ public:
 	virtual void Tick(float Dt) override;
 
 	void SetGame(ABSGame* InGame);
-	void SetArena(bool bInArena);
+	// bInFlip (swarm mode, lane): the lane seen from the zerg side, from behind their base (bunker at the top of the
+	// screen, the base at the bottom).
+	void SetArena(bool bInArena, bool bInFlip = false);
 	void SetAttract(bool bOn) { bAttract = bOn; if (bOn) { bArena = false; Zoom = TargetZoom = 0.16f; Yaw = TargetYaw = -35.f; Pan = TargetPan = FVector2D::ZeroVector; } }
 	void ZoomBy(float Factor);          // > 1 zooms out
 	void SetZoom(float Z, bool bSnap = false) { TargetZoom = FMath::Clamp(Z, 0.f, 1.f); if (bSnap) Zoom = TargetZoom; }
@@ -35,7 +37,9 @@ public:
 
 private:
 	TWeakObjectPtr<ABSGame> Game;
-	bool bArena = false, bAttract = false;
+	bool bArena = false, bAttract = false, bFlip = false;
+	static constexpr float FlipZoom = 0.88f;      // the flipped view's default zoom (about 42 m out)
+	float FlipFocus() const;                      // metres up the lane the flipped view looks at (portrait 24, landscape 20)
 	float Zoom = 0.38f, TargetZoom = 0.38f;
 	float Yaw = 0, TargetYaw = 0;
 	FVector2D Pan = FVector2D::ZeroVector, TargetPan = FVector2D::ZeroVector;    // metres, in view-aligned axes

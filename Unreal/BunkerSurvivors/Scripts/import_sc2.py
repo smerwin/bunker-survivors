@@ -8,6 +8,9 @@ PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXPORT = os.path.normpath(os.path.join(PROJECT, "..", "..", "SC2Export"))
 LOG_PATH = os.path.join(PROJECT, "Saved", "import_sc2.log")
 ONLY = [s for s in os.environ.get("BS_ONLY", "").split(",") if s]
+# BS_MODELS_ONLY=1 (with BS_ONLY): import just those models, reusing the unit materials already built (no fx, icons,
+# sounds, ground or map).
+MODELS_ONLY = os.environ.get("BS_MODELS_ONLY") == "1"
 
 asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
 mel = unreal.MaterialEditingLibrary
@@ -454,6 +457,22 @@ def main():
     log("SC2 export from StarCraft II %s, %d models" % (manifest["sc2Version"], len(manifest["models"])))
 
     mats = "/Game/Materials"
+    if MODELS_ONLY:
+        def existing(name, build):
+            return load(mats + "/" + name) if eal.does_asset_exist(mats + "/" + name) else build()
+        m_unit = existing("M_SC2Unit", lambda: build_unit_material(mats, "M_SC2Unit", False))
+        m_unit2 = existing("M_SC2Unit_TwoSided", lambda: build_unit_material(mats, "M_SC2Unit_TwoSided", True))
+        m_add = existing("M_SC2Additive", lambda: build_glow_material(mats, "M_SC2Additive", True))
+        m_blend = existing("M_SC2Blend", lambda: build_glow_material(mats, "M_SC2Blend", False))
+        for key, info in manifest["models"].items():
+            if ONLY and key not in ONLY:
+                continue
+            try:
+                import_model(key, info, m_unit, m_unit2, m_add, m_blend)
+            except Exception:
+                log("FAILED %s\n%s" % (key, traceback.format_exc()))
+        log("models-only run: %s" % (",".join(ONLY) or "all"))
+        return
     m_unit = build_unit_material(mats, "M_SC2Unit", False)
     m_unit2 = build_unit_material(mats, "M_SC2Unit_TwoSided", True)
     m_add = build_glow_material(mats, "M_SC2Additive", True)

@@ -10,6 +10,7 @@ window.BS = window.BS || {};
 
   const rnd = (a, b) => a + Math.random() * (b - a);
   const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+  const pick = arr => arr[Math.floor(Math.random() * arr.length)];
   const P = BS.Game.prototype;
 
   P.initSwarm = function () {
@@ -17,6 +18,7 @@ window.BS = window.BS || {};
     this.sw = { minerals: S.minerals, gas: S.gas, drones: 0, extractors: 0, hatcheries: 1, queens: 0, tier: 0, strains: { zergling: true },
       evo: { melee: 0, missile: 0, carapace: 0 }, larva: 0, broodT: S.brood, kills: 0, heroAt: 0, hero: null, next: null, ang: 0, think: 0 };
     this.income *= S.terran.income;
+    this.initBase();
     // Every Terran the swarm kills feeds it (BS.SWARM.bounty).
     const hurt = this.damageDefender;
     this.damageDefender = function (tg, dmg) {
@@ -46,6 +48,7 @@ window.BS = window.BS || {};
     if (sw.hero && sw.hero.hp <= 0) { sw.hero = null; sw.heroAt = this.time + S.hero.respawn; this.toast('Kerrigan has fallen: summon her again when the hive recovers'); }
     // The Terran commander.
     if ((sw.think -= dt) <= 0) { sw.think = 0.5; this.terranThink(); }
+    if ((sw.base.t -= dt) <= 0) { sw.base.t = 0.5; this.syncBase(); }
   };
 
   // The strains the hives can hatch now (bought, and not at their cap; anti-air ones only while there is Terran air).
@@ -173,9 +176,10 @@ window.BS = window.BS || {};
   // ---- Kerrigan, the player's own ------------------------------------------------------------------------------
   // Summoned: she comes down the lane while drop pods slam down all round the base.
   P.spawnHero = function () {
-    const F = BS.FINALE, e = this.spawnEnemy('kerrigan', 0);
+    const F = BS.FINALE, at = BS.SWARM.base.chrysalis, e = this.spawnEnemy('kerrigan', 0, this.mode === 'lane' ? at : null);
     e.hero = true; e.order = null; e.hold = null; e.power = BS.SWARM.hero.power;
     this.sw.hero = e;
+    this.syncBase();                                   // out of her chrysalis
     this.dropPods(BS.SWARM.hero.pods, 2, F.podEvery);
     this.waveBanner = { text: 'THE QUEEN OF BLADES TAKES THE FIELD', t: this.time };
     this.toast('Kerrigan answers the swarm: tap the ground to send her');
@@ -245,6 +249,95 @@ window.BS = window.BS || {};
   };
   const HERO_CD = { leap: 'leapCd', apocalypse: 'apocCd', kinetic: 'kineticCd', grip: 'gripCd', chain: 'chainCd', wave: 'waveCd', mutation: 'mutateCd', banelings: 'banesCd' };
   BS.HERO_CD = HERO_CD;
+
+  // ---- The hive cluster on the field ---------------------------------------------------------------------------
+  // North of the lane, where the broods have always come from: the main hatchery (morphing to lair and hive) in the
+  // middle, scaled-down hatcheries and extractors round it, a tech building for each strain line and the evolution
+  // chamber, drones at work, larva by every hatchery, the queens, and Kerrigan's chrysalis once the hive can summon
+  // her. Everything grows in as it is bought (BS.SWARM.base). Purely visual: the Terrans never reach it.
+  P.initBase = function () {
+    this.sw.base = { parts: {}, techSpot: {}, drones: [], t: 0 };
+    this.syncBase();
+  };
+  // A building or creature of the base, (re)spawned when its model changes; it grows in from nothing.
+  P.basePart = function (key, model, x, y, scale, yaw) {
+    const B = this.sw.base, old = B.parts[key];
+    if (old && old.model === model) return old;
+    if (old) old.h.release();
+    const h = this.r.spawn(model, x, y, BS.Terrain.height(x, y), yaw === undefined ? -Math.PI / 2 : yaw).setTeam(3).setScale(0.01);
+    h.play(/^stand$/i, true);
+    return (B.parts[key] = { h, model, x, y, scale, t: old ? 0.6 : 0 });
+  };
+  P.dropPart = function (key) { const B = this.sw.base, p = B.parts[key]; if (p) { p.h.release(); delete B.parts[key]; } };
+  // What the base should show for what has been bought.
+  P.syncBase = function () {
+    const sw = this.sw, B = sw.base, D = BS.SWARM.base;
+    if (!B || this.mode !== 'lane') return;
+    const [cx, cy] = D.at;
+    this.basePart('main', ['hatchery', 'lair', 'hive'][sw.tier], cx, cy, D.main);
+    const hatch = [[cx, cy, D.main]];
+    for (let i = 0; i < sw.hatcheries - 1 && i < D.hatch.spots.length; i++) {
+      const [x, y] = D.hatch.spots[i];
+      this.basePart('hatch' + i, 'hatchery', x, y, D.hatch.scale);
+      hatch.push([x, y, D.hatch.scale]);
+    }
+    for (let i = 0; i < sw.extractors && i < D.extractor.spots.length; i++) { const [x, y] = D.extractor.spots[i]; this.basePart('extractor' + i, 'extractor', x, y, D.extractor.scale); }
+    // Tech: each building once anything it serves is bred (or, for the evolution chamber, evolved), in the next free spot.
+    const evolved = Object.values(sw.evo).some(v => v > 0);
+    for (const [model, serves] of D.tech.list) {
+      if (!(serves === 'evo' ? evolved : serves.some(s => sw.strains[s]))) continue;
+      if (B.techSpot[model] === undefined) B.techSpot[model] = Object.keys(B.techSpot).length;
+      const spot = D.tech.spots[B.techSpot[model] % D.tech.spots.length];
+      this.basePart('tech:' + model, model, spot[0], spot[1], D.tech.scale);
+    }
+    // Larva wriggling at every hatchery's foot, the queens round the main one.
+    hatch.forEach(([x, y, s], i) => {
+      for (let k = 0; k < D.larva; k++) {
+        const a = -Math.PI / 2 + (k - (D.larva - 1) / 2) * 0.5, r = 3.1 * s / D.main + 0.4;
+        this.basePart('larva' + i + ':' + k, 'larva', x + Math.cos(a) * r, y + Math.sin(a) * r, 0.9, Math.random() * Math.PI * 2);
+      }
+    });
+    for (let i = 0; i < 6; i++) {
+      if (i < sw.queens) { const a = Math.PI * (0.15 + 0.14 * i); this.basePart('queen' + i, 'queen', cx + Math.cos(a) * 4.2, cy - Math.sin(a) * 3.6, 0.85); }
+      else this.dropPart('queen' + i);
+    }
+    // Kerrigan's chrysalis: there from the moment the hive can summon her until she breaks out of it.
+    if (sw.tier >= BS.SWARM.hero.tier && !this.heroAlive()) this.basePart('chrysalis', 'chrysalis', D.chrysalis[0], D.chrysalis[1], 0.9);
+    else if (B.parts.chrysalis) { this.fx.play('nydusBirth', D.chrysalis[0], D.chrysalis[1], BS.Terrain.height(D.chrysalis[0], D.chrysalis[1]), 0, 1.6); this.dropPart('chrysalis'); }
+    // Drones: up to D.drones of them shuttling between the hatcheries and the extractors.
+    const want = Math.min(sw.drones, D.drones);
+    while (B.drones.length < want) {
+      const [x, y] = hatch[B.drones.length % hatch.length], h = this.r.spawn('drone', x, y - 2, BS.Terrain.height(x, y - 2), 0).setTeam(3).setScale(0.8);
+      h.play(/^stand$/i, true);
+      B.drones.push({ h, x, y: y - 2, tx: x, ty: y - 2, wait: Math.random() * 2, moving: false });
+    }
+  };
+  // Every frame: growing in, drones at work.
+  P.updateBase = function (dt) {
+    const B = this.sw && this.sw.base, D = BS.SWARM.base;
+    if (!B) return;
+    for (const p of Object.values(B.parts)) if (p.t < 1) { p.t = Math.min(1, p.t + dt / D.grow); const k = 1 - (1 - p.t) * (1 - p.t); p.h.setScale(Math.max(0.01, p.scale * k)); }
+    const stops = [D.at].concat(D.hatch.spots.slice(0, this.sw.hatcheries - 1), D.extractor.spots.slice(0, this.sw.extractors));
+    for (const d of B.drones) {
+      if (d.moving) {
+        const dx = d.tx - d.x, dy = d.ty - d.y, L = Math.hypot(dx, dy), s = D.droneSpeed * dt;
+        if (L <= s) { d.x = d.tx; d.y = d.ty; d.moving = false; d.wait = 1 + Math.random() * 2.5; d.h.play(/^stand work|^stand$/i, true); }
+        else { d.x += dx / L * s; d.y += dy / L * s; d.h.setYaw(Math.atan2(dy, dx)); }
+        d.h.setPos(d.x, d.y, BS.Terrain.height(d.x, d.y));
+      } else if ((d.wait -= dt) <= 0) {
+        const [x, y] = stops[Math.floor(Math.random() * stops.length)], a = Math.random() * Math.PI * 2;
+        d.tx = x + Math.cos(a) * 2.2; d.ty = y + Math.sin(a) * 1.6; d.moving = true;
+        d.h.play(/^walk$/i, true);
+      }
+    }
+  };
+  // Where a brood member comes out: at the foot of one of the hatcheries (the east or west ones for the arms).
+  P.broodSpawn = function (ang) {
+    const D = BS.SWARM.base, list = [D.at].concat(D.hatch.spots.slice(0, this.sw.hatcheries - 1));
+    const side = ang === 1 ? list.filter(p => p[0] > 0.5) : ang === 2 ? list.filter(p => p[0] < -0.5) : list;
+    const [x, y] = pick(side.length ? side : list);
+    return [x + rnd(-1.6, 1.6), y - rnd(2.2, 3.4)];
+  };
 
   // ---- The Terran commander ------------------------------------------------------------------------------------
   // The balance bots' "balanced" commander (the Unreal build's AutoPlay, extended with the high-tech cards): every half

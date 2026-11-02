@@ -341,14 +341,14 @@ namespace BSSwarm
 	struct FEvo { const TCHAR* Id; const TCHAR* Name; TArray<const TCHAR*> Icons; TArray<FCost> Costs; TArray<int32> Tiers; const TCHAR* Need = nullptr; bool Levels() const { return Costs.Num() > 1; } };
 	struct FAbility { const TCHAR* Id; const TCHAR* Name; const TCHAR* Icon; const TCHAR* Key; FLinearColor Accent; };
 
-	constexpr float Minerals = 200, Gas = 0, Income = 2, DroneIncome = 0.4f, ExtractorGas = 1, HatchLarva = 1.6f, QueenBoost = 0.15f, Brood = 6, Bank = 3;
+	constexpr float Minerals = 200, Gas = 0, Income = 2, DroneIncome = 0.4f, ExtractorGas = 1, HatchLarva = 1.4f, QueenBoost = 0.15f, Brood = 6, Bank = 3;
 	constexpr int32 DroneCost = 50, DroneMax = 30, ExtractorCost = 75, ExtractorMax = 4;
 	inline const int32 HatchCosts[] = { 300, 400, 550, 700, 900 };
 	inline const int32 QueenCosts[] = { 100, 150, 200, 275, 350, 450 };
 	constexpr float EvoDmg = 0.2f, EvoHp = 0.1f, TerranIncome = 1.5f;
 	// Bounty (minerals) for each Terran the swarm kills, by kind; mechs: x2 a thor, x3 the Odin.
 	constexpr int32 BountyTrooper = 12, BountyScv = 10, BountyTank = 45, BountyMech = 70, BountyStructure = 35, BountyReaper = 20, BountyGhost = 30, BountyAir = 40, BountyBc = 250;
-	inline const FCost HeroCost{ 4000, 3500 };
+	inline const FCost HeroCost{ 4000, 4500 };
 	constexpr int32 HeroTier = 2, HeroPods = 4;
 	constexpr float HeroRespawn = 60, HeroHp = 3000, HeroDmg = 45, HeroStructure = 20, HeroArmor = 1, HeroPower = 1, HeroEngage = 3, HeroGuard = 7;
 	const TArray<FTier>& Tiers();
@@ -358,6 +358,20 @@ namespace BSSwarm
 	const FEvo* FindEvo(const FString& Id);
 	const TArray<FAbility>& Abilities();            // Kerrigan's spells on the player's bar
 	const FAbility* FindAbility(const FString& Id);
+
+	// The base on the field, north of the lane (ABSGame::SyncBase): the main hatchery at BaseAt (scale BaseMain), extra
+	// hatcheries and extractors in their spots, tech buildings (each once anything it serves is bred or evolved) in
+	// order of arrival, BaseLarva larva per hatchery, up to BaseDrones drones at work, the chrysalis Kerrigan is summoned
+	// from; parts grow in over BaseGrow s. Port of BS.SWARM.base.
+	inline const FVector2D BaseAt(0, 31.5f), Chrysalis(0, 27.4f);
+	constexpr float BaseMain = 0.8f, BaseGrow = 1.6f, DroneSpeed = 2.6f, HatchScale = 0.55f, ExtractorScale = 0.55f, TechScale = 0.5f;
+	constexpr int32 BaseLarva = 3, BaseDrones = 14;
+	inline const FVector2D HatchSpots[] = { { -6.5f, 29.5f }, { 6.5f, 29.5f }, { -9, 35 }, { 9, 35 }, { 0, 38.5f } };
+	inline const FVector2D ExtractorSpots[] = { { -12, 30 }, { 12, 30 }, { -12.5f, 36 }, { 12.5f, 36 } };
+	inline const FVector2D TechSpots[] = { { -3.9f, 36.1f }, { 3.9f, 36.1f }, { -5, 40.1f }, { 5, 40.1f }, { -11, 40.5f }, { 11, 40.5f }, { -8, 42.5f }, { 8, 42.5f }, { 0, 43 }, { -15, 33 }, { 15, 33 } };
+	// Tech buildings and what each serves ("evo": any evolution).
+	struct FTech { const TCHAR* Model; TArray<const TCHAR*> Serves; };
+	const TArray<FTech>& Tech();
 }
 
 // Sound keys -> exported sound files (S_<key>_<n> in /Game/SC2/Sounds).

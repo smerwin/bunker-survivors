@@ -142,6 +142,7 @@ window.BS = window.BS || {};
     $('start').classList.add('hidden');
     $('hud').classList.remove('hidden');
     renderer.setGroundShape(mode);
+    renderer.flip = swarm;                  // swarm mode: the lane seen from the zerg side
     renderer.setCameraMode(mode);
     game = new BS.Game(renderer, { mode, swarm });
     hud = new BS.Hud(game, renderer);

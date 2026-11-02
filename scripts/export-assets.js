@@ -62,13 +62,17 @@ async function main() {
   const FX_ONLY = process.env.BS_FX_ONLY === '1';
   // BS_ICONS_ONLY=1 re-exports just the icons into the existing manifest.
   const ICONS_ONLY = process.env.BS_ICONS_ONLY === '1';
-  if (FX_ONLY || ICONS_ONLY) Object.assign(manifest, JSON.parse(fs.readFileSync(path.join(outDir, 'manifest.json'), 'utf8')), { failures: [] });
+  // BS_ONLY=key1,key2 re-exports just those models into the existing manifest (then import them with import_sc2.py's
+  // BS_ONLY and BS_MODELS_ONLY=1).
+  const ONLY = (process.env.BS_ONLY || '').split(',').filter(Boolean);
+  if (FX_ONLY || ICONS_ONLY || ONLY.length) Object.assign(manifest, JSON.parse(fs.readFileSync(path.join(outDir, 'manifest.json'), 'utf8')), { failures: [] });
 
   // Extra models (zerg variants, projectile meshes) and particle effects come from client/js/units.js.
   const UNREAL_MODELS = BS.EXTRA_MODELS;
   const FX = BS.fxList();
 
   for (const [key, m3] of Object.entries(FX_ONLY || ICONS_ONLY ? {} : Object.assign({}, BS.MODELS, UNREAL_MODELS))) {
+    if (ONLY.length && !ONLY.includes(key)) continue;
     try {
       const { glb, report } = convertM3(sc2, m3, { name: key });
       if (!report.stats.primitives) { manifest.failures.push({ key, m3, reason: 'no drawable geometry' }); console.log('  skip  ' + key + ' (no mesh)'); continue; }
@@ -87,6 +91,7 @@ async function main() {
       console.log('  FAIL  ' + key + ': ' + e.message);
     }
   }
+  if (ONLY.length) { write('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2))); return; }
 
   for (const name of FX_ONLY ? [] : icons) {
     const buf = sc2.read('assets/textures/' + name + '.dds');

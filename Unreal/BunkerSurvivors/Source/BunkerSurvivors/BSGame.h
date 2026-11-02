@@ -404,6 +404,14 @@ public:
 		TMap<FString, int32> Evo;
 		TSharedPtr<FBSEnemy> Hero;
 		const BSSwarm::FStrain* Next = nullptr;
+		// The base on the field (SyncBase): its parts by key (each grows in over BaseGrow s from T = 0), the spot each tech
+		// building took, the drones at work, and the resync timer.
+		struct FPart { ABSModelActor* Actor = nullptr; FString Model; float X = 0, Y = 0, Scale = 1, T = 0; };
+		struct FDrone { ABSModelActor* Actor = nullptr; float X = 0, Y = 0, Tx = 0, Ty = 0, Yaw = 0, Wait = 0; bool bMoving = false; };
+		TMap<FString, FPart> Parts;
+		TMap<FString, int32> TechSpot;
+		TArray<FDrone> Drones2;
+		float BaseT = 0;
 	} Sw;
 	float SwarmIncome() const { return BSSwarm::Income + BSSwarm::DroneIncome * Sw.Drones; }
 	float SwarmGasIncome() const { return BSSwarm::ExtractorGas * Sw.Extractors; }
@@ -657,6 +665,13 @@ private:
 	void SwarmRound(int32 W);
 	const FBSZergDef* SwarmDef(const FString& Type);
 	void SpawnHero();
+	// The hive cluster on the field (lane only): what has been bought, grown in, drones at work; broods come out at the
+	// foot of the hatcheries (BroodSpawn).
+	void SyncBase();
+	void UpdateBase(float Dt);
+	FSwarmState::FPart* BasePart(const FString& Key, const FString& Model, float X, float Y, float Scale, float Yaw = -PI / 2);
+	void DropPart(const FString& Key);
+	FVector2D BroodSpawn(float Ang) const;
 	void HeroTarget(FBSEnemy& E, float Dt);
 	bool HeroKit(FBSEnemy& E, float Dt);
 	void TerranThink();                    // the Terran commander, every half second (also the "balanced" bot)

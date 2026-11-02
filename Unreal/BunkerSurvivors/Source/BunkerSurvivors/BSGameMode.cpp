@@ -131,7 +131,7 @@ void ABSGameMode::StartGame(EBSMode Mode, bool bSwarm)
 		if (ABSCameraPawn* Cam = Cast<ABSCameraPawn>(PC->GetPawn()))
 		{
 			Cam->SetGame(Game);
-			Cam->SetArena(Mode == EBSMode::Arena);
+			Cam->SetArena(Mode == EBSMode::Arena, Game->bSwarm && Mode == EBSMode::Lane);   // swarm mode: from the zerg side
 			float Z;
 			if (FParse::Value(Cmd, TEXT("BSZoom="), Z)) Cam->SetZoom(Z, true);
 		}
