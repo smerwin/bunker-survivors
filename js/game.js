@@ -1923,6 +1923,7 @@ window.BS = window.BS || {};
       else if (d.nydus && lane && Math.random() < 0.45) { x = side * rnd(10, 12.5); y = rnd(-4, 6); }      // up on a plateau beside the bunker
       else if (d.nydus) { const r = rnd(5.5, 8); x = lane ? side * rnd(2.5, 4.5) : Math.cos(ar) * r; y = lane ? rnd(-8.5, -7) : Math.sin(ar) * r; }   // behind our lines
       else if (d.creeper || d.watcher || d.detector) { x = lane ? side * rnd(10, 18) : Math.cos(ar) * 29; y = lane ? rnd(30, 34) : Math.sin(ar) * 29; }   // creep overlords and watchers drift in from afar
+      else if (this.swarm && this.mode === 'lane') [x, y] = this.broodSpawn(ang);      // from the zerg base's hatcheries
       else if (this.mode === 'lane') {
         if ((ang === 1 || ang === 2) && !d.hops) {        // winged zerglings always come from the north, over the mesa
           // Somewhere down the arm (see terrain.js), not on the cliffs beside it.
@@ -3287,6 +3288,7 @@ window.BS = window.BS || {};
     // Visual state that follows game speed (called every frame).
     updateVisuals(dt) {
       this.updateEvac(dt);
+      if (this.swarm) this.updateBase(dt);
       for (const e of this.enemies) {
         e.flash = Math.max(0, e.flash - dt * 9);
         e.handle.setPos(e.x, e.y, e.z).setYaw(e.yaw);

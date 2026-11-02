@@ -325,7 +325,12 @@ window.BS = window.BS || {};
     // ---- Camera ------------------------------------------------------------------------------
     setCameraMode(mode) {
       const c = this.cam;
-      if (mode === 'lane') {
+      if (mode === 'lane' && this.flip) {
+        // Swarm mode: from behind the zerg base (BS.SWARM.base), the broods advancing up the screen to the bunker.
+        const port = this.height > this.width;
+        Object.assign(c, { tx: 0, ty: port ? 24 : 20, dist: port ? 48 : 44, pitch: (port ? 50 : 54) * DEG, yaw: Math.PI, minDist: 10, maxDist: 56, bounds: { x0: -14, x1: 14, y0: -4, y1: 40 } });
+        c.fov = (port ? 55 : 42) * DEG;
+      } else if (mode === 'lane') {
         Object.assign(c, { tx: 0, ty: this.height > this.width ? 3.6 : 4.5, dist: this.height > this.width ? 28 : 22, pitch: 60 * DEG, yaw: 0, minDist: 10, maxDist: 36, bounds: { x0: -8, x1: 8, y0: -4, y1: 20 } });
         c.fov = (this.height > this.width ? 55 : 42) * DEG;
       } else {
