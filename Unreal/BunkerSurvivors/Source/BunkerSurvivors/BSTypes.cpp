@@ -364,26 +364,6 @@ namespace
 		};
 	}
 
-	// The ladder; matches BS.LADDER in client/js/units.js.
-	TArray<FBSLadderRung> MakeLadder()
-	{
-		return {
-			{ TEXT("Marines"), TEXT("Zerglings and winglings"), { TEXT("marine") }, { TEXT("zergling"), TEXT("wingling") } },
-			{ TEXT("Firebats"), TEXT("Hydralisks"), { TEXT("firebat") }, { TEXT("hydralisk") } },
-			{ TEXT("Marauders"), TEXT("Roaches"), { TEXT("marauder") }, { TEXT("roach") } },
-			{ TEXT("SCVs"), TEXT("Banelings"), { TEXT("scv") }, { TEXT("baneling") } },
-			{ TEXT("Siege tanks"), TEXT("Infested terrans"), { TEXT("tank") }, { TEXT("infested") } },
-			{ TEXT("Missile turrets and the air strike"), TEXT("Mutalisks and overlords"), { TEXT("sam"), TEXT("strike") }, { TEXT("mutalisk"), TEXT("overlordWatch") } },
-			{ TEXT("Sensor tower and reapers"), TEXT("Lurkers"), { TEXT("sensor"), TEXT("reaper") }, { TEXT("lurker") } },
-			{ TEXT("Goliaths and the high ground"), TEXT("Ultralisks"), { TEXT("goliath"), TEXT("highground") }, { TEXT("ultralisk") } },
-			{ TEXT("Vikings and wraiths"), TEXT("Brood lords and guardians"), { TEXT("vikings"), TEXT("wraiths") }, { TEXT("broodlord"), TEXT("guardian") } },
-			{ TEXT("Ghosts and the nuke"), TEXT("Brood queens and defilers"), { TEXT("ghost"), TEXT("nuke") }, { TEXT("broodqueen"), TEXT("defiler"), TEXT("overseer") } },
-			{ TEXT("Science vessel and the Yamato"), TEXT("Vipers, devourers and scourge"), { TEXT("vessel"), TEXT("yamato") }, { TEXT("viper"), TEXT("devourer"), TEXT("scourge") } },
-			{ TEXT("Thors"), TEXT("Creep, drops and nydus worms"), { TEXT("thor") }, { TEXT("queen"), TEXT("overlordCreep"), TEXT("overlord"), TEXT("overlordDrop"), TEXT("nydus") } },
-			{ TEXT("The battlecruiser and the Odin"), TEXT("The full swarm"), { TEXT("bc"), TEXT("odin") }, {} },
-		};
-	}
-
 	TArray<FBSPerkDef> MakePerks()
 	{
 		return {
@@ -413,14 +393,6 @@ namespace BSDefs
 	}
 	const TArray<FBSPerkDef>& Perks() { static TArray<FBSPerkDef> V = MakePerks(); return V; }
 	const FBSPerkDef* FindPerk(const FString& Id) { return Perks().FindByPredicate([&](const FBSPerkDef& P) { return P.Id == Id; }); }
-	const TArray<FBSLadderRung>& Ladder() { static TArray<FBSLadderRung> V = MakeLadder(); return V; }
-	FString LadderCardNeeds(const FString& CardId)
-	{
-		static const TMap<FString, FString> Needs = { { TEXT("incinerator"), TEXT("firebat") }, { TEXT("concussive"), TEXT("marauder") },
-			{ TEXT("scvrepair"), TEXT("scv") }, { TEXT("mule"), TEXT("scv") }, { TEXT("rotors"), TEXT("strike") } };
-		const FString* N = Needs.Find(CardId);
-		return N ? *N : FString();
-	}
 	const TArray<FBSZergDef>& Zerg() { static TArray<FBSZergDef> V = MakeZerg(); return V; }
 	const FBSZergDef* FindZerg(const FString& Key) { return Zerg().FindByPredicate([&](const FBSZergDef& D) { return D.Key == Key; }); }
 	const TArray<FBSInfantryDef>& Infantry() { static TArray<FBSInfantryDef> V = MakeInfantry(); return V; }

@@ -139,14 +139,6 @@ struct FBSRarity { FString Key, Name; float Weight = 1; int32 From = 1; FLinearC
 // A perk at the Hyperion, bought with vespene between runs (see BSMeta); Costs: one per level.
 struct FBSPerkDef { FString Id, Name, Icon, Desc; TArray<int32> Costs; };
 
-// The ladder: the forces on both sides grow run by run. The first run is marines against zerglings (lots of them);
-// every run that clears enough waves (LadderWaves on the first rung, one more on each rung after) opens the next rung:
-// a Terran unit (or two) and a zerg strain (or a few). Terran: armoury items (infantry, scv, sam, sensor, tank),
-// abilities (strike, yamato) and high-tech or unit shop cards (by card id); Zerg: FBSZergDef keys. Anything not listed
-// is there from the start. The Hyperion still comes at 30 minutes and Kerrigan at 28 whatever the rung: early runs
-// simply fall sooner. T and Z: display names. Port of BS.LADDER in units.js.
-struct FBSLadderRung { FString T, Z; TArray<FString> Terran, Zerg; };
-
 namespace BSDefs
 {
 	const TArray<FBSZergDef>& Zerg();
@@ -164,17 +156,6 @@ namespace BSDefs
 	const FBSRarity& FindRarity(const FString& Key);
 	const TArray<FBSPerkDef>& Perks();
 	const FBSPerkDef* FindPerk(const FString& Id);
-	const TArray<FBSLadderRung>& Ladder();
-	constexpr int32 LadderWaves = 3;
-	// The zergling swarm on top of each wave's budget, times LadderSwarm[rung] on the first rungs (they have little else
-	// to throw); the cap on zerg alive at once, times LadderAlive[rung]; and in the lane LadderWinglings[rung] of that swarm
-	// are winglings, hopping straight down the middle over the mesa. Past the end of each: x1 (no winglings).
-	constexpr float LadderSwarm[] = { 3, 2.5f, 2, 1.6f, 1.3f, 1.15f };
-	constexpr float LadderAlive[] = { 1.5f, 1.35f, 1.2f, 1.1f };
-	constexpr float LadderWinglings[] = { 0.3f, 0.25f, 0.2f, 0.15f, 0.1f };
-	template <int32 N> float LadderAt(const float (&A)[N], int32 Rung, float Past) { return Rung >= 0 && Rung < N ? A[Rung] : Past; }
-	// Shop cards that only make sense with a unit the ladder has not opened yet (that unit's id, else empty).
-	FString LadderCardNeeds(const FString& CardId);
 
 	// The shop. Every cleared wave pauses the fight and offers ShopOffers random cards, bought with banked minerals;
 	// troops, tanks, SCVs, turrets and repairs stay in the armoury throughout. A reroll costs RerollCost, RerollStep more
@@ -186,6 +167,8 @@ namespace BSDefs
 	// Between runs: vespene per wave cleared, Milestone more every tenth, GasEvac when the Hyperion took you off, x GasArena
 	// in the arena.
 	constexpr float GasPerWave = 1, GasMilestone = 5, GasEvac = 25, GasArena = 1.5f;
+	// In the lane at least this share of the zergling swarm are winglings, hopping straight down the middle over the mesa.
+	constexpr float LaneWinglings = 0.1f;
 
 	// Terran constants.
 	constexpr float BunkerHp = 400, BunkerArmor = 1, BunkerRangeBonus = 1, BunkerHalfSize = 1.5f;

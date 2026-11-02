@@ -292,6 +292,11 @@ window.BS = window.BS || {};
   // Zerg attackers. hp/armor/damage/cooldown/range/speed are SC2 values; bounty and budget are ours.
   // hitFrac: fraction of the attack cooldown at which the damage lands (synced with the animation).
   // variants: strain/skin models mixed in for variety; impactFx: SC2 effect where a melee blow lands.
+  // Zerglings evolve as a run goes on, as in StarCraft II: Metabolic Boost (speed x), +1 melee attack and +1 carapace at
+  // each of the plating waves, then Adrenal Glands (attack cooldown x). New zerglings hatch with whatever the swarm has.
+  BS.LING_EVO = { types: ['zergling', 'wingling'], boost: { wave: 4, speed: 1.35 }, plating: { waves: [7, 12, 17, 22, 27, 32], dmg: 1, armor: 1 }, adrenal: { wave: 14, cd: 0.7 } };
+  // In the lane at least this share of the zergling swarm are winglings, hopping straight down the middle over the mesa.
+  BS.LANE_WINGLINGS = 0.1;
   BS.ZERG = {
     zergling: { name: 'Zergling', model: 'zergling', death: 'zerglingDeath', surround: true, hp: 30, armor: 0, dmg: 5, cd: 0.497, range: 0.1, speed: 4.13, radius: 0.375, light: true, bounty: 4, budget: 2, unlock: 1, weight: 12, hitFrac: 0.45, attackSeq: /^attack/i, soundAttack: 'zerglingAttack', soundDeath: 'zerglingDeath', height: 0.8,
       variants: ['zerglingRaptor', 'zerglingSwarmling', 'zerglingPrimal'], variantFrom: 4, variantStep: 4, impactFx: 'zerglingImpact' },
@@ -603,40 +608,6 @@ window.BS = window.BS || {};
       { id: 'offer', name: 'Requisitions', icon: 'btn-building-terran-merccompound', desc: 'A fifth card in every shop', costs: [100] },
     ],
   };
-
-  // The ladder: the forces on both sides grow run by run. The first run is marines against zerglings (lots of them);
-  // every run that clears enough waves (LADDER_WAVES on the first rung, one more on each rung after) opens the next
-  // rung: a Terran unit (or two) and a zerg strain (or a few).
-  // terran: armoury items (infantry, scv, sam, sensor, tank), abilities (strike, yamato) and high-tech or unit shop
-  // cards (by card id); zerg: BS.ZERG keys. Anything not listed is there from the start. The Hyperion still comes at
-  // 30 minutes and Kerrigan at 28 whatever the rung: early runs simply fall sooner.
-  BS.LADDER = [
-    { t: 'Marines', z: 'Zerglings and winglings', terran: ['marine'], zerg: ['zergling', 'wingling'] },
-    { t: 'Firebats', z: 'Hydralisks', terran: ['firebat'], zerg: ['hydralisk'] },
-    { t: 'Marauders', z: 'Roaches', terran: ['marauder'], zerg: ['roach'] },
-    { t: 'SCVs', z: 'Banelings', terran: ['scv'], zerg: ['baneling'] },
-    { t: 'Siege tanks', z: 'Infested terrans', terran: ['tank'], zerg: ['infested'] },
-    { t: 'Missile turrets and the air strike', z: 'Mutalisks and overlords', terran: ['sam', 'strike'], zerg: ['mutalisk', 'overlordWatch'] },
-    { t: 'Sensor tower and reapers', z: 'Lurkers', terran: ['sensor', 'reaper'], zerg: ['lurker'] },
-    { t: 'Goliaths and the high ground', z: 'Ultralisks', terran: ['goliath', 'highground'], zerg: ['ultralisk'] },
-    { t: 'Vikings and wraiths', z: 'Brood lords and guardians', terran: ['vikings', 'wraiths'], zerg: ['broodlord', 'guardian'] },
-    { t: 'Ghosts and the nuke', z: 'Brood queens and defilers', terran: ['ghost', 'nuke'], zerg: ['broodqueen', 'defiler', 'overseer'] },
-    { t: 'Science vessel and the Yamato', z: 'Vipers, devourers and scourge', terran: ['vessel', 'yamato'], zerg: ['viper', 'devourer', 'scourge'] },
-    { t: 'Thors', z: 'Creep, drops and nydus worms', terran: ['thor'], zerg: ['queen', 'overlordCreep', 'overlord', 'overlordDrop', 'nydus'] },
-    { t: 'The battlecruiser and the Odin', z: 'The full swarm', terran: ['bc', 'odin'], zerg: [] },
-  ];
-  BS.LADDER_WAVES = 3;
-  // The zergling swarm on top of each wave's budget, times this on the first rungs (they have little else to throw).
-  BS.LADDER_SWARM = [3, 2.5, 2, 1.6, 1.3, 1.15];
-  // ...and the cap on zerg alive at once, times this.
-  BS.LADDER_ALIVE = [1.5, 1.35, 1.2, 1.1];
-  // ...and in the lane this share of that swarm are winglings, hopping straight down the middle over the mesa.
-  BS.LADDER_WINGLINGS = [0.3, 0.25, 0.2, 0.15, 0.1];
-  // Zerglings evolve as a run goes on, as in StarCraft II: Metabolic Boost (speed x), +1 melee attack and +1 carapace at
-  // each of the plating waves, then Adrenal Glands (attack cooldown x). New zerglings hatch with whatever the swarm has.
-  BS.LING_EVO = { types: ['zergling', 'wingling'], boost: { wave: 4, speed: 1.35 }, plating: { waves: [7, 12, 17, 22, 27, 32], dmg: 1, armor: 1 }, adrenal: { wave: 14, cd: 0.7 } };
-  // Shop cards that only make sense with a unit the ladder has not opened yet.
-  BS.LADDER_CARD_NEEDS = { incinerator: 'firebat', concussive: 'marauder', scvrepair: 'scv', mule: 'scv', rotors: 'strike' };
 
   // Abilities on the action bar.
   BS.ABILITIES = [

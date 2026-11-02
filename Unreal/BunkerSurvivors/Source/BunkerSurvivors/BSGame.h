@@ -383,14 +383,6 @@ public:
 
 	// State read by the HUD and camera.
 	EBSMode Mode = EBSMode::Lane;
-	// The ladder (BSDefs::Ladder): this run's rung, and what it lets into the fight.
-	int32 Rung = 0;
-	bool UnitOpen(const FString& Id) const { return Rung >= BSMeta::TerranRung(Id); }
-	bool ZergOpen(const FString& Key) const { return Rung >= BSMeta::ZergRung(Key); }
-	// Zerglings as evolved by this wave (BSLingEvo); every other strain as it comes. Evolved copies live as long as the
-	// game, so zerg that hatched earlier keep the def they hatched with.
-	const FBSZergDef* ZergDef(const FString& Type);
-	TMap<FString, TUniquePtr<FBSZergDef>> EvoDefs;
 	bool bStarted = false, bPaused = false, bOver = false, bHard = false;
 	bool bBunkerView = false;            // the camera is inside the bunker: skip corpses on top of the eye
 	bool NearEye(const FVector& P) const { return bBunkerView && P.X * P.X + P.Y * P.Y < 2.4f * 2.4f && P.Z < 3.f; }
@@ -442,7 +434,7 @@ public:
 	{
 		const int32* A = bHard ? BSDefs::AliveHard : BSDefs::Alive;
 		const float K = FMath::Clamp((Wave - BSDefs::AliveFrom) / float(BSDefs::AliveBy - BSDefs::AliveFrom), 0.f, 1.f);
-		return FMath::RoundToInt((A[0] + (A[1] - A[0]) * K) * BSDefs::LadderAt(BSDefs::LadderAlive, Rung, 1.f));
+		return FMath::RoundToInt(A[0] + (A[1] - A[0]) * K);
 	}
 	// Stress test (-BSCrowd=N): keeps N unkillable zerg on the field and logs the frame time every 5 s.
 	int32 CrowdTest = 0; float CrowdT = 0, CrowdSum = 0; int32 CrowdFrames = 0;
@@ -462,6 +454,10 @@ private:
 	bool CardOpen(const FBSCardDef& C) const;
 	TArray<FString> RollOffers();
 	void ApplyCard(const FBSCardDef& C);
+	// Zerglings as evolved by this wave (BSLingEvo); every other strain as it comes. Evolved copies live as long as the
+	// game, so zerg that hatched earlier keep the def they hatched with.
+	const FBSZergDef* ZergDef(const FString& Type);
+	TMap<FString, TUniquePtr<FBSZergDef>> EvoDefs;
 	TSharedPtr<FBSEnemy> SpawnEnemy(const FString& Type, float Ang, const FVector2D* At = nullptr);
 	FVector2D SurroundGoal(FBSEnemy& E);
 	void PlayEnemyAnim(FBSEnemy& E, const FString& Kind);

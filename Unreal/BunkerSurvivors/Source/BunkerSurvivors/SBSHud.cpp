@@ -769,14 +769,14 @@ TSharedRef<SWidget> SBSHud::BuildSquadCard()
 // =====================================================================================================
 // Abilities
 // =====================================================================================================
-struct FBSAbility { FString Id, Name, Icon, Key; FLinearColor Accent; int32 Cost; float MaxCd; };
+struct FBSAbility { FString Name, Icon, Key; FLinearColor Accent; int32 Cost; float MaxCd; };
 static const TArray<FBSAbility>& Abilities()
 {
 	static TArray<FBSAbility> A = {
-		{ TEXT("stim"), TEXT("STIM"), TEXT("btn-ability-terran-stimpack"), TEXT("S"), C::Amber, 0, BSDefs::StimCooldown },
-		{ TEXT("strike"), TEXT("AIR STRIKE"), TEXT("btn-unit-terran-banshee"), TEXT("A"), FLinearColor(1.f, 0.48f, 0.28f), BSDefs::BansheeCost, BSDefs::BansheeCooldown },
-		{ TEXT("repair"), TEXT("REPAIR"), TEXT("btn-ability-terran-repair"), TEXT("R"), C::Cyan, BSDefs::RepairCost, BSDefs::RepairCooldown },
-		{ TEXT("yamato"), TEXT("YAMATO"), TEXT("btn-unit-terran-battlecruiser"), TEXT("Y"), C::Violet, BSDefs::YamatoCost, BSDefs::YamatoCooldown },
+		{ TEXT("STIM"), TEXT("btn-ability-terran-stimpack"), TEXT("S"), C::Amber, 0, BSDefs::StimCooldown },
+		{ TEXT("AIR STRIKE"), TEXT("btn-unit-terran-banshee"), TEXT("A"), FLinearColor(1.f, 0.48f, 0.28f), BSDefs::BansheeCost, BSDefs::BansheeCooldown },
+		{ TEXT("REPAIR"), TEXT("btn-ability-terran-repair"), TEXT("R"), C::Cyan, BSDefs::RepairCost, BSDefs::RepairCooldown },
+		{ TEXT("YAMATO"), TEXT("btn-unit-terran-battlecruiser"), TEXT("Y"), C::Violet, BSDefs::YamatoCost, BSDefs::YamatoCooldown },
 	};
 	return A;
 }
@@ -839,9 +839,7 @@ TSharedRef<SWidget> SBSHud::MakeAbility(int32 Index)
 TSharedRef<SWidget> SBSHud::BuildAbilityRow()
 {
 	TSharedRef<SHorizontalBox> Row = SNew(SHorizontalBox);
-	// (The ladder: abilities this run's rung has not opened stay off the bar.)
-	auto Shown = [this](int32 i) { ABSGame* Gm = Game(); return (Gm && !Gm->UnitOpen(Abilities()[i].Id)) ? EVisibility::Collapsed : EVisibility::Visible; };
-	for (int32 i = 0; i < Abilities().Num(); i++) Row->AddSlot().AutoWidth().Padding(6, 0)[ SNew(SBox).Visibility_Lambda([Shown, i]() { return Shown(i); })[ MakeAbility(i) ] ];
+	for (int32 i = 0; i < Abilities().Num(); i++) Row->AddSlot().AutoWidth().Padding(6, 0)[ MakeAbility(i) ];
 	return Row;
 }
 
@@ -858,7 +856,7 @@ struct FBSArmItem
 	TFunction<int32(ABSGame*)> Level;       // -1 = no level pips
 	int32 MaxLevel = 0;
 	TFunction<void(ABSGame*)> Buy;
-	TFunction<bool(ABSGame*)> Hidden;       // high tech stays hidden until a shop card unlocks it, the rest until the ladder opens it
+	TFunction<bool(ABSGame*)> Hidden;       // high tech stays hidden until a shop card unlocks it
 	bool bTech = false;
 	bool IsHidden(ABSGame* G) const { return Hidden && Hidden(G); }
 };
@@ -896,7 +894,6 @@ static const TArray<FBSArmItem>& ArmItems()
 			I.Avail = [](ABSGame* G) { return !G->TroopsFull(); };
 			I.Tag = [](ABSGame*) { return FString(TEXT("FULL")); };
 			I.Level = [](ABSGame*) { return -1; };
-			I.Hidden = [Key](ABSGame* G) { return !G->UnitOpen(Key); };
 			I.Buy = [Key](ABSGame* G) { G->AddInfantry(Key); };
 			Out.Add(I);
 		}
@@ -907,8 +904,6 @@ static const TArray<FBSArmItem>& ArmItems()
 			I.Icon = [Ic](ABSGame*) { return Ic; };
 			I.Cost = [Cost](ABSGame* G) { return Cost > 0 ? Cost : G->TankCost(); };
 			I.Avail = Avail; I.Buy = Buy;
-			const FString Key = Id;
-			I.Hidden = [Key](ABSGame* G) { return !G->UnitOpen(Key); };
 			I.Tag = [](ABSGame*) { return FString(TEXT("MAX")); };
 			I.Level = [](ABSGame*) { return -1; };
 			Out.Add(I);
@@ -1119,15 +1114,6 @@ TSharedRef<SWidget> SBSHud::BuildStartScreen()
 		GConfig->GetInt(TEXT("BunkerSurvivors"), TEXT("Best.Arena"), BA, GGameUserSettingsIni);
 		const FVector2f Fp = bPortrait ? FVector2f(S.X * 0.5f, S.Y - 46) : FVector2f(56, S.Y - 46);
 		D::Text(Out, L + 1, G, FString::Printf(TEXT("BEST  LANE %d   ARENA %d"), BL, BA), D::Label(8.5f), Fp, C::Muted, Al);
-		// The ladder (BSDefs::Ladder): which rung this run is on, and what clearing enough waves opens next.
-		{
-			const TArray<FBSLadderRung>& Ld = BSDefs::Ladder();
-			const int32 Ri = BSMeta::Rung();
-			const FString Rl = FString::Printf(TEXT("RUNG %d OF %d"), Ri + 1, Ld.Num()) + (Ld.IsValidIndex(Ri + 1)
-				? FString::Printf(TEXT("  //  CLEAR WAVE %d TO UNLOCK %s AND %s"), BSMeta::LadderWaves(Ri), *Ld[Ri + 1].T.ToUpper(), *Ld[Ri + 1].Z.ToUpper())
-				: FString(TEXT("  //  EVERYTHING UNLOCKED")));
-			D::Text(Out, L + 1, G, Rl, D::Fit(Rl, [](float Sz) { return D::Label(Sz); }, 8.5f, 5.f, G.GetLocalSize().X - 28), Fp - FVector2f(0, 16), C::Amber, Al);
-		}
 		if (GM.IsValid() && GM->GetAssets())
 		{
 			const FString Line = TEXT("STARCRAFT II ART LINKED  ") + GM->GetAssets()->Summary.ToUpper();
@@ -1207,20 +1193,12 @@ TSharedRef<SWidget> SBSHud::BuildModal(bool bGameOver)
 			const FVector2f Bs = D::Measure(B, D::Label(9));
 			D::RFill(Out, L + 2, G, FVector2f(S.X * 0.5f - Bs.X * 0.5f - 10, Y0), FVector2f(Bs.X + 20, 20), 10, C::A(Bc, Gm->bNewBest ? 0.18f + 0.1f * FMath::Sin(NowS * 5) : 0.1f));
 			D::Text(Out, L + 3, G, B, D::Label(9), FVector2f(S.X * 0.5f, Y0 + 10 - Bs.Y * 0.5f), Bc, 0.5f);
-			// What the run banked at the Hyperion, the ladder rung it opened, and any card it unlocked.
+			// What the run banked at the Hyperion, and any card it unlocked.
 			const BSMeta::FRunResult& Mr = Gm->MetaResult;
 			D::Text(Out, L + 2, G, FString::Printf(TEXT("+%d VESPENE FOR THE HYPERION"), Mr.Gas), D::Label(9), FVector2f(S.X * 0.5f, Y0 + 32), C::Green, 0.5f);
-			float Uy = Y0 + 50;
-			if (BSDefs::Ladder().IsValidIndex(Mr.Rung))
-			{
-				const FBSLadderRung& Rg = BSDefs::Ladder()[Mr.Rung];
-				const FString R = TEXT("UNLOCKED: ") + Rg.T.ToUpper() + TEXT("  //  THE SWARM BRINGS ") + Rg.Z.ToUpper();
-				D::Text(Out, L + 2, G, R, D::Fit(R, [](float Sz) { return D::Label(Sz); }, 9, 5, S.X - 24), FVector2f(S.X * 0.5f, Uy), C::Amber, 0.5f);
-				Uy += 18;
-			}
 			FString U;
 			for (const FBSCardDef* Cd : Mr.Unlocked) U += (U.IsEmpty() ? TEXT("NEW CARD: ") : TEXT(", ")) + BSMeta::CardName(*Cd).ToUpper();
-			if (!U.IsEmpty()) D::Text(Out, L + 2, G, U, D::Fit(U, [](float Sz) { return D::Label(Sz); }, 9, 6, S.X - 24), FVector2f(S.X * 0.5f, Uy), C::Amber, 0.5f);
+			if (!U.IsEmpty()) D::Text(Out, L + 2, G, U, D::Fit(U, [](float Sz) { return D::Label(Sz); }, 9, 6, S.X - 24), FVector2f(S.X * 0.5f, Y0 + 50), C::Amber, 0.5f);
 		}
 		return L + 8;
 	});

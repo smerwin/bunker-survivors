@@ -130,37 +130,11 @@ minerals buy research and other upgrades from a few random cards. Every fifth wa
 minutes and the Hyperion comes down over the bunker and evacuates you: the run is won. If the bunker falls first, the
 run is over. Either way, the vespene it earned buys permanent perks at the Hyperion for the runs after.
 
-**The ladder.** Both sides grow run by run. Your first run is marines alone against zerglings, and it is over quickly:
-with nothing else to throw, the early swarm is three times the size (shrinking back to normal by rung 7), more of it
-can be on the field at once, and in the lane a third of it are winglings hopping straight down the middle over the mesa. Every run that clears enough waves (3 on the first rung, one more on each rung after) climbs a
-rung of the ladder and opens one more Terran unit and one more zerg strain for the runs after; the start screen shows
-the rung you are on and what the next one brings. The Hyperion still comes at 30 minutes and Kerrigan at 28 whatever
-the rung: early runs simply fall long before. Shop cards for a unit you have not unlocked stay out of the shop, and a
-named assault (the hydralisk swarm, the ultralisk stampede...) only comes once every strain in it is unlocked.
-
-**Zerglings** evolve over every run, as in StarCraft II: Metabolic Boost at wave 4 (35% faster), +1 melee attack and
-+1 carapace at waves 7, 12, 17, 22, 27 and 32, and Adrenal Glands at wave 14 (30% faster bites). In the lane they no
-longer queue up in front of the bunker: each takes a spot of its own round it, flanks and back included, and bites
-whatever stands in its way there.
-
-| Rung | Terran | Zerg |
-| --- | --- | --- |
-| 1 | Marines | Zerglings, winglings |
-| 2 | Firebats | Hydralisks |
-| 3 | Marauders | Roaches |
-| 4 | SCVs | Banelings |
-| 5 | Siege tanks | Infested terrans |
-| 6 | Missile turrets, the air strike | Mutalisks, overlords |
-| 7 | Sensor tower, reapers | Lurkers |
-| 8 | Goliaths, the High Ground | Ultralisks |
-| 9 | Vikings, wraiths | Brood lords, guardians |
-| 10 | Ghosts, the nuke | Brood queens, defilers (and overseers) |
-| 11 | Science vessel, the Yamato | Vipers, devourers, scourge |
-| 12 | Thors | Creep, overlord drops, nydus worms |
-| 13 | Battlecruiser, the Odin | The full swarm |
-
-Playtesting: `?rung=5` plays that rung and `?tech=max` the top one (Unreal: `-BSRung=5`, `-BSTechMax`); neither
-saves ladder progress.
+**Zerglings** evolve over a run, as in StarCraft II: Metabolic Boost at wave 4 (35% faster), +1 melee attack and
++1 carapace at waves 7, 12, 17, 22, 27 and 32, and Adrenal Glands at wave 14 (30% faster bites). In the lane they do
+not queue up in front of the bunker: each takes a spot of its own round it, flanks and back included, and bites
+whatever stands in its way there. A tenth of the lane's zergling swarm (more later on) are winglings, hopping straight
+down the middle over the mesa.
 
 **Thirty minutes.** The clock under HYPERION in the top bar counts fighting time only; it stops while you shop. A run
 is about 40 waves. Early waves ramp up steadily. Past wave 16 the swarm stops simply getting bigger and starts getting
