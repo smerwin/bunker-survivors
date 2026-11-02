@@ -36,6 +36,20 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .vespene { width: 14px; height: 18px; border-radius: 4px 4px 7px 7px; background: linear-gradient(160deg, #b6ff9a, #3fc46a 55%, #1d7a3c); flex: none; }
 .mode.swarmMode { border-color: rgba(255, 122, 217, 0.55); }
 .mode.swarmMode.locked { opacity: 0.55; filter: grayscale(0.7); }
+#broodBtn { position: absolute; right: 12px; top: calc(var(--safe-t) + 78px); z-index: 3; padding: 9px 14px; border-radius: 12px; text-align: right; border: 1px solid rgba(141, 224, 138, 0.7); color: #8de08a; }
+#hud.swarm #broodBtn.swarmOnly { display: block; }
+#broodBtn b { display: block; font: 700 14px var(--wide); letter-spacing: 0.06em; }
+@media (max-width: 560px) { #broodBtn { padding: 7px 10px; } #broodBtn b { font-size: 12px; } #hud.swarm #squad { width: calc(100% - 150px); } }
+#broodBtn small { display: block; font: 700 9px var(--body); letter-spacing: 0.08em; color: var(--muted); margin-top: 2px; }
+#broodBtn.hold { border-color: rgba(255, 106, 90, 0.85); color: #ff6a5a; box-shadow: 0 0 14px rgba(255, 106, 90, 0.35); }
+#broodBtn.massed { box-shadow: 0 0 14px rgba(141, 224, 138, 0.45); }
+.mode.protossMode { border-color: rgba(95, 227, 255, 0.6); }
+/* The Protoss campaign: a YTMND. The live model over the arena floor, with a turning wallpaper of him and huge outlined
+   text drawn over it all (main.js zeratul); one song forever. */
+#zeratul { position: fixed; inset: 0; z-index: 52; pointer-events: none; overflow: hidden; }
+#ytmnd { position: absolute; inset: 0; width: 100%; height: 100%; }
+#zeratulClose { pointer-events: auto; position: absolute; right: 14px; bottom: calc(14px + var(--safe-b)); z-index: 53; padding: 10px 16px; border-radius: 12px; color: #5fe3ff; font: 700 13px var(--wide); letter-spacing: 0.08em; }
+#app.ytmnd #gl { z-index: 51; position: fixed; }
 .crystal { width: 13px; height: 20px; background: linear-gradient(160deg, #a6f2ff, #3db6e6 55%, #1c6f9c); clip-path: polygon(50% 0, 100% 30%, 82% 100%, 18% 100%, 0 30%); flex: none; }
 #wavering { width: 34px; height: 34px; flex: none; }
 #wavering circle { fill: none; stroke-width: 3; }

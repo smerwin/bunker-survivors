@@ -328,7 +328,7 @@ window.BS = window.BS || {};
       if (mode === 'lane' && this.flip) {
         // Swarm mode: from behind the zerg base (BS.SWARM.base), the broods advancing up the screen to the bunker.
         const port = this.height > this.width;
-        Object.assign(c, { tx: 0, ty: port ? 24 : 20, dist: port ? 48 : 44, pitch: (port ? 50 : 54) * DEG, yaw: Math.PI, minDist: 10, maxDist: 56, bounds: { x0: -14, x1: 14, y0: -4, y1: 40 } });
+        Object.assign(c, { tx: 0, ty: port ? 26 : 24, dist: port ? 46 : 44, pitch: (port ? 50 : 54) * DEG, yaw: Math.PI, minDist: 10, maxDist: 56, bounds: { x0: -14, x1: 14, y0: -4, y1: 40 } });
         c.fov = (port ? 55 : 42) * DEG;
       } else if (mode === 'lane') {
         Object.assign(c, { tx: 0, ty: this.height > this.width ? 3.6 : 4.5, dist: this.height > this.width ? 28 : 22, pitch: 60 * DEG, yaw: 0, minDist: 10, maxDist: 36, bounds: { x0: -8, x1: 8, y0: -4, y1: 20 } });
@@ -415,10 +415,16 @@ window.BS = window.BS || {};
     }
     screenToGround(sx, sy) {
       const cam = this.scene.camera;
-      const ray = cam.screenToWorldRay(this._ray || (this._ray = new Float32Array(6)), [sx * this.dpr, this.canvas.height - sy * this.dpr], this.scene.viewport);
+      const ray = cam.screenToWorldRay(this._ray || (this._ray = new Float32Array(6)), [sx * this.dpr, sy * this.dpr], this.scene.viewport);   // (screen y down, as the viewer takes it)
       const az = ray[2], bz = ray[5];
       if (Math.abs(bz - az) < 1e-6) return null;
-      const t = -az / (bz - az);
+      // Onto the terrain (cliffs, plateaus and the high open ground in the north), not just the plane z = 0: a few
+      // refinements of the height under the hit.
+      let t = -az / (bz - az);
+      for (let k = 0; k < 4 && t >= 0 && t <= 1; k++) {
+        const h = BS.Terrain.height(ray[0] + (ray[3] - ray[0]) * t, ray[1] + (ray[4] - ray[1]) * t);
+        t = (h - az) / (bz - az);
+      }
       if (t < 0 || t > 1) return null;
       return [ray[0] + (ray[3] - ray[0]) * t, ray[1] + (ray[4] - ray[1]) * t];
     }

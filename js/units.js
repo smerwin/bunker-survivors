@@ -59,7 +59,11 @@ window.BS = window.BS || {};
     spire: 'assets/buildings/zerg/spire/spire.m3', greaterspire: 'assets/buildings/zerg/greaterspire/greaterspire.m3',
     infestationpit: 'assets/buildings/zerg/infestationpit/infestationpit.m3', ultraliskcavern: 'assets/buildings/zerg/ultraliskcavern/ultraliskcavern.m3',
     nydusnetwork: 'assets/buildings/zerg/nydusnetwork/nydusnetwork.m3', drone: U + 'zerg/drone/drone.m3', larva: U + 'zerg/larva/larva.m3',
-    chrysalis: U + 'zerg/zeruschrysalisegg/zeruschrysalisegg.m3',
+    chrysalis: U + 'zerg/zeruschrysalisegg/zeruschrysalisegg.m3', spinecrawler: 'assets/buildings/zerg/spinecrawler/spinecrawler.m3',
+    mineral0: 'assets/doodads/spacemineralclustersmall/spacemineralclustersmall_00.m3', mineral1: 'assets/doodads/spacemineralclustersmall/spacemineralclustersmall_01.m3',
+    mineral2: 'assets/doodads/spacemineralclustersmall/spacemineralclustersmall_02.m3',
+    // The Protoss campaign (main.js): Zeratul himself.
+    zeratul: U + 'protoss/zeratul/zeratul.m3',
     overlordCreep: U + 'zerg/overlord/overlord.m3',
     overlordCreepDeath: U + 'zerg/overlorddeath/overlorddeath.m3',
     // Terran
@@ -222,6 +226,8 @@ window.BS = window.BS || {};
   BS.CREEP_TEXTURE = 'assets/textures/creep.png';
 
   const S = 'assets/sounds/';
+  // Loaded only when played (the Protoss campaign's).
+  BS.SOUNDS_LAZY = ['protossTheme', 'zeratulVo'];
   BS.SOUNDS = {
     marineFire: [0, 1, 2, 3, 4, 5, 6, 7, 8].map(i => S + 'terran/marine/marine_attacklaunch' + i + '.wav'),
     reaperFire: [0, 1, 2, 3, 4, 5].map(i => S + 'terran/reaper/reaper_attacklaunch' + i + '.wav'),
@@ -284,6 +290,9 @@ window.BS = window.BS || {};
     // The finale.
     finaleRoar: [S + 'zerg/leviathan/leviathan_roar0.wav'],
     kerriganPsi: [0, 1, 2, 3].map(i => S + 'kerrigan_psionicshift0' + i + '.wav'),
+    // The Protoss campaign: the Brood War protoss theme on a loop, and Zeratul.
+    protossTheme: ['assets/music/sc1_protoss1.ogg'],
+    zeratulVo: ['ready00', 'ready01', 'ready02', 'thanks00', 'thanks01', 'findartifact00', 'findartifact02', 'obtainartifact01', 'completeartifact00', 'selectability01', 'abilityready00', 'supplyreminder00'].map(n => 'localizeddata/sounds/vo/zeratulcommander_' + n + '.ogg'),
     kerriganLeap: [0, 1].map(i => S + 'spell_leapingstrike_launch_0' + i + '.wav'),
     kineticBlast: [1, 2, 3].map(i => S + 'spell_kerrigan_kineticblast' + i + '.wav'),
     kineticHit: [0, 1].map(i => S + 'kerrigan_kineticblast_impact0' + i + '.wav'),
@@ -627,11 +636,11 @@ window.BS = window.BS || {};
   // after she falls, respawn s before she can be summoned again; melee and carapace evolutions strengthen her too).
   // Evolutions: +evoDmg damage a level (melee or missile by range), +1 armour and +evoHp hit
   // points a carapace level, and the strain upgrades. Every Terran killed pays bounty minerals. terran.income: the
-  // Terran commander's mineral income, times this.
+  // Terran commander's mineral income, times this; mass: massed plus light zerg at which it reaches for splash first.
   BS.SWARM = {
     minerals: 200, gas: 0, income: 2,
     drone: { cost: 50, income: 0.4, max: 30 }, extractor: { cost: 75, gas: 1, max: 4 },
-    hatch: { larva: 1.4, costs: [300, 400, 550, 700, 900] }, queen: { boost: 0.15, costs: [100, 150, 200, 275, 350, 450] },
+    hatch: { larva: 0.85, costs: [300, 450, 650, 900, 1200] }, queen: { boost: 0.1, costs: [100, 150, 200, 275, 350, 450] },
     brood: 6, bank: 3,
     tiers: [{ name: 'Hatchery', icon: 'btn-building-zerg-hatchery' }, { name: 'Lair', icon: 'btn-building-zerg-lair', cost: [200, 100] }, { name: 'Hive', icon: 'btn-building-zerg-hive', cost: [400, 200] }],
     strains: [
@@ -667,7 +676,7 @@ window.BS = window.BS || {};
       { id: 'adrenal', name: 'Adrenal Glands', icon: 'btn-upgrade-zerg-adrenalglands', cost: [200, 100], tier: 2, need: 'zergling' },
       { id: 'chitin', name: 'Chitinous Plating', icon: 'btn-upgrade-zerg-chitinousplating', cost: [150, 75], tier: 2, need: 'ultralisk' },
     ],
-    evoDmg: 0.2, evoHp: 0.1,
+    evoDmg: 0.15, evoHp: 0.1,
     bounty: { trooper: 12, scv: 10, tank: 45, mech: 70, structure: 35, reaper: 20, ghost: 30, air: 40, bc: 250 },
     hero: { cost: [4000, 4500], tier: 2, respawn: 60, hp: 3000, dmg: 45, structure: 20, armor: 1, power: 1, pods: 4, engage: 3, guard: 7 },
     abilities: [
@@ -678,16 +687,61 @@ window.BS = window.BS || {};
       { id: 'mutation', name: 'MUTATION', icon: 'btn-ability-kerrigan-wildmutation', key: 'T', accent: '#8de08a' },
       { id: 'apocalypse', name: 'APOCALYPSE', icon: 'btn-ability-kerrigan-apocalypse', key: 'Y', accent: '#ff7ad9' },
     ],
-    terran: { income: 1.5 },
-    // The base on the field, north of the lane (swarm.js syncBase): the main hatchery at at (scale main), extra hatcheries
-    // and extractors in their spots, tech buildings (each once anything it serves is bred or evolved) in order of
+    terran: { income: 1.5, mass: 25 },
+    // Base micro (swarm.js): held broods mass at the hive (at most cap + perWave a wave); released, they frenzy for
+    // frenzy s (speed x, attack cooldown x).
+    // A hatchery with its queen can be injected every cd s for larva (+perTier a hive tier). Evolution chambers (max,
+    // cost) research melee, missile and carapace levels over times s (by level), on their own each wave unless told not to.
+    hold: { frenzy: 5, speed: 1.2, cd: 0.9, cap: 8, perWave: 2 },
+    inject: { cd: 29, larva: 10, perTier: 3 },
+    chamber: { cost: [75, 0], max: 2, times: [25, 35, 45] },
+    // The Terran commander's raid on the hive: from from s on, with stim, when no more than maxField zerg are out in the lane
+    // and no more than maxMassed held at the hive, min to max marines of its squad charge the base; then cd s before the
+    // next. Held broods within wake m of a Terran fight.
+    // The hive's cards between rounds (swarm.js): offers a time, rerolls reroll[0] + reroll[1] a reroll; cost [minerals, gas]
+    // (+grow a level), from: not offered before that wave; autoInject: Brood Mothers inject that much of the cooldown late.
+    shop: { offers: 3, reroll: [25, 25] }, autoInject: 0.3,
+    cards: [
+      { id: 'autoinject', name: 'Brood Mothers', icon: 'btn-unit-zerg-queen', rarity: 'rare', max: 1, cost: [150, 0], desc: 'Your queens inject their hatcheries on their own (a little late each time).' },
+      { id: 'larva', name: 'Larval Surge', icon: 'btn-unit-zerg-larva', rarity: 'common', max: 3, cost: [150, 0], grow: [75, 0], desc: '+15% larva from every hatchery.' },
+      { id: 'sunken', name: 'Sunken Colony', icon: 'btn-building-zerg-spinecrawler', rarity: 'common', max: 4, cost: [150, 0], grow: [50, 0], desc: 'A sunken colony at the front of the base, impaling any Terran that comes near.' },
+      // Events: at once.
+      { id: 'hydras', name: 'Hydralisk Swarm', icon: 'btn-unit-zerg-hydralisk', rarity: 'rare', max: 99, event: true, from: 10, cost: [300, 150], desc: 'A dozen hydralisks pour out of the hive now (more with each tier).' },
+      { id: 'ultras', name: 'Ultralisk Stampede', icon: 'btn-unit-zerg-ultralisk', rarity: 'epic', max: 99, event: true, from: 10, cost: [450, 300], desc: 'Ultralisks stampede down the lane now.' },
+      { id: 'nydus', name: 'Nydus Breach', icon: 'btn-building-zerg-nydusworm', rarity: 'rare', max: 99, event: true, from: 10, cost: [350, 200], desc: 'Two nydus worms burst out behind the Terran lines.' },
+      { id: 'pods', name: 'Drop Pod Assault', icon: 'btn-unit-zerg-ultralisk', rarity: 'epic', max: 99, event: true, from: 10, cost: [450, 225], desc: 'Drop pods full of zerg slam down all round the bunker.' },
+      { id: 'darkswarm', name: 'Dark Swarm', icon: 'btn-ability-zerg-darkswarm', rarity: 'rare', max: 99, event: true, from: 10, cost: [200, 125], desc: 'A cloud over the bunker: its bullets miss what stands beneath for 15 s.' },
+      { id: 'plague', name: 'Plague', icon: 'btn-ability-zerg-causticspray', rarity: 'rare', max: 99, event: true, from: 10, cost: [200, 125], desc: 'Every Terran near the bunker sickens for 6 s.' },
+      { id: 'drones', name: 'Rich Mineral Fields', icon: 'btn-unit-zerg-drone', rarity: 'common', max: 3, cost: [100, 0], grow: [50, 0], desc: '+20% minerals from drones.' },
+      { id: 'gas', name: 'Rich Vespene Geysers', icon: 'btn-building-zerg-extractor', rarity: 'common', max: 3, cost: [125, 0], grow: [50, 0], desc: '+25% vespene from extractors.' },
+      { id: 'tithe', name: 'Mineral Drop', icon: 'btn-building-zerg-hatchery', rarity: 'common', max: 99, cost: [0, 0], desc: 'Minerals now: 100, and 5 more for every wave so far.' },
+      { id: 'gasdrop', name: 'Vespene Drop', icon: 'btn-building-zerg-extractor', rarity: 'common', max: 99, cost: [0, 0], desc: 'Vespene now: 75, and 4 more for every wave so far.' },
+      { id: 'dronedrop', name: 'Drone Brood', icon: 'btn-unit-zerg-drone', rarity: 'rare', max: 99, cost: [0, 0], desc: 'Four drones hatch at once, free.', need: g => g.sw.drones < BS.SWARM.drone.max },
+      { id: 'pulse', name: 'Spawning Pulse', icon: 'btn-building-zerg-spawningpool', rarity: 'rare', max: 2, cost: [150, 50], grow: [100, 50], desc: 'Broods hatch a second sooner.' },
+      { id: 'haste', name: 'Rapid Evolution', icon: 'btn-building-zerg-evolutionchamber', rarity: 'common', max: 2, cost: [100, 50], grow: [50, 25], desc: 'Evolution chambers research 25% faster.' },
+      { id: 'frenzy', name: 'Primal Fury', icon: 'btn-ability-zerg-frenzy', rarity: 'rare', max: 2, cost: [100, 50], grow: [50, 25], desc: 'Released broods frenzy 3 s longer.' },
+      { id: 'hide', name: 'Thick Hide', icon: 'btn-upgrade-zerg-chitinousplating', rarity: 'common', max: 2, cost: [150, 0], grow: [75, 0], desc: 'Hatcheries, extractors and chambers have half again the hit points.' },
+      { id: 'bounty', name: 'Feeding Frenzy', icon: 'btn-ability-zerg-transfusion', rarity: 'rare', max: 2, cost: [150, 0], grow: [100, 0], desc: 'Half again the minerals for every Terran killed.' },
+      { id: 'favor', name: "Kerrigan's Favor", icon: 'btn-unit-zerg-kerriganinfested', rarity: 'epic', max: 1, cost: [250, 150], desc: 'Summoning Kerrigan costs a quarter less.' },
+      { id: 'psionic', name: 'Psionic Link', icon: 'btn-ability-kerrigan-heroicfortitude', rarity: 'epic', max: 1, cost: [200, 200], desc: "Kerrigan's spells recharge a third faster." },
+    ],
+    // Sunken colonies (the Sunken Colony card): reach, damage and cooldown of their spines.
+    sunken: { range: 7, dmg: 30, cd: 1.6 },
+    raid: { from: 360, cd: 180, min: 6, max: 8, maxField: 2, maxMassed: 8, wake: 8 },
+    // The base on the field, north of the lane (swarm.js syncBase): the main hatchery at at (scale main), extra hatcheries,
+    // extractors and evolution chambers in their spots, tech buildings (each once anything it serves is bred) in order of
     // arrival, larva per hatchery, up to drones drones at work, the chrysalis Kerrigan is summoned from; parts grow in over
     // grow s.
-    base: { at: [0, 31.5], main: 0.8, grow: 1.6, larva: 3, drones: 14, droneSpeed: 2.6, chrysalis: [0, 27.4],
-      hatch: { scale: 0.55, spots: [[-6.5, 29.5], [6.5, 29.5], [-9, 35], [9, 35], [0, 38.5]] },
-      extractor: { scale: 0.55, spots: [[-12, 30], [12, 30], [-12.5, 36], [12.5, 36]] },
-      tech: { scale: 0.5, spots: [[-3.9, 36.1], [3.9, 36.1], [-5, 40.1], [5, 40.1], [-11, 40.5], [11, 40.5], [-8, 42.5], [8, 42.5], [0, 43], [-15, 33], [15, 33]],
-        list: [['spawningpool', ['zergling', 'wingling']], ['evolutionchamber', 'evo'], ['banelingnest', ['baneling']], ['roachwarren', ['roach']], ['hydraliskden', ['hydralisk', 'lurker']],
+    base: { at: [0, 31], main: 0.7, grow: 1.6, larva: 3, drones: 14, droneSpeed: 2.6, chrysalis: [0, 27.3],
+      hatch: { scale: 0.45, spots: [[-5, 29.6], [5, 29.6], [-7.6, 33], [7.6, 33], [0, 36]] },
+      extractor: { scale: 0.45, spots: [[-9.4, 29], [9.4, 29], [-9.4, 31.6], [9.4, 31.6]] },
+      chamber: { scale: 0.42, spots: [[-4.6, 35.4], [4.6, 35.4]] },
+      // Hit points (main: by tier), radius, and the Terrans' bounty for each building destroyed.
+      hp: { main: [2500, 3500, 4500], hatch: 1200, extractor: 600, chamber: 500, sunken: 600 }, radius: { main: 2.1, hatch: 1.4, extractor: 1, chamber: 1, sunken: 0.9 }, bounty: 40,
+      sunken: [[-3.4, 27.5], [3.4, 27.5], [-7.6, 27.9], [7.6, 27.9]],
+      minerals: [[-2.9, 33.6], [-1.5, 34.4], [0, 34.7], [1.5, 34.4], [2.9, 33.6]], mineralScale: 1.4,
+      tech: { scale: 0.42, spots: [[-2.6, 38.2], [2.6, 38.2], [-7, 37.6], [7, 37.6], [0, 40], [-10.4, 37.6], [10.4, 37.6], [-4.8, 40.6], [4.8, 40.6]],
+        list: [['spawningpool', ['zergling', 'wingling']], ['banelingnest', ['baneling']], ['roachwarren', ['roach']], ['hydraliskden', ['hydralisk', 'lurker']],
           ['spire', ['mutalisk', 'scourge', 'devourer']], ['infestationpit', ['infested', 'defiler', 'viper', 'broodqueen']], ['ultraliskcavern', ['ultralisk']],
           ['greaterspire', ['broodlord', 'guardian']], ['nydusnetwork', ['nydus', 'overlordDrop']]] } },
   };

@@ -44,6 +44,7 @@
     <div id="bunkerFrame"></div>
     <div id="toast"></div>
     <div id="banner"></div>
+    <button id="broodBtn" class="glass swarmOnly"></button>
     <div id="bottom">
       <div id="abilities"></div>
       <div id="armouryHead"><small id="armouryLabel">ARMOURY</small><span class="rule"></span><button id="armouryToggle" aria-label="Toggle armoury">&#8964;</button></div>
@@ -53,7 +54,7 @@
       <h2 id="shopTitle"></h2><p id="shopBonus" class="shopBonus"></p><p id="shopMinerals" class="shopMinerals"></p>
       <div id="shopCards"></div>
       <div class="btns"><button id="shopPeek">ARMOURY</button><button id="shopReroll"></button><button id="shopGo" class="primary">NEXT WAVE</button></div>
-      <p class="hint">Troops, tanks, SCVs and turrets stay in the armoury.</p>
+      <p id="shopHint" class="hint">Troops, tanks, SCVs and turrets stay in the armoury.</p>
     </div></div>
     <div id="pausedModal" class="modal hidden"><div class="card glass"><h2>PAUSED</h2><div class="btns"><button id="resume" class="primary">RESUME</button><button class="menuBtn">MAIN MENU</button></div></div></div>
     <div id="overModal" class="modal hidden"><div class="card glass over"><h2 id="overTitle">BUNKER LOST</h2><div id="overStats" class="stats"></div><div id="overBest" class="pill"></div><div id="overMeta" class="overMeta"></div><div class="btns"><button id="redeploy" class="primary">REDEPLOY</button><button class="menuBtn">MAIN MENU</button></div></div></div>
@@ -65,10 +66,13 @@
       <button id="resumeRun" class="mode glass resume hidden"><img src="icon/btn-building-terran-bunker.png" alt=""><span><b>RESUME RUN</b><small id="resumeLine"></small></span></button>
       <button class="mode glass" data-mode="lane"><img src="icon/btn-unit-terran-marine.png" alt=""><span><b>LANE DEFENCE</b><small>Hold the lane for 30 minutes as the Swarm pours down from the north.</small></span><em id="tagLane"></em></button>
       <button class="mode glass arena" data-mode="arena"><img src="icon/btn-unit-zerg-ultralisk.png" alt=""><span><b>360 ARENA</b><small>Waves from every side for 30 minutes. Bigger, faster, deadlier.</small></span><em id="tagArena"></em></button>
+      <button id="protossMode" class="mode glass protossMode hidden"><img src="icon/btn-unit-protoss-zeratul.png" alt=""><span><b>THE PROTOSS CAMPAIGN</b><small>The whole campaign. Every last second of it.</small></span></button>
       <button id="swarmMode" class="mode glass swarmMode locked"><img src="icon/btn-unit-zerg-kerriganinfested.png" alt=""><span><b>THE SWARM</b><small id="swarmLine">Escape Kerrigan on the Hyperion to unlock.</small></span></button>
     </div>
     <div class="foot"><button id="hyperionBtn" class="glass"><img src="icon/btn-unit-terran-battlecruiser.png" alt=""><span>HYPERION<small id="gasLine"></small></span></button><p id="best"></p><p id="status">CONNECTING TO STARCRAFT II...</p><p id="progress"></p><button id="relink" class="hidden">LINK STARCRAFT II FOLDER AGAIN</button></div>
   </div>
+
+  <div id="zeratul" class="hidden"><canvas id="ytmnd"></canvas><button id="zeratulClose" class="glass">EN TARO ADUN</button></div>
 
   <div id="hyperion" class="modal hidden"><div class="card glass">
     <h2>HYPERION</h2><p class="gas"><i class="gasIcon"></i><b id="gas">0</b> VESPENE</p>
