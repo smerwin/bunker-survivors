@@ -21,8 +21,10 @@ namespace BSMeta
 	TArray<const FBSCardDef*> RecordBuy(const FString& CardId);
 	// Swarm mode: open once a run has escaped Kerrigan on the Hyperion.
 	bool SwarmOpen();
+	// The Protoss campaign: open once the swarm has razed the bunker.
+	bool ProtossOpen();
 	// The run is over (bEvacuated: the Hyperion took you off; in swarm mode, the bunker razed): bank its vespene and best
 	// wave (not for a swarm run). bSwarm in the result: this run opened swarm mode.
-	struct FRunResult { int32 Gas = 0; TArray<const FBSCardDef*> Unlocked; bool bSwarm = false; };
+	struct FRunResult { int32 Gas = 0; TArray<const FBSCardDef*> Unlocked; bool bSwarm = false, bProtoss = false; };
 	FRunResult EndRun(bool bArena, bool bSwarmRun, int32 WavesCleared, bool bEvacuated);
 }

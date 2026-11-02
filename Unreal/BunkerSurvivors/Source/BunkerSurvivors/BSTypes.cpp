@@ -478,10 +478,39 @@ namespace BSSwarm
 		return V;
 	}
 	const FAbility* FindAbility(const FString& Id) { return Abilities().FindByPredicate([&](const FAbility& A) { return Id == A.Id; }); }
+	const TArray<FZCard>& Cards()
+	{
+		static const TArray<FZCard> V = {
+			{ TEXT("autoinject"), TEXT("Brood Mothers"), TEXT("btn-unit-zerg-queen"), TEXT("rare"), 1, { 150, 0 }, {}, TEXT("Your queens inject their hatcheries on their own (a little late each time).") },
+			{ TEXT("larva"), TEXT("Larval Surge"), TEXT("btn-unit-zerg-larva"), TEXT("common"), 3, { 150, 0 }, { 75, 0 }, TEXT("+15% larva from every hatchery.") },
+			{ TEXT("sunken"), TEXT("Sunken Colony"), TEXT("btn-building-zerg-spinecrawler"), TEXT("common"), 4, { 150, 0 }, { 50, 0 }, TEXT("A sunken colony at the front of the base, impaling any Terran that comes near.") },
+			// Events: at once.
+			{ TEXT("hydras"), TEXT("Hydralisk Swarm"), TEXT("btn-unit-zerg-hydralisk"), TEXT("rare"), 99, { 300, 150 }, {}, TEXT("A dozen hydralisks pour out of the hive now (more with each tier)."), true, 10 },
+			{ TEXT("ultras"), TEXT("Ultralisk Stampede"), TEXT("btn-unit-zerg-ultralisk"), TEXT("epic"), 99, { 450, 300 }, {}, TEXT("Ultralisks stampede down the lane now."), true, 10 },
+			{ TEXT("nydus"), TEXT("Nydus Breach"), TEXT("btn-building-zerg-nydusworm"), TEXT("rare"), 99, { 350, 200 }, {}, TEXT("Two nydus worms burst out behind the Terran lines."), true, 10 },
+			{ TEXT("pods"), TEXT("Drop Pod Assault"), TEXT("btn-unit-zerg-ultralisk"), TEXT("epic"), 99, { 450, 225 }, {}, TEXT("Drop pods full of zerg slam down all round the bunker."), true, 10 },
+			{ TEXT("darkswarm"), TEXT("Dark Swarm"), TEXT("btn-ability-zerg-darkswarm"), TEXT("rare"), 99, { 200, 125 }, {}, TEXT("A cloud over the bunker: its bullets miss what stands beneath for 15 s."), true, 10 },
+			{ TEXT("plague"), TEXT("Plague"), TEXT("btn-ability-zerg-causticspray"), TEXT("rare"), 99, { 200, 125 }, {}, TEXT("Every Terran near the bunker sickens for 6 s."), true, 10 },
+			{ TEXT("drones"), TEXT("Rich Mineral Fields"), TEXT("btn-unit-zerg-drone"), TEXT("common"), 3, { 100, 0 }, { 50, 0 }, TEXT("+20% minerals from drones.") },
+			{ TEXT("gas"), TEXT("Rich Vespene Geysers"), TEXT("btn-building-zerg-extractor"), TEXT("common"), 3, { 125, 0 }, { 50, 0 }, TEXT("+25% vespene from extractors.") },
+			{ TEXT("tithe"), TEXT("Mineral Drop"), TEXT("btn-building-zerg-hatchery"), TEXT("common"), 99, { 0, 0 }, {}, TEXT("Minerals now: 100, and 5 more for every wave so far.") },
+			{ TEXT("gasdrop"), TEXT("Vespene Drop"), TEXT("btn-building-zerg-extractor"), TEXT("common"), 99, { 0, 0 }, {}, TEXT("Vespene now: 75, and 4 more for every wave so far.") },
+			{ TEXT("dronedrop"), TEXT("Drone Brood"), TEXT("btn-unit-zerg-drone"), TEXT("rare"), 99, { 0, 0 }, {}, TEXT("Four drones hatch at once, free.") },
+			{ TEXT("pulse"), TEXT("Spawning Pulse"), TEXT("btn-building-zerg-spawningpool"), TEXT("rare"), 2, { 150, 50 }, { 100, 50 }, TEXT("Broods hatch a second sooner.") },
+			{ TEXT("haste"), TEXT("Rapid Evolution"), TEXT("btn-building-zerg-evolutionchamber"), TEXT("common"), 2, { 100, 50 }, { 50, 25 }, TEXT("Evolution chambers research 25% faster.") },
+			{ TEXT("frenzy"), TEXT("Primal Fury"), TEXT("btn-ability-zerg-frenzy"), TEXT("rare"), 2, { 100, 50 }, { 50, 25 }, TEXT("Released broods frenzy 3 s longer.") },
+			{ TEXT("hide"), TEXT("Thick Hide"), TEXT("btn-upgrade-zerg-chitinousplating"), TEXT("common"), 2, { 150, 0 }, { 75, 0 }, TEXT("Hatcheries, extractors and chambers have half again the hit points.") },
+			{ TEXT("bounty"), TEXT("Feeding Frenzy"), TEXT("btn-ability-zerg-transfusion"), TEXT("rare"), 2, { 150, 0 }, { 100, 0 }, TEXT("Half again the minerals for every Terran killed.") },
+			{ TEXT("favor"), TEXT("Kerrigan's Favor"), TEXT("btn-unit-zerg-kerriganinfested"), TEXT("epic"), 1, { 250, 150 }, {}, TEXT("Summoning Kerrigan costs a quarter less.") },
+			{ TEXT("psionic"), TEXT("Psionic Link"), TEXT("btn-ability-kerrigan-heroicfortitude"), TEXT("epic"), 1, { 200, 200 }, {}, TEXT("Kerrigan's spells recharge a third faster.") },
+		};
+		return V;
+	}
+	const FZCard* FindCard(const FString& Id) { return Cards().FindByPredicate([&](const FZCard& C) { return Id == C.Id; }); }
 	const TArray<FTech>& Tech()
 	{
 		static const TArray<FTech> V = {
-			{ TEXT("spawningpool"), { TEXT("zergling"), TEXT("wingling") } }, { TEXT("evolutionchamber"), { TEXT("evo") } },
+			{ TEXT("spawningpool"), { TEXT("zergling"), TEXT("wingling") } },
 			{ TEXT("banelingnest"), { TEXT("baneling") } }, { TEXT("roachwarren"), { TEXT("roach") } }, { TEXT("hydraliskden"), { TEXT("hydralisk"), TEXT("lurker") } },
 			{ TEXT("spire"), { TEXT("mutalisk"), TEXT("scourge"), TEXT("devourer") } }, { TEXT("infestationpit"), { TEXT("infested"), TEXT("defiler"), TEXT("viper"), TEXT("broodqueen") } },
 			{ TEXT("ultraliskcavern"), { TEXT("ultralisk") } }, { TEXT("greaterspire"), { TEXT("broodlord"), TEXT("guardian") } }, { TEXT("nydusnetwork"), { TEXT("nydus"), TEXT("overlordDrop") } },

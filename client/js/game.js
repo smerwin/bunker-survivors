@@ -305,7 +305,7 @@ window.BS = window.BS || {};
         const d = m.def, pred = e => !(d.groundOnly && e.def.flying);
         const range = d.range + (m.fwd && BS.Terrain.onHigh(m.x, m.y) ? 1 : 0);   // the forward post on the high ground outranges the lane
         // Morale: when too many of its neighbours have just been killed, the group falls back level with the bunker.
-        if (!m.boarding && !m.fwd && !stim && m.retreatUntil <= this.time && forward(m)) {
+        if (!m.boarding && !m.fwd && !m.raid && !stim && m.retreatUntil <= this.time && forward(m)) {
           const lost = this.squadDeaths.filter(k => dist(k.x, k.y, m.x, m.y) < 3.5).length;
           const near = Q.filter(o => !o.dead && dist(o.x, o.y, m.x, m.y) < 3.5);
           if (lost >= 2 && lost >= (lost + near.length) / 3) {      // a third of the group gone
@@ -321,6 +321,10 @@ window.BS = window.BS || {};
           // other moves; at the post they hold and fire.
           if (bothTeams && m.team !== this.boundTeam && this.enemiesInRange(m.x, m.y, range, pred).length) { gx = m.x; gy = m.y; }
           else { gx = g[0]; gy = g[1]; }
+        }
+        else if (m.raid) {
+          // Swarm mode: raiding the hive (Game.terranRaid): shoot whatever is in reach, otherwise press on.
+          if (this.enemiesInRange(m.x, m.y, range, pred).length) { gx = m.x; gy = m.y; } else [gx, gy] = this.raidGoal(m);
         }
         else if (m.retreatUntil > this.time && !stim) {
           if (!forward(m)) { gx = m.x; gy = m.y; }                                    // back on the line: hold and fire
@@ -352,7 +356,7 @@ window.BS = window.BS || {};
         const far = Math.hypot(gx - m.x, gy - m.y);
         [gx, gy] = this.roundBunker(m, gx, gy);
         // No straight way there (a cliff corner, or up on a plateau after a push or an abduction): follow the way home.
-        if (lane && !m.fwd && far > 0.12 && !BS.Terrain.clearPath(m.x, m.y, gx, gy)) { const f = BS.Terrain.homeFlow(m.x, m.y); if (f) { gx = m.x + f[0]; gy = m.y + f[1]; } }
+        if (lane && !m.fwd && !m.raid && far > 0.12 && !BS.Terrain.clearPath(m.x, m.y, gx, gy)) { const f = BS.Terrain.homeFlow(m.x, m.y); if (f) { gx = m.x + f[0]; gy = m.y + f[1]; } }
         const dx = gx - m.x, dy = gy - m.y, dd = Math.hypot(dx, dy) || 1;
         if (far > 0.12) {
           const sp = Math.min(dd, 3.15 * (stim ? 1.5 : 1) * dt), ox = m.x, oy = m.y;
@@ -665,8 +669,9 @@ window.BS = window.BS || {};
     }
     closeShop() {
       if (!this.shop) return;
+      const zerg = this.shop.zerg;                   // swarm mode: the hive's own shop (its round has started already)
       this.shop = null;
-      this.startWave();
+      if (!zerg) this.startWave();
     }
     card(id) { return BS.CARDS.find(c => c.id === id); }
     cardLevel(id) {
@@ -720,6 +725,7 @@ window.BS = window.BS || {};
     reroll() {
       const s = this.shop;
       if (!s) return false;
+      if (s.zerg) return this.zergReroll();
       const cost = this.rerollCost();
       if (this.minerals < cost) return this.toast('Not enough minerals');
       this.minerals -= cost;
@@ -728,6 +734,7 @@ window.BS = window.BS || {};
       return true;
     }
     buyCard(i) {
+      if (this.shop && this.shop.zerg) return this.zergBuyCard(i);
       const s = this.shop, o = s && s.offers[i];
       if (!o || o.bought) return false;
       const c = this.card(o.id);
@@ -2569,7 +2576,7 @@ window.BS = window.BS || {};
       } else if (kind === 'stand') h.play(/^stand$/i, true, 1);
       else if (kind === 'burrow') h.play(/^burrow$/i, false);
     }
-    enemyCd(e) { return e.def.cd / (this.hard ? 1.05 : 1) / (e.furyUntil > this.time ? 1.5 : 1); }
+    enemyCd(e) { return e.def.cd / (this.hard ? 1.05 : 1) / (e.furyUntil > this.time ? 1.5 : 1) * (e.frenzyUntil > this.time ? BS.SWARM.hold.cd : 1); }
 
     // ---- Targets -------------------------------------------------------------------------------------
     targets() {
@@ -2700,6 +2707,7 @@ window.BS = window.BS || {};
       else this.fx.play('nydusBirth', e.x, e.y, BS.Terrain.height(e.x, e.y), 0, 1.6);
       if (this.focus === e) this.focus = null;
       if (d.boss) this.bossDown(e);
+      if (e.onDeath) e.onDeath();
     }
     // Minerals for a kill: the zerg's bounty, plus Bounty Contracts, less as the swarm grows (BS.WAVES.bountyFall; bosses
     // pay in full).
@@ -2753,7 +2761,7 @@ window.BS = window.BS || {};
       for (const k of ['stimCd', 'strikeCd', 'repairCd', 'yamatoCd']) this.ab[k] = Math.max(0, this.ab[k] - dt);
       for (const k of ['nuke', 'vikings', 'wraiths', 'vessel']) this.techCd[k] = Math.max(0, this.techCd[k] - dt);
       this.waveTimer -= dt;
-      if (this.swarm) { if (this.waveTimer <= 0) { if (this.wave) { this.endWave(); this.terranShop(); } else this.startWave(); } this.updateSwarm(dt); }
+      if (this.swarm) { if (this.waveTimer <= 0) { if (this.wave) { this.endWave(); this.terranShop(); this.chamberAuto(); this.openZergShop(); } else this.startWave(); } this.updateSwarm(dt); }
       else if (!this.wave) { if (this.waveTimer <= 0) this.startWave(); }
       else if (!this.spawnQueue.length) {
         this.lingerT += dt;
@@ -2829,6 +2837,8 @@ window.BS = window.BS || {};
         if (d.watcher) { this.updateWatcher(e, dt); continue; }
         if (d.detector) { this.updateOverseer(e, dt); continue; }
         if (d.tumors && this.queenCreep(e, dt)) continue;
+        if (d.baseBuilding) continue;                                                // swarm mode: the zerg base's buildings
+        if (e.held && !this.heldWakes(e)) { e.attacking = false; this.playAnim(e, 'stand'); continue; }     // massing at the hive
         if (e.hero) this.heroTarget(e, dt);
         else if ((e.retarget -= dt) <= 0 || !this.valid(e.target)) {
           // Scourge and devourers hunt Terran air; guardians single out mechs; brood queens make for tanks, mechs, troopers.
@@ -2950,7 +2960,7 @@ window.BS = window.BS || {};
           const gd = Math.hypot(gx - e.x, gy - e.y) || 1;
           // Zerg on creep move faster (ground units only).
           e.onCreep = !d.flying && this.onCreep(e.x, e.y);
-          const sp = d.speed * (slowed ? 0.5 : 1) * (e.onCreep ? BS.CREEP.speed : 1), nx = (gx - e.x) / gd, ny = (gy - e.y) / gd;
+          const sp = d.speed * (slowed ? 0.5 : 1) * (e.onCreep ? BS.CREEP.speed : 1) * (e.frenzyUntil > this.time ? BS.SWARM.hold.speed : 1), nx = (gx - e.x) / gd, ny = (gy - e.y) / gd;
           const mx = nx * sp * dt + e.sx * 0.8, my = ny * sp * dt + e.sy * 0.8;
           // Cliffs: ground units steer around them; flyers ignore them.
           // Winged zerglings hop straight over cliffs and the mesa.

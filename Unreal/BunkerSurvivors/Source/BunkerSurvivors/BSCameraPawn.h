@@ -39,7 +39,7 @@ private:
 	TWeakObjectPtr<ABSGame> Game;
 	bool bArena = false, bAttract = false, bFlip = false;
 	static constexpr float FlipZoom = 0.88f;      // the flipped view's default zoom (about 42 m out)
-	float FlipFocus() const;                      // metres up the lane the flipped view looks at (portrait 24, landscape 20)
+	float FlipFocus() const;                      // metres up the lane the flipped view looks at (portrait 26, landscape 24)
 	float Zoom = 0.38f, TargetZoom = 0.38f;
 	float Yaw = 0, TargetYaw = 0;
 	FVector2D Pan = FVector2D::ZeroVector, TargetPan = FVector2D::ZeroVector;    // metres, in view-aligned axes

@@ -11,6 +11,8 @@ ONLY = [s for s in os.environ.get("BS_ONLY", "").split(",") if s]
 # BS_MODELS_ONLY=1 (with BS_ONLY): import just those models, reusing the unit materials already built (no fx, icons,
 # sounds, ground or map).
 MODELS_ONLY = os.environ.get("BS_MODELS_ONLY") == "1"
+# BS_SOUNDS_ONLY=1: import just the sounds (with BS_ONLY, just those keys), nothing else.
+SOUNDS_ONLY = os.environ.get("BS_SOUNDS_ONLY") == "1"
 
 asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
 mel = unreal.MaterialEditingLibrary
@@ -456,6 +458,16 @@ def main():
     manifest = json.load(open(os.path.join(EXPORT, "manifest.json"), encoding="utf-8"))
     log("SC2 export from StarCraft II %s, %d models" % (manifest["sc2Version"], len(manifest["models"])))
 
+    if SOUNDS_ONLY:
+        count = 0
+        for key, files in manifest["sounds"].items():
+            if ONLY and key not in ONLY:
+                continue
+            for i, rel in enumerate(files):
+                import_file(os.path.join(EXPORT, rel), "/Game/SC2/Sounds", "S_%s_%d" % (key, i))
+                count += 1
+        log("sounds-only run: %d imported" % count)
+        return
     mats = "/Game/Materials"
     if MODELS_ONLY:
         def existing(name, build):

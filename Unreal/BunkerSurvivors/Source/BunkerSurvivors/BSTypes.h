@@ -46,6 +46,9 @@ struct FBSZergDef
 	float Bombard = 0;                // leviathan bile: splash radius of each shot
 	// Zerglings in the lane spread round the bunker (ABSGame::SurroundGoal) before they bite it.
 	bool bSurround = false;
+	// Swarm mode: a building of the zerg base (an entity with hit points the Terrans can shoot; never moves or targets);
+	// bSunken: a sunken colony, firing on Terrans in reach (ABSGame::UpdateSunkens).
+	bool bBaseBuilding = false, bSunken = false;
 };
 
 // Creep: a coarse grid (Cell metres) of coverage 0..1 that grows where a source reaches and slowly fades (lingers) where
@@ -341,11 +344,13 @@ namespace BSSwarm
 	struct FEvo { const TCHAR* Id; const TCHAR* Name; TArray<const TCHAR*> Icons; TArray<FCost> Costs; TArray<int32> Tiers; const TCHAR* Need = nullptr; bool Levels() const { return Costs.Num() > 1; } };
 	struct FAbility { const TCHAR* Id; const TCHAR* Name; const TCHAR* Icon; const TCHAR* Key; FLinearColor Accent; };
 
-	constexpr float Minerals = 200, Gas = 0, Income = 2, DroneIncome = 0.4f, ExtractorGas = 1, HatchLarva = 1.4f, QueenBoost = 0.15f, Brood = 6, Bank = 3;
+	constexpr float Minerals = 200, Gas = 0, Income = 2, DroneIncome = 0.4f, ExtractorGas = 1, HatchLarva = 0.85f, QueenBoost = 0.1f, Brood = 6, Bank = 3;
 	constexpr int32 DroneCost = 50, DroneMax = 30, ExtractorCost = 75, ExtractorMax = 4;
-	inline const int32 HatchCosts[] = { 300, 400, 550, 700, 900 };
+	inline const int32 HatchCosts[] = { 300, 450, 650, 900, 1200 };
 	inline const int32 QueenCosts[] = { 100, 150, 200, 275, 350, 450 };
-	constexpr float EvoDmg = 0.2f, EvoHp = 0.1f, TerranIncome = 1.5f;
+	// TerranMass: massed plus light zerg at which the Terran commander reaches for splash first.
+	constexpr float EvoDmg = 0.15f, EvoHp = 0.1f, TerranIncome = 1.5f;
+	constexpr int32 TerranMass = 25;
 	// Bounty (minerals) for each Terran the swarm kills, by kind; mechs: x2 a thor, x3 the Odin.
 	constexpr int32 BountyTrooper = 12, BountyScv = 10, BountyTank = 45, BountyMech = 70, BountyStructure = 35, BountyReaper = 20, BountyGhost = 30, BountyAir = 40, BountyBc = 250;
 	inline const FCost HeroCost{ 4000, 4500 };
@@ -359,17 +364,53 @@ namespace BSSwarm
 	const TArray<FAbility>& Abilities();            // Kerrigan's spells on the player's bar
 	const FAbility* FindAbility(const FString& Id);
 
+	// Base micro (BSSwarm.cpp): held broods mass at the hive (at most HoldCap + HoldPerWave a wave); released, they frenzy
+	// for HoldFrenzy s (speed x HoldSpeed, attack cooldown x HoldCd).
+	constexpr float HoldFrenzy = 5, HoldSpeed = 1.2f, HoldCd = 0.9f;
+	constexpr int32 HoldCap = 8, HoldPerWave = 2;
+	// A hatchery with its queen can be injected every InjectCd s for InjectLarva larva (+InjectPerTier a hive tier).
+	constexpr float InjectCd = 29;
+	constexpr int32 InjectLarva = 10, InjectPerTier = 3;
+	// Evolution chambers (ChamberMax, ChamberCost) research melee, missile and carapace levels over ChamberTimes s (by
+	// level), on their own each wave unless told not to.
+	inline const FCost ChamberCost{ 75, 0 };
+	constexpr int32 ChamberMax = 2;
+	inline const float ChamberTimes[] = { 25, 35, 45 };
+	// The Terran commander's raid on the hive: from RaidFrom s on, with stim, when no more than RaidMaxField zerg are out
+	// in the lane and no more than RaidMaxMassed held at the hive, RaidMin to RaidMax marines of its squad charge the
+	// base; then RaidCd s before the next. Held broods within RaidWake m of a Terran fight.
+	constexpr float RaidFrom = 360, RaidCd = 180, RaidWake = 8;
+	constexpr int32 RaidMin = 6, RaidMax = 8, RaidMaxField = 2, RaidMaxMassed = 8;
+	// Sunken colonies (the Sunken Colony card): reach, damage and cooldown of their spines.
+	constexpr float SunkenRange = 7, SunkenDmg = 30, SunkenCd = 1.6f;
+	// The hive's cards between rounds (ABSGame::OpenZergShop): ShopOffers a time, rerolls ShopReroll[0] + [1] a reroll;
+	// Cost (+Grow a level); From: not offered before that wave; bEvent: strikes at once. AutoInject: Brood Mothers
+	// inject that much of the cooldown late.
+	constexpr int32 ShopOffers = 3;
+	inline const int32 ShopReroll[] = { 25, 25 };
+	constexpr float AutoInject = 0.3f;
+	struct FZCard { const TCHAR* Id; const TCHAR* Name; const TCHAR* Icon; const TCHAR* Rarity; int32 Max; FCost Cost; FCost Grow; const TCHAR* Desc; bool bEvent = false; int32 From = 0; };
+	const TArray<FZCard>& Cards();
+	const FZCard* FindCard(const FString& Id);
+
 	// The base on the field, north of the lane (ABSGame::SyncBase): the main hatchery at BaseAt (scale BaseMain), extra
-	// hatcheries and extractors in their spots, tech buildings (each once anything it serves is bred or evolved) in
-	// order of arrival, BaseLarva larva per hatchery, up to BaseDrones drones at work, the chrysalis Kerrigan is summoned
-	// from; parts grow in over BaseGrow s. Port of BS.SWARM.base.
-	inline const FVector2D BaseAt(0, 31.5f), Chrysalis(0, 27.4f);
-	constexpr float BaseMain = 0.8f, BaseGrow = 1.6f, DroneSpeed = 2.6f, HatchScale = 0.55f, ExtractorScale = 0.55f, TechScale = 0.5f;
-	constexpr int32 BaseLarva = 3, BaseDrones = 14;
-	inline const FVector2D HatchSpots[] = { { -6.5f, 29.5f }, { 6.5f, 29.5f }, { -9, 35 }, { 9, 35 }, { 0, 38.5f } };
-	inline const FVector2D ExtractorSpots[] = { { -12, 30 }, { 12, 30 }, { -12.5f, 36 }, { 12.5f, 36 } };
-	inline const FVector2D TechSpots[] = { { -3.9f, 36.1f }, { 3.9f, 36.1f }, { -5, 40.1f }, { 5, 40.1f }, { -11, 40.5f }, { 11, 40.5f }, { -8, 42.5f }, { 8, 42.5f }, { 0, 43 }, { -15, 33 }, { 15, 33 } };
-	// Tech buildings and what each serves ("evo": any evolution).
+	// hatcheries, extractors and evolution chambers in their spots, tech buildings (each once anything it serves is bred)
+	// in order of arrival, BaseLarva larva per hatchery, up to BaseDrones drones at work (three to an extractor, the rest
+	// on the mineral line), the chrysalis Kerrigan is summoned from; parts grow in over BaseGrow s. Hit points (main: by
+	// tier) and radius of each building, and the Terrans' bounty for one destroyed. Port of BS.SWARM.base.
+	inline const FVector2D BaseAt(0, 31), Chrysalis(0, 27.3f);
+	constexpr float BaseMain = 0.7f, BaseGrow = 1.6f, DroneSpeed = 2.6f, HatchScale = 0.45f, ExtractorScale = 0.45f, ChamberScale = 0.42f, TechScale = 0.42f, MineralScale = 1.4f;
+	constexpr int32 BaseLarva = 3, BaseDrones = 14, BaseBounty = 40;
+	inline const float HpMain[] = { 2500, 3500, 4500 };
+	constexpr float HpHatch = 1200, HpExtractor = 600, HpChamber = 500, HpSunken = 600;
+	constexpr float RadiusMain = 2.1f, RadiusHatch = 1.4f, RadiusExtractor = 1, RadiusChamber = 1, RadiusSunken = 0.9f;
+	inline const FVector2D HatchSpots[] = { { -5, 29.6f }, { 5, 29.6f }, { -7.6f, 33 }, { 7.6f, 33 }, { 0, 36 } };
+	inline const FVector2D ExtractorSpots[] = { { -9.4f, 29 }, { 9.4f, 29 }, { -9.4f, 31.6f }, { 9.4f, 31.6f } };
+	inline const FVector2D ChamberSpots[] = { { -4.6f, 35.4f }, { 4.6f, 35.4f } };
+	inline const FVector2D SunkenSpots[] = { { -3.4f, 27.5f }, { 3.4f, 27.5f }, { -7.6f, 27.9f }, { 7.6f, 27.9f } };
+	inline const FVector2D MineralSpots[] = { { -2.9f, 33.6f }, { -1.5f, 34.4f }, { 0, 34.7f }, { 1.5f, 34.4f }, { 2.9f, 33.6f } };
+	inline const FVector2D TechSpots[] = { { -2.6f, 38.2f }, { 2.6f, 38.2f }, { -7, 37.6f }, { 7, 37.6f }, { 0, 40 }, { -10.4f, 37.6f }, { 10.4f, 37.6f }, { -4.8f, 40.6f }, { 4.8f, 40.6f } };
+	// Tech buildings and the strains each serves.
 	struct FTech { const TCHAR* Model; TArray<const TCHAR*> Serves; };
 	const TArray<FTech>& Tech();
 }

@@ -34,6 +34,9 @@ window.BS = window.BS || {};
     $('swarmMode').classList.toggle('locked', !swarmOpen);
     if (swarmOpen) $('swarmLine').textContent = 'Play the zerg: feed the hives, summon Kerrigan and raze the bunker before the Hyperion gets them out.';
     $('swarmMode').onclick = () => { if (swarmOpen) start('lane', null, true); };
+    // The Protoss campaign: open once the swarm has razed the bunker (?zeratul=1 opens it).
+    if (BS.Meta.protossOpen() || q0.get('zeratul') === '1') $('protossMode').classList.remove('hidden');
+    $('protossMode').onclick = () => zeratul();
     // A run the browser threw away while it was in the background (or lost to a dropped WebGL context): carry on.
     const cp = Checkpoint.load();
     if (cp) {
@@ -133,6 +136,57 @@ window.BS = window.BS || {};
     for (const [k, x, y] of zerg) put(k, x, y, Math.atan2(-y, -x) + (Math.random() - 0.5) * 0.6, /^stand/i, 3);
   }
 
+  // The Protoss campaign, in full: Zeratul on a loop, YTMND style. The live model turns over a spinning wallpaper of him,
+  // huge outlined words cycle and pulse, the Brood War protoss theme loops forever and he says something now and then.
+  function zeratul() {
+    BS.audio.unlock();
+    for (const h of attract) h.release();
+    attract = [];
+    $('start').classList.add('hidden'); $('zeratul').classList.remove('hidden'); $('app').classList.add('ytmnd');
+    renderer.setGroundShape('arena'); renderer.setCameraMode('arena');
+    Object.assign(renderer.cam, { tx: 0, ty: 0, dist: 7.5, pitch: 12 * Math.PI / 180, minDist: 3, maxDist: 20 }); renderer.updateCamera();
+    const z = renderer.spawn('zeratul', 0, 0, 0.6, -Math.PI / 2).setTeam(2).setScale(1.6);
+    const seqs = [/^stand$/i, /^attack/i, /^spell/i, /^stand/i, /^walk/i];
+    let si = 0;
+    const next = () => { const len = z.play(seqs[si++ % seqs.length], false) || 2; setTimeout(next, Math.max(1200, len * 1000)); };
+    setTimeout(next, 600);
+    const stopTheme = BS.audio.loop('protossTheme', 0.7);
+    const vo = setInterval(() => BS.audio.play('zeratulVo', { vol: 1, gap: 3, rate: 1 }), 7000);
+    setTimeout(() => BS.audio.play('zeratulVo', { vol: 1, rate: 1 }), 1500);
+    const words = ['ZERATUL', 'YOU HAVE COME FAR', 'THE PROTOSS CAMPAIGN', 'THIS IS IT', 'ADUN TORO', 'HE BLINKED', 'BEHIND YOU', 'VOID SHADES', 'NO SUPPLY DEPOT', 'ZERATUL'];
+    const cv = $('ytmnd'), cx = cv.getContext('2d'), t0 = performance.now(), tile = new Image();
+    tile.src = 'icon/btn-unit-protoss-zeratul.png';
+    let spin = 0, alive = true;
+    const draw = () => {
+      if (!alive) return;
+      const t = (performance.now() - t0) / 1000, W = cv.clientWidth, H = cv.clientHeight, dpr = window.devicePixelRatio || 1;
+      if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+      cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, W, H);
+      // The wallpaper: his portrait tiled, turning and breathing.
+      if (tile.complete && tile.naturalWidth) {
+        cx.save(); cx.globalAlpha = 0.16; cx.translate(W / 2, H / 2); cx.rotate(t * 0.6);
+        const s = 1 + 0.25 * Math.sin(t * 1.7), R = Math.hypot(W, H) / 2 / s;
+        cx.scale(s, s);
+        for (let x = -R; x < R; x += 96) for (let y = -R; y < R; y += 96) cx.drawImage(tile, x, y, 96, 96);
+        cx.restore();
+      }
+      spin += 0.02; z.setYaw(-Math.PI / 2 + Math.sin(spin) * 0.9).setPos(0, 0, 0.6 + Math.abs(Math.sin(t * 2.4)) * 0.25);
+      const word = words[Math.floor(t / 2.2) % words.length], k = 1 + 0.12 * Math.sin(t * 9);
+      for (const [y, txt] of [[H * 0.18, word], [H * 0.84, word === 'ZERATUL' ? 'EN TARO ZERATUL' : 'ZERATUL']]) {
+        const size = Math.min(W * 0.92 / (txt.length * 0.56), H / 5) * k;
+        cx.save(); cx.translate(W / 2, y); cx.rotate(Math.sin(t * 3) * 0.05);
+        cx.font = '900 ' + Math.round(size) + 'px Impact, Haettenschweiler, "Arial Black", sans-serif';
+        cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.lineJoin = 'round';
+        cx.lineWidth = Math.max(4, size / 10); cx.strokeStyle = '#000'; cx.strokeText(txt, 0, 0);
+        cx.fillStyle = 'hsl(' + ((t * 120 + (y > H / 2 ? 180 : 0)) % 360) + ', 100%, 62%)'; cx.fillText(txt, 0, 0);
+        cx.restore();
+      }
+      requestAnimationFrame(draw);
+    };
+    draw();
+    $('zeratulClose').onclick = () => { alive = false; clearInterval(vo); stopTheme(); location.search = ''; };
+  }
+
   function start(m, resume, sw) {
     if (game) return;
     mode = m; swarm = !!sw;
@@ -197,14 +251,14 @@ window.BS = window.BS || {};
 
   function showGameOver() {
     $('overModal').classList.remove('hidden');
-    $('overTitle').textContent = game.swarm ? (game.won ? 'BUNKER RAZED' : 'THEY GOT AWAY') : game.won ? 'EVACUATED' : 'BUNKER LOST';
+    $('overTitle').textContent = game.swarm ? (game.won ? 'BUNKER RAZED' : game.hiveDown ? 'HIVE DESTROYED' : 'THEY GOT AWAY') : game.won ? 'EVACUATED' : 'BUNKER LOST';
     document.querySelector('#overModal .card').classList.toggle('won', !!game.won);
     $('overStats').innerHTML = [['WAVE', game.wave], ['KILLS', game.swarm ? game.sw.kills : game.kills], ['SCORE', game.finalScore]].map(([k, v]) => '<div><small>' + k + '</small><b>' + Number(v).toLocaleString('en-US') + '</b></div>').join('');
     const b = $('overBest');
     b.textContent = game.newBest ? 'NEW BEST' : 'BEST ' + Number(game.best).toLocaleString('en-US');
     b.classList.toggle('new', !!game.newBest);
     const mr = game.metaResult;
-    $('overMeta').innerHTML = mr ? '+' + mr.gas + ' VESPENE FOR THE HYPERION' + mr.unlocked.map(c => '<span>NEW CARD: ' + BS.Meta.cardName(c).toUpperCase() + '</span>').join('') + (mr.swarm ? '<span>NEW MODE: THE SWARM</span>' : '') : '';
+    $('overMeta').innerHTML = mr ? '+' + mr.gas + ' VESPENE FOR THE HYPERION' + mr.unlocked.map(c => '<span>NEW CARD: ' + BS.Meta.cardName(c).toUpperCase() + '</span>').join('') + (mr.swarm ? '<span>NEW MODE: THE SWARM</span>' : '') + (mr.protoss ? '<span>NEW: THE PROTOSS CAMPAIGN</span>' : '') : '';
   }
 
   // ---- Input ------------------------------------------------------------------------------------------
@@ -263,7 +317,7 @@ window.BS = window.BS || {};
         else {
           lastTap = now; const w = renderer.screenToGround(ev.clientX, ev.clientY);
           // Swarm mode: a tap sends Kerrigan there.
-          if (w && game.swarm) game.heroOrder(w[0], w[1]);
+          if (w && game.swarm) { if (!game.baseTap(w[0], w[1])) game.heroOrder(w[0], w[1]); }
           else if (w && game.focusAt(w[0], w[1])) game.toast('Focus fire!');
         }
       }
@@ -284,6 +338,7 @@ window.BS = window.BS || {};
       else if (k === 'v') hud.toggleView();
       // Swarm mode: K summons Kerrigan (or sends her back to advancing), Q W E R T Y her spells.
       else if (game.swarm && k === 'k') hud.heroButton();
+      else if (game.swarm && k === ' ') { ev.preventDefault(); game.broodHold(); }
       else if (game.swarm && BS.SWARM.abilities.some(a => a.key.toLowerCase() === k)) game.heroCast(BS.SWARM.abilities.find(a => a.key.toLowerCase() === k).id);
       else if (game.swarm && 'sary'.includes(k)) { /* the Terrans' abilities */ }
       else if (k === 's') game.useStim(); else if (k === 'a') game.callAirStrike(); else if (k === 'r') game.emergencyRepair(); else if (k === 'y') game.useYamato();

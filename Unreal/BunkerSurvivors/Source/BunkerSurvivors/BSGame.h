@@ -130,6 +130,9 @@ struct FBSTrooper
 	FString Anim;
 	ABSModelActor* Actor = nullptr;
 	bool bBoarding = false, bDead = false, bStimLook = false;
+	// Swarm mode: raiding the hive (ABSGame::TerranRaid): up the lane along RaidRoute, then at the nearest base building.
+	bool bRaid = false;
+	TArray<FVector2D> RaidRoute;
 };
 
 // Missile turret (anti-air), sensor tower (radar), or the forward command center on the high ground (bCc).
@@ -232,6 +235,11 @@ struct FBSEnemy
 	// Swarm mode: the player's own Kerrigan (bHero). Order: the spot she was sent to (attack-move); Hold: where she stands
 	// guard once there; Power scales her spells; Queued: the spell the player asked for (cast as soon as she is free).
 	bool bHero = false, bOrder = false, bHold = false;
+	// Swarm mode: held at the hive (massing until released, BSSwarm Hold*), and in a frenzy until then once released;
+	// BaseKey: a base building's key (Def->bBaseBuilding).
+	bool bHeld = false;
+	float FrenzyUntil = 0;
+	FString BaseKey;
 	FVector2D Order = FVector2D::ZeroVector, Hold = FVector2D::ZeroVector;
 	float Power = 1;
 	FString Queued;
@@ -312,6 +320,11 @@ public:
 
 	void Init(UBSAssets* InAssets, EBSMode InMode, bool bInSwarm = false);
 	void SetupAttract();                 // staged scene behind the start screen (no simulation)
+	// The Protoss campaign (unlocked by winning a swarm run): Zeratul on a loop, YTMND style. The HUD paints the wallpaper
+	// and the words; this is him (cycling his sequences, swaying and bobbing), the Brood War protoss theme on a loop and
+	// his commander voice lines every 7 s.
+	void SetupZeratul();
+	bool IsZeratul() const { return bZeratul; }
 	virtual void Destroyed() override;
 	void BuildWorld(EBSMode InMode);
 
@@ -340,7 +353,8 @@ public:
 	EExpand Expand = EExpand::Off;
 	float ExpandT = 0;
 	// The shop between waves (see EndWave): the cards on offer, rerolls, and the bonuses it opened with.
-	struct FShop { bool bOpen = false; int32 Wave = 0, Bonus = 0, Interest = 0, Rerolls = 0, Free = 0; TArray<FString> Offers; TArray<bool> Bought; } Shop;
+	// bZerg: swarm mode's own shop for the hive (BSSwarm::Cards; its round has started already).
+	struct FShop { bool bOpen = false, bZerg = false; int32 Wave = 0, Bonus = 0, Interest = 0, Rerolls = 0, Free = 0; TArray<FString> Offers; TArray<bool> Bought; } Shop;
 	TMap<FString, int32> Cards;           // passive shop cards: levels
 	float LingerT = 0;                    // seconds since the wave's last spawn
 	int32 WavesCleared = 0;
@@ -407,18 +421,54 @@ public:
 		// The base on the field (SyncBase): its parts by key (each grows in over BaseGrow s from T = 0), the spot each tech
 		// building took, the drones at work, and the resync timer.
 		struct FPart { ABSModelActor* Actor = nullptr; FString Model; float X = 0, Y = 0, Scale = 1, T = 0; };
-		struct FDrone { ABSModelActor* Actor = nullptr; float X = 0, Y = 0, Tx = 0, Ty = 0, Yaw = 0, Wait = 0; bool bMoving = false; };
+		struct FDrone { ABSModelActor* Actor = nullptr; float X = 0, Y = 0, Tx = 0, Ty = 0, Yaw = 0, Wait = 0; bool bMoving = false, bHome = false; };
 		TMap<FString, FPart> Parts;
 		TMap<FString, int32> TechSpot;
 		TArray<FDrone> Drones2;
 		float BaseT = 0;
+		// Base micro: bHold (broods mass at the hive); each hatchery's next inject (by key); evolution chambers and what
+		// each researches (Id empty: idle); bAutoEvo (chambers start the next evolution each wave); the spots in use; the
+		// next raid; the hive's cards (levels); the base buildings' entities (by key) and their defs.
+		bool bHold = false, bAutoEvo = true;
+		TMap<FString, float> Inject;
+		int32 Chambers = 0;
+		struct FResearch { FString Id; float T = 0, Dur = 0; };
+		FResearch Research[BSSwarm::ChamberMax];
+		bool HatchAt[UE_ARRAY_COUNT(BSSwarm::HatchSpots)] = {}, ExtAt[UE_ARRAY_COUNT(BSSwarm::ExtractorSpots)] = {}, ChamberAt[BSSwarm::ChamberMax] = {};
+		float RaidAt = 0;
+		TMap<FString, int32> Cards;
+		TMap<FString, TSharedPtr<FBSEnemy>> Ents;
+		TArray<TSharedPtr<FBSZergDef>> BaseDefs;
 	} Sw;
-	float SwarmIncome() const { return BSSwarm::Income + BSSwarm::DroneIncome * Sw.Drones; }
-	float SwarmGasIncome() const { return BSSwarm::ExtractorGas * Sw.Extractors; }
-	float LarvaRate() const { return BSSwarm::HatchLarva * Sw.Hatcheries * (1 + BSSwarm::QueenBoost * Sw.Queens); }
-	// What the hive cluster can buy (Kind: drone, extractor, hatch, queen, tier, hero, strain, evo; Id for the last two).
-	// SwarmCost: false at its max. SwarmNeeds: the hive tier it needs. SwarmState: "" (buyable), "max", "locked" (the
-	// tier), "need" (the strain it improves is not bred yet), "wait" (Kerrigan, until the hive recovers from her fall).
+	bool bHiveDown = false;              // swarm mode: the main hatchery fell (the run is lost)
+	int32 ZCardLevel(const FString& Id) const { return Sw.Cards.FindRef(Id); }
+	float SwarmIncome() const { return BSSwarm::Income + BSSwarm::DroneIncome * Sw.Drones * (1 + 0.2f * ZCardLevel(TEXT("drones"))); }
+	float SwarmGasIncome() const { return BSSwarm::ExtractorGas * Sw.Extractors * (1 + 0.25f * ZCardLevel(TEXT("gas"))); }
+	float LarvaRate() const { return BSSwarm::HatchLarva * Sw.Hatcheries * (1 + BSSwarm::QueenBoost * Sw.Queens) * (1 + 0.15f * ZCardLevel(TEXT("larva"))); }
+	// Base micro (BSSwarm.cpp). BroodHold: hold the broods at the hive or release them all in a frenzy (toggles with
+	// none given). HatchSpots: the standing hatcheries, main first (Key "main", "hatch<i>"). Inject (tap a hatchery with its
+	// queen), chambers (ChamberPull: tap one; Researching: the research of an evolution line), BaseTap (a tap on the base:
+	// chrysalis, chamber or hatchery; false when it hit none of them).
+	struct FHatch { FVector2D P; FString Key; };
+	void BroodHold(int32 On = -1);
+	int32 HoldCap() const { return BSSwarm::HoldCap + BSSwarm::HoldPerWave * Wave; }
+	int32 HeldCount() const;
+	TArray<FHatch> HatchSpots() const;
+	bool InjectReady(int32 I) const;
+	bool Inject(int32 I);
+	const FSwarmState::FResearch* Researching(const FString& Id) const;
+	int32 IdleChamber() const;
+	bool ChamberPull(int32 Ci);
+	bool BaseTap(float X, float Y);
+	// The hive's shop between rounds (BSSwarm::Cards): one pick of ShopOffers; rerolls cost minerals.
+	BSSwarm::FCost ZCardCost(const BSSwarm::FZCard& C) const;
+	int32 ZergRerollCost() const { return BSSwarm::ShopReroll[0] + BSSwarm::ShopReroll[1] * Shop.Rerolls; }
+	bool ZergBuyCard(int32 I);
+	bool ZergReroll();
+	// What the hive cluster can buy (Kind: drone, extractor, hatch, queen, chamber, tier, hero, strain, evo; Id for the
+	// last two). SwarmCost: false at its max. SwarmNeeds: the hive tier it needs. SwarmState: "" (buyable), "max", "locked"
+	// (the tier), "need" (the strain it improves is not bred yet), "wait" (Kerrigan, until the hive recovers from her
+	// fall); chamber evolutions: "nochamber", "busy" (that line is being researched), "full" (every chamber is busy).
 	bool SwarmCost(const FString& Kind, const FString& Id, BSSwarm::FCost& Out) const;
 	int32 SwarmNeeds(const FString& Kind, const FString& Id) const;
 	FString SwarmState(const FString& Kind, const FString& Id) const;
@@ -510,7 +560,7 @@ private:
 	TSharedPtr<FBSEnemy> SpawnEnemy(const FString& Type, float Ang, const FVector2D* At = nullptr);
 	FVector2D SurroundGoal(FBSEnemy& E);
 	void PlayEnemyAnim(FBSEnemy& E, const FString& Kind);
-	float EnemyCd(const FBSEnemy& E) const { return E.Def->Cd / (bHard ? 1.05f : 1.f) / (E.FuryUntil > Time ? 1.5f : 1.f); }
+	float EnemyCd(const FBSEnemy& E) const { return E.Def->Cd / (bHard ? 1.05f : 1.f) / (E.FuryUntil > Time ? 1.5f : 1.f) * (E.FrenzyUntil > Time ? BSSwarm::HoldCd : 1.f); }
 	void BuildTargets();
 	void DamageDefender(const FBSTarget& T, float Dmg);       // in swarm mode, a kill pays the swarm (BSSwarm bounty)
 	void HurtDefender(const FBSTarget& T, float Dmg);
@@ -674,6 +724,28 @@ private:
 	FVector2D BroodSpawn(float Ang) const;
 	void HeroTarget(FBSEnemy& E, float Dt);
 	bool HeroKit(FBSEnemy& E, float Dt);
+	// Base buildings as entities with hit points (BaseEntity), lost to the Terrans (BaseLost; the main one: HiveLost).
+	void BaseEntity(const FString& Key, const FSwarmState::FPart* Part);
+	void BaseLost(const FString& Key);
+	void HiveLost();
+	void UpdateSunkens(float Dt);
+	void AutoInject();
+	bool HeldWakes(const FBSEnemy& E) const;
+	FString NextEvolution() const;
+	void ChamberAuto();
+	void UpdateResearch(float Dt);
+	bool ZCardOpen(const BSSwarm::FZCard& C) const;
+	void OpenZergShop();
+	TArray<FString> RollZergOffers() const;
+	void ZergEvent(const BSSwarm::FZCard& C);
+	void ZergShopBot();                    // -BSAutoPlay: the bot's pick in the hive's shop
+	// The Terran commander's reading of the swarm (light, armoured, air, massed, total; the hive's tech; splash first?),
+	// the trooper it calls for, its raid on the hive (bForce: playtesting, now and whatever the conditions).
+	struct FTerranRead { int32 Light = 0, Armored = 0, Air = 0, Massed = 0, Total = 0; bool bAirTech = false, bArmorTech = false, bSplash = false; };
+	FTerranRead TerranRead() const;
+	FString TerranTroop(const FTerranRead& R) const;
+	void TerranRaid(const FTerranRead& R, bool bForce = false);
+	FVector2D RaidGoal(FBSTrooper& M);
 	void TerranThink();                    // the Terran commander, every half second (also the "balanced" bot)
 	void TerranShop();                     // its shop between rounds
 	void ZergBot();                        // -BSAutoPlay in swarm mode: a zerg player working down a build order
@@ -747,6 +819,11 @@ private:
 	TMap<UStaticMeshComponent*, UMaterialInstanceDynamic*> MeshMids;
 	UPROPERTY() TArray<TObjectPtr<UStaticMeshComponent>> AllMeshes;
 	UPROPERTY() TObjectPtr<UPointLightComponent> MuzzleLight;
+	UPROPERTY() TObjectPtr<class UAudioComponent> ZeratulTheme;
+	bool bZeratul = false;
+	ABSModelActor* ZeratulActor = nullptr;
+	float ZeratulT = 0, ZeratulAnimT = 0.6f, ZeratulVoT = 1.5f; int32 ZeratulSeq = 0;
+	void UpdateZeratul(float Dt);
 	UPROPERTY() TObjectPtr<UStaticMeshComponent> Ground;
 	UPROPERTY() TObjectPtr<class UProceduralMeshComponent> Terrain;
 	UPROPERTY() TObjectPtr<class UProceduralMeshComponent> CreepMesh;

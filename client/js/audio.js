@@ -35,7 +35,7 @@ window.BS = window.BS || {};
     }
 
     preload() {
-      for (const list of Object.values(BS.SOUNDS)) for (const path of list) this.load(path);
+      for (const [k, list] of Object.entries(BS.SOUNDS)) if (!BS.SOUNDS_LAZY.includes(k)) for (const path of list) this.load(path);
     }
 
     load(path) {
@@ -45,6 +45,19 @@ window.BS = window.BS || {};
         .catch(() => null);
       this.buffers.set(path, p);
       return p;
+    }
+
+    // Loops a sound key's first file until stopped (the returned function stops it).
+    loop(key, vol) {
+      if (!this.ctx) return () => {};
+      let src = null, stopped = false;
+      this.load(BS.SOUNDS[key][0]).then(buf => {
+        if (!buf || stopped) return;
+        src = this.ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+        const g = this.ctx.createGain(); g.gain.value = vol || 0.6;
+        src.connect(g); g.connect(this.master); src.start();
+      });
+      return () => { stopped = true; if (src) src.stop(); };
     }
 
     // Plays one random variant of a sound key. Throttled per key so volleys do not stack.

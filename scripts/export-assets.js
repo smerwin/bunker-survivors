@@ -42,6 +42,9 @@ if (BS.SWARM) {
   for (const s of S.strains) icons.add(s.icon);
   for (const v of S.evo) { if (v.icon) icons.add(v.icon); (v.icons || []).forEach(i => icons.add(i)); }
   for (const a of S.abilities) icons.add(a.icon);
+  // The hive cluster's evolution chamber, the hive's cards between rounds, and the Protoss campaign's Zeratul.
+  for (const c of S.cards || []) icons.add(c.icon);
+  ['btn-building-zerg-evolutionchamber', 'btn-unit-protoss-zeratul'].forEach(i => icons.add(i));
 }
 
 function write(rel, buf) {
@@ -65,13 +68,16 @@ async function main() {
   // BS_ONLY=key1,key2 re-exports just those models into the existing manifest (then import them with import_sc2.py's
   // BS_ONLY and BS_MODELS_ONLY=1).
   const ONLY = (process.env.BS_ONLY || '').split(',').filter(Boolean);
-  if (FX_ONLY || ICONS_ONLY || ONLY.length) Object.assign(manifest, JSON.parse(fs.readFileSync(path.join(outDir, 'manifest.json'), 'utf8')), { failures: [] });
+  // BS_SOUNDS_ONLY=1 re-exports just the sounds (with BS_ONLY, just those sound keys) into the existing manifest (then
+  // import_sc2.py with BS_SOUNDS_ONLY=1).
+  const SOUNDS_ONLY = process.env.BS_SOUNDS_ONLY === '1';
+  if (FX_ONLY || ICONS_ONLY || ONLY.length || SOUNDS_ONLY) Object.assign(manifest, JSON.parse(fs.readFileSync(path.join(outDir, 'manifest.json'), 'utf8')), { failures: [] });
 
   // Extra models (zerg variants, projectile meshes) and particle effects come from client/js/units.js.
   const UNREAL_MODELS = BS.EXTRA_MODELS;
   const FX = BS.fxList();
 
-  for (const [key, m3] of Object.entries(FX_ONLY || ICONS_ONLY ? {} : Object.assign({}, BS.MODELS, UNREAL_MODELS))) {
+  for (const [key, m3] of Object.entries(FX_ONLY || ICONS_ONLY || SOUNDS_ONLY ? {} : Object.assign({}, BS.MODELS, UNREAL_MODELS))) {
     if (ONLY.length && !ONLY.includes(key)) continue;
     try {
       const { glb, report } = convertM3(sc2, m3, { name: key });
@@ -91,9 +97,9 @@ async function main() {
       console.log('  FAIL  ' + key + ': ' + e.message);
     }
   }
-  if (ONLY.length) { write('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2))); return; }
+  if (ONLY.length && !SOUNDS_ONLY) { write('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2))); return; }
 
-  for (const name of FX_ONLY ? [] : icons) {
+  for (const name of FX_ONLY || SOUNDS_ONLY ? [] : icons) {
     const buf = sc2.read('assets/textures/' + name + '.dds');
     if (!buf) { manifest.failures.push({ key: name, reason: 'icon not found' }); continue; }
     const rel = path.join('Icons', name + '.png');
@@ -104,6 +110,7 @@ async function main() {
   if (ICONS_ONLY) { write('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2))); return; }
 
   for (const [key, list] of Object.entries(FX_ONLY ? {} : BS.SOUNDS)) {
+    if (SOUNDS_ONLY && ONLY.length && !ONLY.includes(key)) continue;
     manifest.sounds[key] = [];
     list.forEach((src, i) => {
       let buf = sc2.read(src);
@@ -115,6 +122,7 @@ async function main() {
     });
   }
   console.log('  sounds ' + Object.values(manifest.sounds).reduce((s, l) => s + l.length, 0));
+  if (SOUNDS_ONLY) { write('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2))); return; }
 
   // Particle effects: JSON per effect plus every texture they use (PNG, flipbooks intact).
   manifest.fx = {}; manifest.fxTextures = {};

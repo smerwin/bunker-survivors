@@ -33,7 +33,7 @@ float ABSCameraPawn::FlipFocus() const
 {
 	FVector2D Size(16, 9);
 	if (GEngine && GEngine->GameViewport) GEngine->GameViewport->GetViewportSize(Size);
-	return Size.Y > Size.X ? 24.f : 20.f;
+	return Size.Y > Size.X ? 26.f : 24.f;
 }
 
 void ABSCameraPawn::SetBunkerView(bool bOn)
@@ -100,10 +100,10 @@ void ABSCameraPawn::Tick(float Dt)
 	float VFov = FMath::Lerp(52.f, 40.f, Z);
 	if (bFlip)
 	{
-		// The flipped view (swarm mode), as the browser's: from behind the zerg base, portrait 48 m out at 50 degrees with a
+		// The flipped view (swarm mode), as the browser's: from behind the zerg base, portrait 46 m out at 50 degrees with a
 		// 55-degree field of view, landscape 44 m at 54 degrees and 42; zooming scales the distance (up to 56 m) and tilts.
-		const bool bPort = FlipFocus() > 22;
-		Arm = FMath::Min(5600.f, (bPort ? 4800.f : 4400.f) * ArmLength(Z, false) / ArmLength(FlipZoom, false));
+		const bool bPort = FlipFocus() > 25;
+		Arm = FMath::Min(5600.f, (bPort ? 4600.f : 4400.f) * ArmLength(Z, false) / ArmLength(FlipZoom, false));
 		Pitch = FMath::Clamp((bPort ? 50.f : 54.f) + (E - EaseInOut(FlipZoom)) * 30.f, 30.f, 75.f);
 		VFov = bPort ? 55.f : 42.f;
 	}

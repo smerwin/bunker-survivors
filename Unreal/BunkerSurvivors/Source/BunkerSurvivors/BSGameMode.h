@@ -20,6 +20,9 @@ public:
 
 	void StartGame(EBSMode Mode, bool bSwarm = false);   // bSwarm: swarm mode (the player is the zerg)
 	void Restart(bool bSameMode);
+	// The Protoss campaign's page (unlocked by winning a swarm run; -BSZeratul opens it at once).
+	void StartZeratul();
+	bool IsZeratul() const { return Game && Game->IsZeratul(); }
 	ABSGame* GetGame() const { return Game; }
 	UBSAssets* GetAssets() const { return Assets; }
 

@@ -73,7 +73,9 @@ private:
 	TSharedRef<SWidget> BuildHyperion();             // start screen: perks bought with vespene, and the card list
 	TSharedRef<SWidget> MakePerk(int32 Index);
 	TSharedRef<SWidget> MakeAbility(int32 Index);
-	TSharedRef<SWidget> MakeSwarmAbility(int32 Index);   // swarm mode: -1 Kerrigan's button, else her spells (BSSwarm::Abilities)
+	TSharedRef<SWidget> MakeSwarmAbility(int32 Index);
+	TSharedRef<SWidget> BuildBroodButton();              // swarm mode: hold the broods at the hive / release them
+	TSharedRef<SWidget> BuildZeratul();                  // the Protoss campaign's page (over Zeratul himself)   // swarm mode: -1 Kerrigan's button, else her spells (BSSwarm::Abilities)
 	void HeroButton();                                    // summon Kerrigan, or send her back to advancing with the swarm
 	TSharedRef<SWidget> MakeArmouryCard(int32 Index);
 	TSharedRef<SWidget> MakeArmouryRow(int32 Index);

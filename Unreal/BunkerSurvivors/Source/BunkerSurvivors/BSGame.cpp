@@ -21,6 +21,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
+#include "Components/AudioComponent.h"
 #include "Misc/ConfigCacheIni.h"
 
 namespace
@@ -284,6 +285,39 @@ void ABSGame::Init(UBSAssets* InAssets, EBSMode InMode, bool bInSwarm)
 	AddScv(true);
 	GConfig->GetInt(TEXT("BunkerSurvivors"), *(FString(TEXT("Best.")) + (bSwarm ? TEXT("Swarm") : Mode == EBSMode::Lane ? TEXT("Lane") : TEXT("Arena"))), Best, GGameUserSettingsIni);
 	if (bSwarm) InitSwarm();
+}
+
+void ABSGame::SetupZeratul()
+{
+	bZeratul = true;
+	// Nothing else on the field: no bunker, no SCV.
+	ReleaseModel(Bunker.Actor); Bunker.Actor = nullptr;
+	for (const TSharedPtr<FBSScv>& S : Scvs) { ReleaseModel(S->Actor); S->Actor = nullptr; }
+	Scvs.Reset();
+	ZeratulActor = AcquireModel(TEXT("zeratul"));
+	if (ZeratulActor) { ZeratulActor->SetTeamColor(FLinearColor(0.2f, 0.9f, 0.4f)); ZeratulActor->SetScale(1.6f); ZeratulActor->SetSim(0, 0, 0.6f, -PI / 2); ZeratulActor->Play(StandNames, true); }
+}
+
+void ABSGame::UpdateZeratul(float Dt)
+{
+	ZeratulT += Dt;
+	if (ZeratulActor)
+	{
+		// Swaying round and bobbing, through his sequences one after another.
+		ZeratulActor->SetSim(0, 0, 0.6f + FMath::Abs(FMath::Sin(ZeratulT * 2.4f)) * 0.25f, -PI / 2 + FMath::Sin(ZeratulT * 1.2f) * 0.9f);
+		if ((ZeratulAnimT -= Dt) <= 0)
+		{
+			static const TCHAR* Seqs[] = { TEXT("stand"), TEXT("attack"), TEXT("spell"), TEXT("stand"), TEXT("walk") };
+			const TCHAR* S = Seqs[ZeratulSeq++ % UE_ARRAY_COUNT(Seqs)];
+			float Len = ZeratulActor->Play(S, false);
+			if (Len <= 0) Len = ZeratulActor->PlayRandomWithPrefix(S, false);
+			ZeratulAnimT = FMath::Max(1.2f, Len);
+		}
+	}
+	// The theme, on a loop (started again whenever it ends); a voice line every 7 s.
+	if (!ZeratulTheme || !ZeratulTheme->IsPlaying())
+		if (USoundBase* S = Assets->Sound(TEXT("protossTheme"))) ZeratulTheme = UGameplayStatics::SpawnSound2D(this, S, 0.7f);
+	if ((ZeratulVoT -= Dt) <= 0) { ZeratulVoT = 7; PlaySound(TEXT("zeratulVo"), 1.f, 3.f); }
 }
 
 void ABSGame::SetupAttract()
@@ -805,7 +839,7 @@ void ABSGame::UpdateSquad(float Dt)
 		auto Pred = [D](const FBSEnemy& E) { return !(D->bGroundOnly && E.Def->bFlying); };
 		const float Range = D->Range + (M.Fwd.bOn && BSTerrain::OnHigh(M.X, M.Y) ? 1.f : 0.f);   // the forward post on the high ground outranges the lane
 		// Morale: when a third of the group around it has just been killed, the group falls back level with the bunker.
-		if (!M.bBoarding && !M.Fwd.bOn && !bStim && M.RetreatUntil <= Time && Forward(M))
+		if (!M.bBoarding && !M.Fwd.bOn && !M.bRaid && !bStim && M.RetreatUntil <= Time && Forward(M))
 		{
 			int32 Lost = 0, Near = 0;
 			for (const FVector& K : SquadDeaths) Lost += Dist2(K.X, K.Y, M.X, M.Y) < 3.5f * 3.5f;
@@ -826,6 +860,12 @@ void ABSGame::UpdateSquad(float Dt)
 			// other moves; at the post they hold and fire.
 			if (bBothTeams && M.Team != BoundTeam && EnemiesInRange(M.X, M.Y, Range, Pred).Num()) { Gx = M.X; Gy = M.Y; }
 			else { Gx = Fg.X; Gy = Fg.Y; }
+		}
+		else if (M.bRaid)
+		{
+			// Swarm mode: raiding the hive (TerranRaid): shoot whatever is in reach, otherwise press on.
+			if (EnemiesInRange(M.X, M.Y, Range, Pred).Num()) { Gx = M.X; Gy = M.Y; }
+			else { const FVector2D G = RaidGoal(M); Gx = G.X; Gy = G.Y; }
 		}
 		else if (M.RetreatUntil > Time && !bStim)
 		{
@@ -871,7 +911,7 @@ void ABSGame::UpdateSquad(float Dt)
 		FVector2D Wp = RoundBunker(M.X, M.Y, Gx, Gy);
 		// No straight way there (a cliff corner, or up on a plateau after a push or an abduction): follow the way home.
 		FVector2D Flow;
-		if (bLane && !M.Fwd.bOn && Far > 0.12f && !BSTerrain::ClearPath(M.X, M.Y, Wp.X, Wp.Y) && BSTerrain::HomeFlow(M.X, M.Y, Flow)) Wp = FVector2D(M.X, M.Y) + Flow;
+		if (bLane && !M.Fwd.bOn && !M.bRaid && Far > 0.12f && !BSTerrain::ClearPath(M.X, M.Y, Wp.X, Wp.Y) && BSTerrain::HomeFlow(M.X, M.Y, Flow)) Wp = FVector2D(M.X, M.Y) + Flow;
 		const float Dx = Wp.X - M.X, Dy = Wp.Y - M.Y, Dd = FMath::Max(0.001f, FMath::Sqrt(Dx * Dx + Dy * Dy));
 		if (Far > 0.12f)
 		{
@@ -1471,8 +1511,9 @@ void ABSGame::EndWave()
 void ABSGame::CloseShop()
 {
 	if (!Shop.bOpen) return;
-	Shop.bOpen = false;
-	StartWave();
+	const bool bZerg = Shop.bZerg;                 // swarm mode: the hive's own shop (its round has started already)
+	Shop.bOpen = false; Shop.bZerg = false;
+	if (!bZerg) StartWave();
 }
 
 int32 ABSGame::CardLevel(const FBSCardDef& C) const
@@ -1571,6 +1612,7 @@ TArray<FString> ABSGame::RollOffers()
 bool ABSGame::Reroll()
 {
 	if (!Shop.bOpen) return false;
+	if (Shop.bZerg) return ZergReroll();
 	const int32 Cost = RerollCost();
 	if (Minerals < Cost) { Toast(TEXT("Not enough minerals")); return false; }
 	Minerals -= Cost;
@@ -1582,6 +1624,7 @@ bool ABSGame::Reroll()
 
 bool ABSGame::BuyCard(int32 Index)
 {
+	if (Shop.bOpen && Shop.bZerg) return ZergBuyCard(Index);
 	if (!Shop.bOpen || !Shop.Offers.IsValidIndex(Index) || Shop.Bought[Index]) return false;
 	const FBSCardDef* C = BSDefs::FindCard(Shop.Offers[Index]);
 	if (!C || CardLevel(*C) >= CardMax(*C)) return false;
@@ -4188,6 +4231,7 @@ void ABSGame::DamageDefender(const FBSTarget& T, float Dmg)
 	}
 	default: break;
 	}
+	M = FMath::FloorToInt(M * (1 + 0.5f * ZCardLevel(TEXT("bounty"))));     // Feeding Frenzy
 	Sw.Minerals += M; Sw.Kills++;
 	Floater(T.X, T.Y, 2, FString::Printf(TEXT("+%d"), M), FLinearColor(0.55f, 0.88f, 0.54f));
 }
@@ -4319,6 +4363,7 @@ void ABSGame::KillEnemy(const TSharedPtr<FBSEnemy>& E, bool bSuicide)
 	if (D->Death.IsEmpty()) PlayFx(TEXT("nydusBirth"), FVector(E->X, E->Y, BSTerrain::Height(E->X, E->Y)), 0, 1.6f);      // the nydus worm has no death model
 	else Corpse(E->DeathKey.IsEmpty() ? D->Death : E->DeathKey, E->X, E->Y, E->Z, E->Yaw, D->DeathHold, D->Scale);
 	if (!D->Boss.IsEmpty()) BossDown(*E);
+	if (D->bBaseBuilding) BaseLost(E->BaseKey);
 }
 
 void ABSGame::BanelingBlast(const FBSEnemy& E, bool bFromDeath)
@@ -4386,9 +4431,10 @@ void ABSGame::Tick(float Dt)
 	Super::Tick(Dt);
 	if (!Assets) return;
 	if (CrowdTest > 0 && bStarted) CrowdTick(Dt);
+	if (bZeratul) UpdateZeratul(Dt);
 	// Bots shop at once and carry on (-BSShopHold: they leave the shop open, for screenshots of it).
 	static const bool bShopHold = FParse::Param(FCommandLine::Get(), TEXT("BSShopHold"));
-	if (Shop.bOpen && bAutoPlay && !bOver && !bShopHold) { AutoShop(); CloseShop(); }
+	if (Shop.bOpen && bAutoPlay && !bOver && !bShopHold) { if (Shop.bZerg) ZergShopBot(); else AutoShop(); CloseShop(); }
 	if (bStarted && !bPaused && !bOver && !Shop.bOpen)
 	{
 		Acc += FMath::Min(Dt, 0.1f) * TimeScale;
@@ -4415,7 +4461,11 @@ void ABSGame::Step(float Dt)
 
 	WaveTimer -= Dt;
 	// Swarm mode: the Terrans' rounds run on the clock alone (their shop between, at once), and the swarm grows.
-	if (bSwarm) { if (WaveTimer <= 0) { if (Wave) { EndWave(); TerranShop(); } else StartWave(); } UpdateSwarm(Dt); }
+	if (bSwarm)
+	{
+		if (WaveTimer <= 0) { if (Wave) { EndWave(); TerranShop(); ChamberAuto(); OpenZergShop(); if (Shop.bOpen) return; } else StartWave(); }
+		UpdateSwarm(Dt);
+	}
 	else if (Wave == 0) { if (WaveTimer <= 0) StartWave(); }
 	else if (SpawnQueue.Num() == 0)
 	{
@@ -4520,6 +4570,8 @@ void ABSGame::UpdateEnemies(float Dt)
 		if (D->bWatcher) { UpdateWatcher(EP, Dt); continue; }
 		if (D->bDetector) { UpdateOverseer(EP, Dt); continue; }
 		if (D->bTumors && QueenCreep(E, Dt)) continue;
+		if (D->bBaseBuilding) continue;                                              // swarm mode: the zerg base's buildings
+		if (E.bHeld && !HeldWakes(E)) { E.bAttacking = false; PlayEnemyAnim(E, TEXT("stand")); continue; }   // massing at the hive
 		const TArray<FBSTarget>& Pool = D->bAntiAir ? AirTargets : Targets;       // scourge and devourers hunt Terran air
 		if (E.bHero) HeroTarget(E, Dt);
 		else if ((E.Retarget -= Dt) <= 0 || !E.Target.IsValid(Bunker))
@@ -4723,7 +4775,7 @@ void ABSGame::UpdateEnemies(float Dt)
 			const float Gd = FMath::Max(0.001f, FMath::Sqrt(Dist2(Gx, Gy, E.X, E.Y)));
 			// Zerg on creep move faster (ground units only).
 			E.bOnCreep = !D->bFlying && OnCreep(E.X, E.Y);
-			const float Sp = D->Speed * (bSlowed ? 0.5f : 1.f) * (E.bOnCreep ? BSCreep::Speed : 1.f);
+			const float Sp = D->Speed * (bSlowed ? 0.5f : 1.f) * (E.bOnCreep ? BSCreep::Speed : 1.f) * (E.FrenzyUntil > Time ? BSSwarm::HoldSpeed : 1.f);
 			const float Nx = (Gx - E.X) / Gd, Ny = (Gy - E.Y) / Gd;
 			const float Mx = Nx * Sp * Dt + E.Sx * 0.8f, My = Ny * Sp * Dt + E.Sy * 0.8f;
 			// Cliffs: ground units steer around them; flyers ignore them, and winged zerglings hop straight over.
@@ -5548,9 +5600,17 @@ FString ABSGame::DebugState() const
 		for (const auto& K : Kinds) Zg += FString::Printf(TEXT("%s:%d "), *K.Key, K.Value);
 		for (const auto& K : Sw.Evo) Ev += FString::Printf(TEXT("%s:%d "), *K.Key, K.Value);
 		const FBSEnemy* H = HeroAlive();
-		Swm = FString::Printf(TEXT(" swarm[min=%.0f gas=%.0f tier=%d hatch=%d queens=%d drones=%d extractors=%d larva=%.1f rate=%.2f strains=%d evo=[%s] kills=%d hero=%s step=%d zerg=[%s]]"),
+		// Base micro: hold, chambers, the hive's cards, raiders, the base buildings' hit points.
+		FString Rs, Cd, Bs;
+		for (const FSwarmState::FResearch& R : Sw.Research) if (!R.Id.IsEmpty()) Rs += FString::Printf(TEXT("%s:%.0f/%.0f "), *R.Id, R.T, R.Dur);
+		for (const auto& K : Sw.Cards) Cd += FString::Printf(TEXT("%s:%d "), *K.Key, K.Value);
+		for (const auto& K : Sw.Ents) Bs += FString::Printf(TEXT("%s:%.0f "), *K.Key, K.Value->Hp);
+		int32 Raiders = 0;
+		for (const TSharedPtr<FBSTrooper>& M : Squad) Raiders += M->bRaid && !M->bDead;
+		Swm = FString::Printf(TEXT(" swarm[min=%.0f gas=%.0f tier=%d hatch=%d queens=%d drones=%d extractors=%d larva=%.1f rate=%.2f strains=%d evo=[%s] kills=%d hero=%s step=%d hold=%d held=%d/%d chambers=%d auto=%d research=[%s] cards=[%s] shop=%s raiders=%d base=[%s] zerg=[%s]]"),
 			Sw.Minerals, Sw.Gas, Sw.Tier, Sw.Hatcheries, Sw.Queens, Sw.Drones, Sw.Extractors, Sw.Larva, LarvaRate(), Sw.Strains.Num(), *Ev.TrimEnd(), Sw.Kills,
-			H ? *FString::Printf(TEXT("%.0f/%.0f%s"), H->Hp, H->MaxHp, H->bOrder ? TEXT(" order") : H->bHold ? TEXT(" hold") : TEXT("")) : Time < Sw.HeroAt ? TEXT("recovering") : TEXT("none"), ZergStep, *Zg.TrimEnd());
+			H ? *FString::Printf(TEXT("%.0f/%.0f%s"), H->Hp, H->MaxHp, H->bOrder ? TEXT(" order") : H->bHold ? TEXT(" hold") : TEXT("")) : Time < Sw.HeroAt ? TEXT("recovering") : TEXT("none"), ZergStep,
+			Sw.bHold ? 1 : 0, HeldCount(), HoldCap(), Sw.Chambers, Sw.bAutoEvo ? 1 : 0, *Rs.TrimEnd(), *Cd.TrimEnd(), Shop.bOpen ? (Shop.bZerg ? TEXT("zerg") : TEXT("terran")) : TEXT("-"), Raiders, *Bs.TrimEnd(), *Zg.TrimEnd());
 	}
 	return FString::Printf(TEXT("t=%.1f wave=%d enemies=%d kills=%d minerals=%.0f bunker=%.0f/%.0f units=%d tanks=%d scvs=%d over=%d squad=[%s] structures=[%s] banshees=[%s] radar=%d rails=%d%s bunkerActor[%s]"),
 		Time, Wave, Enemies.Num(), Kills, Minerals, Bunker.Hp, Bunker.MaxHp, Bunker.Units.Num(), Tanks.Num(), Scvs.Num(), bOver ? 1 : 0, *Out, *Str, *Ban, SensorUp() ? 1 : 0, Up.bRails ? 1 : 0, *Swm, *B);

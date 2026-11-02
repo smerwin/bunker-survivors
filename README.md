@@ -152,6 +152,27 @@ KERRIGAN button sends her back to advancing with the swarm, and her six spells a
 can summon her again a minute later. Raze the bunker before the Hyperion takes the Terrans off at 30 minutes and the
 run is won.
 
+The Terran side is tower defence and choosing upgrades; the zerg side is economy and base micro:
+
+- **Hold and attack.** The HOLD button (or `Space`) keeps new broods massed at the hive (up to 8, plus 2 a wave);
+  tapping it again sends everything held together, in a frenzy for a few seconds (faster, quicker to strike).
+- **Inject larva.** Each hatchery with a queen of its own (one per Spawn Larva level) glows green when its inject is
+  ready: tap it for a burst of larva.
+- **Evolution chambers.** Melee, missile and carapace levels are researched in an evolution chamber, one at a time and
+  over time. Chambers start the next affordable level by themselves at the end of each wave (AUTO; tap the Evolution
+  Chamber item when all are built to switch it to MANUAL), or tap a chamber to start one now.
+- **Tap the base.** A hatchery injects, a chamber evolves, the chrysalis summons Kerrigan; a tap anywhere else sends her.
+- **Mutations.** After each wave the hive picks one of three random cards: economy (larva, richer minerals and vespene,
+  quicker broods, faster evolutions, mineral, vespene and drone drops, Brood Mothers, whose queens inject on their own a
+  little late), defence (sunken colonies, thicker hides) and, from wave 10, events that strike at once: a hydralisk
+  swarm, an ultralisk stampede, a nydus breach, a drop pod assault, dark swarm over the bunker, plague.
+- **The Terrans read you.** Their commander answers what it sees: firebats and siege tanks against massed or light
+  broods, marauders against armour, marines, turrets and vikings against air, and its shop picks follow. Leave the lane
+  empty and the hive unguarded and it sends stimmed marines up the lane to burn the base: hatcheries, extractors,
+  chambers and sunken colonies can be destroyed (and rebuilt), and if the main hatchery falls the run is lost.
+
+Raze the bunker and one more thing opens on the start screen: the Protoss campaign.
+
 **Thirty minutes.** The clock under HYPERION in the top bar counts fighting time only; it stops while you shop. A run
 is about 40 waves. Early waves ramp up steadily. Past wave 16 the swarm stops simply getting bigger and starts getting
 stranger: from wave 20 it evolves on its own (one more late-game strain every five waves, on top of whatever your tech
@@ -333,6 +354,8 @@ look all the way round and pinch to zoom. Tap it again for the overhead view.
 | The Swarm: send Kerrigan | tap the ground | click the ground |
 | The Swarm: summon Kerrigan / back to advancing | KERRIGAN button | `K` |
 | The Swarm: Kerrigan's spells | ability buttons | `Q` `W` `E` `R` `T` `Y` |
+| The Swarm: hold / attack | HOLD button | `Space` |
+| The Swarm: inject, evolve, summon | tap the hatchery, chamber or chrysalis | click it |
 
 ## Troubleshooting
 

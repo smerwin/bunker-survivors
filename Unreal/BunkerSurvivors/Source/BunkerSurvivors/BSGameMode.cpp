@@ -46,6 +46,7 @@ void ABSGameMode::StartPlay()
 	if (Auto.IsEmpty()) { FParse::Value(Cmd, TEXT("BSAutoStart="), Auto); bSwarmRun = FParse::Param(Cmd, TEXT("BSSwarm")); }
 	if (Auto == TEXT("lane")) StartGame(EBSMode::Lane, bSwarmRun);
 	else if (Auto == TEXT("arena")) StartGame(EBSMode::Arena, bSwarmRun);
+	else if (FParse::Param(Cmd, TEXT("BSZeratul"))) StartZeratul();
 	else
 	{
 		// Start screen: a staged, slowly orbiting scene behind the menu.
@@ -55,6 +56,17 @@ void ABSGameMode::StartPlay()
 		if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
 			if (ABSCameraPawn* Cam = Cast<ABSCameraPawn>(PC->GetPawn())) { Cam->SetGame(Game); Cam->SetAttract(true); }
 	}
+}
+
+void ABSGameMode::StartZeratul()
+{
+	if (Game && Game->bStarted) return;
+	if (Game) { Game->Destroy(); Game = nullptr; }
+	Game = GetWorld()->SpawnActor<ABSGame>();
+	Game->Init(Assets, EBSMode::Arena);
+	Game->SetupZeratul();
+	if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
+		if (ABSCameraPawn* Cam = Cast<ABSCameraPawn>(PC->GetPawn())) { Cam->SetGame(Game); Cam->SetAttract(false); Cam->SetArena(true); Cam->SetZoom(0, true); }
 }
 
 void ABSGameMode::StartGame(EBSMode Mode, bool bSwarm)

@@ -16,7 +16,7 @@ window.BS = window.BS || {};
       this.cache = {};
       this.toastShown = -1; this.toastT = 0; this.bannerSerial = null;
       this.buildSegments();
-      if (game.swarm) { $('hud').classList.add('swarm'); $('armouryLabel').textContent = 'HIVE CLUSTER'; this.buildSwarmAbilities(); this.buildSwarmArmoury(); }
+      if (game.swarm) { $('broodBtn').onclick = () => game.broodHold(); $('hud').classList.add('swarm'); $('armouryLabel').textContent = 'HIVE CLUSTER'; this.buildSwarmAbilities(); this.buildSwarmArmoury(); }
       else { this.buildAbilities(); this.buildArmoury(); }
       // Tap a trooper in the bunker to send them outside; tap one outside to bring them back in (not the Terrans' in
       // swarm mode: the squad card there is the enemy's).
@@ -105,18 +105,32 @@ window.BS = window.BS || {};
         .concat(S.abilities.map(a => mk(a.id, a.name, a.icon, a.accent, () => g.heroCast(a.id))));
     }
     heroButton() { const g = this.g; if (g.heroAlive()) g.heroAdvance(); else g.swarmBuy('hero'); }
+    // Red light, green light.
+    refreshBrood() {
+      const g = this.g, n = g.heldCount(), key = g.sw.hold + '|' + n;
+      if (this.cache.brood === key) return;
+      this.cache.brood = key;
+      const b = $('broodBtn');
+      b.classList.toggle('hold', g.sw.hold); b.classList.toggle('massed', !g.sw.hold && n > 0);
+      b.innerHTML = g.sw.hold ? '<b>HOLDING</b><small>' + n + ' / ' + g.holdCap() + ' MASSED</small>' : n ? '<b>ATTACK</b><small>' + n + ' MASSED</small>' : '<b>ATTACKING</b><small>TAP TO HOLD</small>';
+    }
     // Swarm mode: the hive cluster. Economy, the tiers, strains to breed, evolutions; two prices (minerals + vespene).
     buildSwarmArmoury() {
       const g = this.g, S = BS.SWARM, items = [];
       const price = (k, id) => { const c = g.swarmCost(k, id); return c ? c[0] + (c[1] ? ' + ' + c[1] + 'g' : '') : ''; };
       const poor = (k, id) => { const c = g.swarmCost(k, id); return !!c && (g.sw.minerals < c[0] || g.sw.gas < c[1]); };
-      const label = (k, id, st, max) => st === 'max' ? max : st === 'locked' ? S.tiers[g.swarmNeeds(k, id)].name.toUpperCase() : st === 'need' ? 'LOCKED' : null;
+      const label = (k, id, st, max) => {
+        if (k === 'chamber' && st === 'max') return g.sw.autoEvo ? 'AUTO' : 'MANUAL';
+        if (st === 'busy') { const r = g.researching(id); return Math.ceil(r.dur - r.t) + 's'; }
+        return st === 'max' ? max : st === 'locked' ? S.tiers[g.swarmNeeds(k, id)].name.toUpperCase() : st === 'need' ? 'LOCKED' : st === 'nochamber' ? 'CHAMBER' : st === 'full' ? 'BUSY' : null;
+      };
       const add = (k, id, name, ic, lvl, max) => items.push({ name, icon: ic, cost: () => price(k, id), poor: () => poor(k, id), state: () => g.swarmState(k, id),
         label: st => label(k, id, st, max || 'MAX'), level: lvl, buy: () => g.swarmBuy(k, id), swarm: true });
       add('drone', null, 'Drone', () => 'btn-unit-zerg-drone', () => String(g.sw.drones));
       add('extractor', null, 'Extractor', () => 'btn-building-zerg-extractor', () => String(g.sw.extractors));
       add('hatch', null, 'Hatchery', () => 'btn-building-zerg-hatchery', () => g.sw.hatcheries + '  ' + g.larvaRate().toFixed(1) + '/s');
       add('queen', null, 'Spawn Larva', () => 'btn-unit-zerg-queen', () => g.sw.queens ? 'LV ' + g.sw.queens : '');
+      add('chamber', null, 'Evolution Chamber', () => 'btn-building-zerg-evolutionchamber', () => g.sw.chambers ? String(g.sw.chambers) : '', 'AUTO');
       add('tier', null, 'Evolve Tier', () => S.tiers[Math.min(g.sw.tier + 1, S.tiers.length - 1)].icon, () => S.tiers[g.sw.tier].name.toUpperCase(), 'HIVE');
       for (const s of S.strains) add('strain', s.id, s.name, () => s.icon, null, 'BRED');
       for (const v of S.evo) add('evo', v.id, v.name, () => v.icons ? v.icons[Math.min(g.sw.evo[v.id] || 0, v.icons.length - 1)] : v.icon, v.costs ? () => (g.sw.evo[v.id] ? 'LV ' + g.sw.evo[v.id] : '') : null, 'DONE');
@@ -217,7 +231,7 @@ window.BS = window.BS || {};
         this.set('bcHp', Math.ceil(Math.max(0, bc.hp)) + ' / ' + bc.maxHp);
       }
       // Abilities.
-      if (g.swarm) this.refreshSwarmAbilities();
+      if (g.swarm) { this.refreshSwarmAbilities(); this.refreshBrood(); }
       else for (const x of this.abEls) {
         const id = x.a.id;
         const cd = id === 'stim' ? g.ab.stimCd : id === 'strike' ? g.ab.strikeCd : id === 'repair' ? g.ab.repairCd : g.ab.yamatoCd;
@@ -264,7 +278,9 @@ window.BS = window.BS || {};
       const g = this.g, s = g.shop;
       if (this.cache.shopOn !== !!s) { this.cache.shopOn = !!s; $('shop').classList.toggle('hidden', !s); $('shop').classList.remove('peek'); $('shopPeek').textContent = 'ARMOURY'; }
       if (!s) return;
+      if (s.zerg) return this.refreshZergShop(s);
       this.set('shopTitle', 'WAVE ' + s.wave + ' CLEARED');
+      this.set('shopHint', 'Troops, tanks, SCVs and turrets stay in the armoury.');
       this.set('shopBonus', [s.bonus ? '+' + s.bonus + ' CLEAR BONUS' : 'WAVE HELD', s.interest ? '+' + s.interest + ' INTEREST' : ''].filter(Boolean).join('   '));
       const m = Math.floor(g.minerals);
       this.set('shopMinerals', m + ' MINERALS');
@@ -286,6 +302,32 @@ window.BS = window.BS || {};
       $('shopReroll').classList.toggle('poor', m < rc);
     }
 
+    // Swarm mode: the hive's mutations between rounds.
+    refreshZergShop(s) {
+      const g = this.g, sw = g.sw;
+      this.set('shopTitle', 'WAVE ' + s.wave + '  //  MUTATIONS');
+      this.set('shopBonus', 'CHOOSE ONE');
+      this.set('shopHint', 'The hive cluster stays below.');
+      this.set('shopPeek', $('shop').classList.contains('peek') ? 'SHOP' : 'HIVE');
+      this.set('shopMinerals', Math.floor(sw.minerals) + ' MINERALS   ' + Math.floor(sw.gas) + ' VESPENE');
+      const key = 'z' + s.offers.map(o => o.id + (o.bought ? '!' : '')).join(',') + '|' + s.offers.map(o => { const c = g.zcardCost(g.zcard(o.id)); return sw.minerals >= c[0] && sw.gas >= c[1]; }).join('');
+      if (this.cache.shopCards !== key) {
+        this.cache.shopCards = key;
+        $('shopCards').innerHTML = s.offers.map((o, i) => {
+          const c = g.zcard(o.id), R = BS.RARITY[c.rarity], lv = g.zcardLevel(c.id), max = c.max || 99, cost = g.zcardCost(c);
+          const lvText = max > 1 && max < 99 ? 'LV ' + (o.bought ? lv : lv + 1) + ' / ' + max : '';
+          const poor = sw.minerals < cost[0] || sw.gas < cost[1];
+          const price = o.bought ? 'BOUGHT' : cost[0] || cost[1] ? cost[0] + (cost[1] ? ' + ' + cost[1] + 'g' : '') : 'FREE';
+          return '<button class="offer' + (o.bought ? ' bought' : poor ? ' poor' : '') + '" data-c="' + i + '" style="--rc:' + R.color + '"><img src="' + icon(c.icon) + '" alt="">' +
+            '<span class="rar">' + R.name + '</span><b>' + c.name.toUpperCase() + '</b><span class="lv">' + lvText + '</span>' +
+            '<p>' + c.desc + '</p><span class="price">' + price + '</span></button>';
+        }).join('') || '<p class="hint">Nothing left to offer.</p>';
+      }
+      const rc = g.zergRerollCost();
+      this.set('shopReroll', 'REROLL  ' + rc);
+      $('shopReroll').classList.toggle('poor', sw.minerals < rc);
+    }
+
     // Overlay canvas: floating text, enemy health bars, focus ring, threat markers; plus the radar.
     drawOverlay() {
       const g = this.g, r = this.r, c = this.ctx, dpr = r.dpr, W = r.width, H = r.height;
@@ -299,6 +341,20 @@ window.BS = window.BS || {};
         const w = 18 + e.radius * 14;
         c.fillStyle = 'rgba(0,0,0,0.55)'; c.fillRect(sx - w / 2 - 1, sy - 1, w + 2, 5);
         c.fillStyle = '#bd6bff'; c.fillRect(sx - w / 2, sy, w * Math.max(0, e.hp / e.maxHp), 3);
+      }
+      // Swarm mode: the base's taps. Hatcheries ready to inject glow green, evolution chambers show their research (amber
+      // ring: idle), the chrysalis pulses pink while Kerrigan can be summoned.
+      if (g.swarm && g.mode === 'lane') {
+        const D = BS.SWARM.base, pulse = 0.55 + 0.45 * Math.sin(performance.now() / 260);
+        const ring = (x, y, rx, color, frac) => {
+          const [sx, sy] = r.worldToScreen(x, y, BS.Terrain.height(x, y) + 0.1), k = rx * 9;
+          c.strokeStyle = color; c.lineWidth = 3; c.beginPath();
+          if (frac === undefined) c.ellipse(sx, sy, k, k * 0.5, 0, 0, Math.PI * 2); else c.ellipse(sx, sy, k, k * 0.5, 0, -Math.PI / 2, -Math.PI / 2 + frac * Math.PI * 2);
+          c.stroke();
+        };
+        g.hatchSpots().forEach(([x, y], i) => { if (g.injectReady(i)) ring(x, y, i ? 2.2 : 3, 'rgba(141,224,138,' + pulse + ')'); });
+        for (let i = 0; i < D.chamber.spots.length; i++) { if (!g.sw.chamberAt[i]) continue; const [x, y] = D.chamber.spots[i], rs = g.sw.research[i]; if (rs) ring(x, y, 1.8, '#5fe3ff', rs.t / rs.dur); else ring(x, y, 1.8, 'rgba(255,191,60,' + pulse + ')'); }
+        if (g.sw.base.parts.chrysalis && !g.swarmState('hero') && g.sw.minerals >= BS.SWARM.hero.cost[0] && g.sw.gas >= BS.SWARM.hero.cost[1]) ring(D.chrysalis[0], D.chrysalis[1], 1.6, 'rgba(255,122,217,' + pulse + ')');
       }
       // Swarm mode: where Kerrigan was sent.
       const he = g.swarm && g.heroAlive(), spot = he && (he.order || he.hold);

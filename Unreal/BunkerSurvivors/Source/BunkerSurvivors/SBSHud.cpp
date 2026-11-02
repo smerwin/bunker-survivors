@@ -539,6 +539,11 @@ void SBSHud::Construct(const FArguments& Args)
 				+ SVerticalBox::Slot().AutoHeight().Padding(10, 8, 10, 0)[ BuildCommandStrip() ]
 				+ SVerticalBox::Slot().AutoHeight().Padding(10, 8, 10, 0).HAlign(HAlign_Left)[ BuildSquadCard() ]
 			]
+			// Swarm mode: the brood button, top right under the command strip.
+			+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(0, 64, 10, 0)
+			[
+				SNew(SBox).Visibility_Lambda([this]() { ABSGame* Gm = Game(); return Gm && Gm->bSwarm ? EVisibility::Visible : EVisibility::Collapsed; })[ BuildBroodButton() ]
+			]
 			// Portrait bottom: abilities above the armoury strip.
 			+ SOverlay::Slot().VAlign(VAlign_Bottom)
 			[
@@ -562,6 +567,7 @@ void SBSHud::Construct(const FArguments& Args)
 		+ SOverlay::Slot()[ BuildModal(true) ]
 		+ SOverlay::Slot()[ BuildStartScreen() ]
 		+ SOverlay::Slot()[ BuildHyperion() ]
+		+ SOverlay::Slot()[ BuildZeratul() ]
 	];
 }
 
@@ -852,6 +858,73 @@ TSharedRef<SWidget> SBSHud::MakeAbility(int32 Index)
 	});
 }
 
+// Swarm mode: red light, green light. HOLDING (massed / cap) while the broods wait at the hive; ATTACK (massed) once
+// released with some still there; ATTACKING otherwise. A tap (or Space) toggles.
+TSharedRef<SWidget> SBSHud::BuildBroodButton()
+{
+	const FVector2D Size(96, 46);       // compact: it sits in the strip the squad card leaves free on the right
+	return PaintedButton(Size, [this, Size](const FGeometry& G, FSlateWindowElementList& Out, int32 L, bool bHover, bool bPress)
+	{
+		ABSGame* Gm = Game(); if (!Gm) return;
+		const int32 N = Gm->HeldCount();
+		const bool bHold = Gm->Sw.bHold;
+		const FLinearColor Acc = bHold ? C::Amber : N ? C::Red : C::Green;
+		const FVector2f S((float)Size.X, (float)Size.Y), P(0, bPress ? 1.f : 0.f);
+		D::RFill(Out, L, G, P, S, 12, bHover ? C::GlassHi : C::Glass);
+		D::RLine(Out, L + 1, G, P, S, 12, C::A(Acc, bHover ? 1.f : 0.6f + (N && !bHold ? 0.3f * FMath::Sin(NowS * 6) : 0.f)), 1.5f);
+		const FString Big = bHold ? TEXT("HOLDING") : N ? TEXT("ATTACK") : TEXT("ATTACKING");
+		const FString Small = bHold ? FString::Printf(TEXT("%d / %d MASSED"), N, Gm->HoldCap()) : N ? FString::Printf(TEXT("%d MASSED"), N) : FString(TEXT("TAP TO HOLD"));
+		D::Text(Out, L + 2, G, Big, D::Fit(Big, [](float Sz) { return D::Title(Sz); }, 12, 7, S.X - 10), P + FVector2f(S.X * 0.5f, 7), Acc, 0.5f);
+		D::Text(Out, L + 2, G, Small, D::Fit(Small, [](float Sz) { return D::Label(Sz); }, 7.5f, 5.5f, S.X - 8), P + FVector2f(S.X * 0.5f, 28), C::Muted, 0.5f);
+	}, [this]() { if (ABSGame* Gm = Game()) Gm->BroodHold(); });
+}
+
+// The Protoss campaign, in full: Zeratul on a loop, YTMND style. Over the live model (ABSGame::SetupZeratul): a turning,
+// breathing wallpaper of his portrait, huge outlined words cycling in rainbow colours, and EN TARO ADUN to leave.
+TSharedRef<SWidget> SBSHud::BuildZeratul()
+{
+	auto Vis = [this]() { return GM.IsValid() && GM->IsZeratul() ? EVisibility::SelfHitTestInvisible : EVisibility::Collapsed; };
+	auto Page = SNew(SBSPaint).Visibility(EVisibility::HitTestInvisible).Paint([this](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
+	{
+		const FVector2f S = FVector2f(G.GetLocalSize());
+		const float T = (float)FMath::Fmod(NowS, 10000.0);
+		// The wallpaper: his portrait tiled, turning and breathing.
+		if (const FSlateBrush* B = GM.IsValid() && GM->GetAssets() ? GM->GetAssets()->IconBrush(TEXT("btn-unit-protoss-zeratul")) : nullptr)
+		{
+			const float K = 1 + 0.25f * FMath::Sin(T * 1.7f), Tile = 96 * K, R = S.Size() * 0.5f;
+			// The whole wallpaper turns about the middle of the screen.
+			const FGeometry Wall = G.MakeChild(S, FSlateLayoutTransform(), FSlateRenderTransform(FQuat2D(T * 0.6f)), FVector2f(0.5f, 0.5f));
+			for (float X = S.X * 0.5f - R; X < S.X * 0.5f + R; X += Tile)
+				for (float Y = S.Y * 0.5f - R; Y < S.Y * 0.5f + R; Y += Tile)
+					FSlateDrawElement::MakeBox(Out, L, Wall.ToPaintGeometry(FVector2f(Tile, Tile), FSlateLayoutTransform(FVector2f(X, Y))), B, ESlateDrawEffect::None, FLinearColor(1, 1, 1, 0.16f));
+		}
+		static const TCHAR* Words[] = { TEXT("ZERATUL"), TEXT("YOU HAVE COME FAR"), TEXT("THE PROTOSS CAMPAIGN"), TEXT("THIS IS IT"), TEXT("ADUN TORO"), TEXT("HE BLINKED"),
+			TEXT("BEHIND YOU"), TEXT("VOID SHADES"), TEXT("NO SUPPLY DEPOT"), TEXT("ZERATUL") };
+		const FString Word = Words[FMath::FloorToInt(T / 2.2f) % UE_ARRAY_COUNT(Words)];
+		const float Pulse = 1 + 0.12f * FMath::Sin(T * 9);
+		for (int32 k = 0; k < 2; k++)
+		{
+			const FString Txt = k == 0 ? Word : Word == TEXT("ZERATUL") ? FString(TEXT("EN TARO ZERATUL")) : FString(TEXT("ZERATUL"));
+			const float Y = S.Y * (k == 0 ? 0.18f : 0.84f);
+			FSlateFontInfo F = D::Fit(Txt, [](float Sz) { return D::Title(Sz); }, S.Y / 7, 8, S.X * 0.86f / Pulse);
+			F.Size *= Pulse;
+			F.OutlineSettings.OutlineSize = FMath::Max(3, FMath::RoundToInt(F.Size / 9));
+			F.OutlineSettings.OutlineColor = FLinearColor::Black;
+			const FLinearColor Col = FLinearColor::MakeFromHSV8((uint8)FMath::Fmod(T * 85 + k * 128, 256.f), 255, 255);
+			const FVector2f Ts = D::Measure(Txt, F);
+			const FGeometry Child = G.MakeChild(Ts, FSlateLayoutTransform(FVector2f(S.X * 0.5f - Ts.X * 0.5f, Y - Ts.Y * 0.5f)), FSlateRenderTransform(FQuat2D(FMath::Sin(T * 3) * 0.05f)), FVector2f(0.5f, 0.5f));
+			FSlateDrawElement::MakeText(Out, L + 2, Child.ToPaintGeometry(), Txt, F, ESlateDrawEffect::None, Col);
+		}
+		return L + 4;
+	});
+	return SNew(SOverlay).Visibility_Lambda(Vis)
+		+ SOverlay::Slot()[ Page ]
+		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom).Padding(0, 0, 0, 24)
+		[
+			MakeButton(TEXT("EN TARO ADUN"), true, [this]() { if (GM.IsValid()) GM->Restart(false); }, 200)
+		];
+}
+
 // Swarm mode: Kerrigan's button first (summon her; once she is out, send her back to advancing with the swarm), then her
 // spells.
 void SBSHud::HeroButton()
@@ -1035,7 +1108,10 @@ static const TArray<FBSArmItem>& ArmItems()
 			I.Tag = [Kind, Id, MaxLabel](ABSGame* G)
 			{
 				const FString St = G->SwarmState(Kind, Id);
-				return St == TEXT("max") ? MaxLabel : St == TEXT("locked") ? FString(BSSwarm::Tiers()[G->SwarmNeeds(Kind, Id)].Name).ToUpper() : FString(TEXT("LOCKED"));
+				if (Kind == TEXT("chamber") && St == TEXT("max")) return FString(G->Sw.bAutoEvo ? TEXT("AUTO") : TEXT("MANUAL"));   // (a tap switches)
+				if (St == TEXT("busy")) { const auto* R = G->Researching(Id); return FString::Printf(TEXT("%ds"), R ? FMath::CeilToInt(R->Dur - R->T) : 0); }
+				return St == TEXT("max") ? MaxLabel : St == TEXT("locked") ? FString(BSSwarm::Tiers()[G->SwarmNeeds(Kind, Id)].Name).ToUpper()
+					: St == TEXT("nochamber") ? FString(TEXT("CHAMBER")) : St == TEXT("full") ? FString(TEXT("BUSY")) : FString(TEXT("LOCKED"));
 			};
 			I.Level = [](ABSGame*) { return -1; };
 			I.Buy = [Kind, Id](ABSGame* G) { G->SwarmBuy(Kind, Id); };
@@ -1046,6 +1122,7 @@ static const TArray<FBSArmItem>& ArmItems()
 		Swarm(TEXT("extractor"), FString(), TEXT("Extractor"), Fixed(TEXT("btn-building-zerg-extractor")), [](ABSGame* G) { return FString::FromInt(G->Sw.Extractors); }, TEXT("MAX"));
 		Swarm(TEXT("hatch"), FString(), TEXT("Hatchery"), Fixed(TEXT("btn-building-zerg-hatchery")), [](ABSGame* G) { return FString::Printf(TEXT("%d  %.1f/s"), G->Sw.Hatcheries, G->LarvaRate()); }, TEXT("MAX"));
 		Swarm(TEXT("queen"), FString(), TEXT("Spawn Larva"), Fixed(TEXT("btn-unit-zerg-queen")), [](ABSGame* G) { return G->Sw.Queens ? FString::Printf(TEXT("LV %d"), G->Sw.Queens) : FString(); }, TEXT("MAX"));
+		Swarm(TEXT("chamber"), FString(), TEXT("Evolution Chamber"), Fixed(TEXT("btn-building-zerg-evolutionchamber")), [](ABSGame* G) { return G->Sw.Chambers ? FString::FromInt(G->Sw.Chambers) : FString(); }, TEXT("AUTO"));
 		Swarm(TEXT("tier"), FString(), TEXT("Evolve Tier"), [](ABSGame* G) { const auto& T = BSSwarm::Tiers(); return FString(T[FMath::Min(G->Sw.Tier + 1, T.Num() - 1)].Icon); },
 			[](ABSGame* G) { return FString(BSSwarm::Tiers()[G->Sw.Tier].Name).ToUpper(); }, TEXT("HIVE"));
 		for (const BSSwarm::FStrain& S : BSSwarm::Strains()) Swarm(TEXT("strain"), S.Id, S.Name, Fixed(S.Icon), [](ABSGame*) { return FString(); }, TEXT("BRED"));
@@ -1323,17 +1400,40 @@ TSharedRef<SWidget> SBSHud::BuildStartScreen()
 		});
 	};
 
-	auto Cards = [ModeCard, SwarmCard, HyperionCard]()
+	// The Protoss campaign: hidden until the swarm has razed the bunker (-BSZeratul shows it).
+	auto ProtossCard = [this]()
+	{
+		const FVector2D Size(340, 96);
+		return SNew(SBox).Visibility_Lambda([]() { return BSMeta::ProtossOpen() || FParse::Param(FCommandLine::Get(), TEXT("BSZeratul")) ? EVisibility::Visible : EVisibility::Collapsed; })
+		[
+			PaintedButton(Size, [this, Size](const FGeometry& G, FSlateWindowElementList& Out, int32 L, bool bHover, bool bPress)
+			{
+				const FVector2f S((float)Size.X, (float)Size.Y), P(0, bPress ? 1.f : 0.f);
+				const FLinearColor Acc(0.35f, 0.95f, 0.55f);
+				D::Panel(Out, L, G, P, S, 16, bHover ? C::GlassHi : C::Glass);
+				D::RLine(Out, L + 1, G, P, S, 16, C::A(Acc, bHover ? 0.9f : 0.3f), bHover ? 1.5f : 1.f);
+				D::RFill(Out, L + 1, G, P + FVector2f(0, 22), FVector2f(3, S.Y - 44), 1.5f, Acc);
+				UBSAssets* As = GM.IsValid() ? GM->GetAssets() : nullptr;
+				if (const FSlateBrush* Ib = As ? As->IconBrush(TEXT("btn-unit-protoss-zeratul")) : nullptr) D::Image(Out, L + 2, G, Ib, P + FVector2f(18, 18), FVector2f(60, 60));
+				D::RLine(Out, L + 3, G, P + FVector2f(17, 17), FVector2f(62, 62), 10, C::A(C::Ink, 0.2f));
+				D::Text(Out, L + 2, G, TEXT("THE PROTOSS CAMPAIGN"), D::Fit(TEXT("THE PROTOSS CAMPAIGN"), [](float Sz) { return D::Title(Sz); }, 14.5f, 9, S.X - 108), P + FVector2f(94, 20), C::Ink);
+				D::Text(Out, L + 2, G, TEXT("The whole campaign. Every last second of it."), D::Body(10), P + FVector2f(94, 48), C::Muted);
+			}, [this]() { if (GM.IsValid()) GM->StartZeratul(); })
+		];
+	};
+
+	auto Cards = [ModeCard, SwarmCard, ProtossCard, HyperionCard]()
 	{
 		return SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 12)[ ModeCard(false) ]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 12)[ ModeCard(true) ]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 12)[ ProtossCard() ]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 12)[ SwarmCard() ]
 			+ SVerticalBox::Slot().AutoHeight()[ HyperionCard() ];
 	};
 
 	return SNew(SOverlay)
-		.Visibility_Lambda([this]() { return Game() ? EVisibility::Collapsed : EVisibility::Visible; })
+		.Visibility_Lambda([this]() { return Game() || (GM.IsValid() && GM->IsZeratul()) ? EVisibility::Collapsed : EVisibility::Visible; })
 		+ SOverlay::Slot()[ Backdrop ]
 		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom).Padding(0, 0, 0, 80)
 		[ SNew(SBox).Visibility_Lambda([this]() { return Portrait() ? EVisibility::Visible : EVisibility::Collapsed; })[ Cards() ] ]
@@ -1356,7 +1456,7 @@ TSharedRef<SWidget> SBSHud::BuildModal(bool bGameOver)
 		const FLinearColor EndCol = Gm->bWon ? C::Green : C::Red;     // evacuated by the Hyperion, or overrun
 		D::RLine(Out, L + 1, G, FVector2f(0, 0), S, 18, bGameOver ? C::A(EndCol, 0.5f) : C::Hair);
 		D::Rect(Out, L + 1, G, FVector2f(S.X * 0.5f - 24, 0), FVector2f(48, 2), bGameOver ? EndCol : C::Cyan);
-		const TCHAR* EndTitle = Gm->bSwarm ? (Gm->bWon ? TEXT("BUNKER RAZED") : TEXT("THEY GOT AWAY")) : Gm->bWon ? TEXT("EVACUATED") : TEXT("BUNKER LOST");
+		const TCHAR* EndTitle = Gm->bSwarm ? (Gm->bWon ? TEXT("BUNKER RAZED") : Gm->bHiveDown ? TEXT("HIVE DESTROYED") : TEXT("THEY GOT AWAY")) : Gm->bWon ? TEXT("EVACUATED") : TEXT("BUNKER LOST");
 		D::EText(Out, L + 2, G, bGameOver ? EndTitle : TEXT("PAUSED"), D::Fit(TEXT("BUNKER LOST"), [](float Sz) { return D::Title(Sz); }, 28, 14, S.X - 40), FVector2f(S.X * 0.5f, 18), bGameOver ? EndCol : C::Ink, 0.5f);
 		const int64 Score = bGameOver ? Gm->FinalScore : FMath::RoundToInt(Gm->Score + Gm->Kills * 10 + Gm->Wave * 250);
 		const TArray<TPair<FString, FString>> Stats = {
@@ -1386,6 +1486,7 @@ TSharedRef<SWidget> SBSHud::BuildModal(bool bGameOver)
 			for (const FBSCardDef* Cd : Mr.Unlocked) U += (U.IsEmpty() ? TEXT("NEW CARD: ") : TEXT(", ")) + BSMeta::CardName(*Cd).ToUpper();
 			if (!U.IsEmpty()) D::Text(Out, L + 2, G, U, D::Fit(U, [](float Sz) { return D::Label(Sz); }, 9, 6, S.X - 24), FVector2f(S.X * 0.5f, Y0 + 50), C::Amber, 0.5f);
 			if (Mr.bSwarm) D::Text(Out, L + 2, G, TEXT("NEW MODE: THE SWARM"), D::Label(9), FVector2f(S.X * 0.5f, Y0 + (U.IsEmpty() ? 50 : 68)), C::Amber, 0.5f);
+			if (Mr.bProtoss) D::Text(Out, L + 2, G, TEXT("NEW: THE PROTOSS CAMPAIGN"), D::Label(9), FVector2f(S.X * 0.5f, Y0 + (U.IsEmpty() ? 50 : 68)), C::Violet, 0.5f);
 		}
 		return L + 8;
 	});
@@ -1429,25 +1530,42 @@ TSharedRef<SWidget> SBSHud::MakeOffer(int32 Index, bool bRow)
 	return PaintedButton(Size, [this, Index, bRow](const FGeometry& G, FSlateWindowElementList& Out, int32 L, bool bHover, bool bPress)
 	{
 		ABSGame* Gm = Game(); if (!Gm || !Gm->Shop.Offers.IsValidIndex(Index)) return;
-		const FBSCardDef* Cd = BSDefs::FindCard(Gm->Shop.Offers[Index]);
-		if (!Cd) return;
-		const FBSRarity& R = BSDefs::FindRarity(Cd->Rarity);
 		const bool bBought = Gm->Shop.Bought[Index];
-		const int32 Lv = Gm->CardLevel(*Cd), Max = Gm->CardMax(*Cd), Cost = Gm->CardCost(*Cd);
-		const bool bPoor = !bBought && Gm->Minerals < Cost;
+		// The Terrans' shop cards, or (swarm mode) the hive's mutations.
+		FString RarityKey, Name, Desc, LvText, Price, IconName;
+		bool bPoor = false;
+		if (Gm->Shop.bZerg)
+		{
+			const BSSwarm::FZCard* Zc = BSSwarm::FindCard(Gm->Shop.Offers[Index]);
+			if (!Zc) return;
+			const int32 Lv = Gm->ZCardLevel(Zc->Id), Max = Zc->Max ? Zc->Max : 99;
+			const BSSwarm::FCost Cost = Gm->ZCardCost(*Zc);
+			RarityKey = Zc->Rarity; Name = FString(Zc->Name).ToUpper(); Desc = Zc->Desc; IconName = Zc->Icon;
+			LvText = Max > 1 && Max < 99 ? FString::Printf(TEXT("LV %d / %d"), bBought ? Lv : Lv + 1, Max) : FString();
+			bPoor = !bBought && (Gm->Sw.Minerals < Cost.M || Gm->Sw.Gas < Cost.G);
+			Price = bBought ? FString(TEXT("BOUGHT")) : Cost.M || Cost.G ? (Cost.G ? FString::Printf(TEXT("%d + %dg"), Cost.M, Cost.G) : FString::FromInt(Cost.M)) : FString(TEXT("FREE"));
+		}
+		else
+		{
+			const FBSCardDef* Cd = BSDefs::FindCard(Gm->Shop.Offers[Index]);
+			if (!Cd) return;
+			const int32 Lv = Gm->CardLevel(*Cd), Max = Gm->CardMax(*Cd), Cost = Gm->CardCost(*Cd);
+			RarityKey = Cd->Rarity; Name = BSMeta::CardName(*Cd).ToUpper(); Desc = Gm->CardDesc(*Cd); IconName = Gm->CardIcon(*Cd);
+			LvText = Max <= 1 ? FString() : Cd->Grow ? FString::Printf(TEXT("LV %d"), bBought ? Lv : Lv + 1) : FString::Printf(TEXT("LV %d / %d"), bBought ? Lv : Lv + 1, Max);
+			bPoor = !bBought && Gm->Minerals < Cost;
+			Price = bBought ? FString(TEXT("BOUGHT")) : FString::FromInt(Cost);
+		}
+		const FBSRarity& R = BSDefs::FindRarity(RarityKey);
 		const float Fade = bBought ? 0.45f : 1.f;
 		const FVector2f S = FVector2f(G.GetLocalSize()), P(0, bPress && !bBought ? 1.f : 0.f);
 		D::RFill(Out, L, G, P, S, 14, C::A(bHover && !bBought ? C::GlassHi : C::Glass, 0.95f));
 		D::RLine(Out, L + 1, G, P, S, 14, C::A(R.Color, (bHover && !bBought ? 1.f : 0.75f) * Fade), 1.5f);
-		const FString Name = BSMeta::CardName(*Cd).ToUpper(), Desc = Gm->CardDesc(*Cd);
-		const FString LvText = Max <= 1 ? FString() : Cd->Grow ? FString::Printf(TEXT("LV %d"), bBought ? Lv : Lv + 1) : FString::Printf(TEXT("LV %d / %d"), bBought ? Lv : Lv + 1, Max);
-		const FString Price = bBought ? FString(TEXT("BOUGHT")) : FString::FromInt(Cost);
 		const FLinearColor PriceCol = bBought ? C::Green : bPoor ? C::Red : C::Cyan;
 		const FLinearColor Tint = FLinearColor(Fade, Fade, Fade);
 		if (bRow)
 		{
 			const float Is = 44, RightW = 76, Tx = 64, TextW = S.X - Tx - RightW;
-			D::Image(Out, L + 2, G, Gm->GetAssets()->IconBrush(Gm->CardIcon(*Cd)), P + FVector2f(10, 9), FVector2f(Is, Is), Tint);
+			D::Image(Out, L + 2, G, Gm->GetAssets()->IconBrush(IconName), P + FVector2f(10, 9), FVector2f(Is, Is), Tint);
 			D::RLine(Out, L + 3, G, P + FVector2f(9, 8), FVector2f(Is + 2, Is + 2), 7, C::A(C::Ink, 0.2f));
 			D::Text(Out, L + 2, G, R.Name, D::Label(7.5f), P + FVector2f(Tx, 7), C::A(R.Color, Fade));
 			D::Text(Out, L + 2, G, Name, D::Fit(Name, [](float Sz) { return D::Label(Sz); }, 11, 7.5f, TextW), P + FVector2f(Tx, 19), C::A(C::Ink, Fade));
@@ -1459,7 +1577,7 @@ TSharedRef<SWidget> SBSHud::MakeOffer(int32 Index, bool bRow)
 		{
 			const float Is = 52;
 			const FVector2f Ip(P.X + (S.X - Is) * 0.5f, P.Y + 12);
-			D::Image(Out, L + 2, G, Gm->GetAssets()->IconBrush(Gm->CardIcon(*Cd)), Ip, FVector2f(Is, Is), Tint);
+			D::Image(Out, L + 2, G, Gm->GetAssets()->IconBrush(IconName), Ip, FVector2f(Is, Is), Tint);
 			D::RLine(Out, L + 3, G, Ip - FVector2f(1, 1), FVector2f(Is + 2, Is + 2), 8, C::A(C::Ink, 0.2f));
 			D::Text(Out, L + 2, G, R.Name, D::Label(7.5f), FVector2f(S.X * 0.5f, P.Y + 70), C::A(R.Color, Fade), 0.5f);
 			D::Text(Out, L + 2, G, Name, D::Fit(Name, [](float Sz) { return D::Label(Sz); }, 10.5f, 7, S.X - 14), FVector2f(S.X * 0.5f, P.Y + 84), C::A(C::Ink, Fade), 0.5f);
@@ -1497,10 +1615,11 @@ TSharedRef<SWidget> SBSHud::BuildShop()
 	{
 		ABSGame* Gm = Game(); if (!Gm) return L;
 		const FVector2f S = FVector2f(G.GetLocalSize());
-		const FString T = FString::Printf(TEXT("WAVE %d CLEARED"), Gm->Shop.Wave);
+		const bool bZerg = Gm->Shop.bZerg;          // swarm mode: the hive's mutations
+		const FString T = bZerg ? FString::Printf(TEXT("WAVE %d  //  MUTATIONS"), Gm->Shop.Wave) : FString::Printf(TEXT("WAVE %d CLEARED"), Gm->Shop.Wave);
 		D::EText(Out, L, G, T, D::Fit(T, [](float Sz) { return D::Title(Sz); }, 22, 13, S.X), FVector2f(S.X * 0.5f, 2), C::Ink, 0.5f);
-		FString B = Gm->Shop.Bonus ? FString::Printf(TEXT("+%d CLEAR BONUS"), Gm->Shop.Bonus) : FString(TEXT("WAVE HELD"));
-		if (Gm->Shop.Interest) B += FString::Printf(TEXT("   +%d INTEREST"), Gm->Shop.Interest);
+		FString B = bZerg ? FString(TEXT("CHOOSE ONE")) : Gm->Shop.Bonus ? FString::Printf(TEXT("+%d CLEAR BONUS"), Gm->Shop.Bonus) : FString(TEXT("WAVE HELD"));
+		if (!bZerg && Gm->Shop.Interest) B += FString::Printf(TEXT("   +%d INTEREST"), Gm->Shop.Interest);
 		D::Text(Out, L, G, B, D::Label(9), FVector2f(S.X * 0.5f, 46), C::Amber, 0.5f);
 		return L + 2;
 	}); };
@@ -1510,20 +1629,29 @@ TSharedRef<SWidget> SBSHud::BuildShop()
 		return PaintedButton(FVector2D(W, 44), [this, W](const FGeometry& G, FSlateWindowElementList& Out, int32 L, bool bHover, bool bPress)
 		{
 			ABSGame* Gm = Game(); if (!Gm) return;
-			const int32 Cost = Gm->RerollCost();
+			const int32 Cost = Gm->Shop.bZerg ? Gm->ZergRerollCost() : Gm->RerollCost();
+			const float Have = Gm->Shop.bZerg ? Gm->Sw.Minerals : Gm->Minerals;
 			const FVector2f S(W, 42), P(0, bPress ? 1.f : 0.f);
 			D::RFill(Out, L, G, P, S, 12, bHover ? C::GlassHi : C::A(C::Glass, 0.6f));
 			D::RLine(Out, L + 1, G, P, S, 12, C::A(C::Cyan, bHover ? 0.9f : 0.45f));
 			const FString T = Cost ? FString::Printf(TEXT("REROLL  %d"), Cost) : FString(TEXT("FREE REROLL"));
-			D::Text(Out, L + 2, G, T, D::Label(12), FVector2f(S.X * 0.5f, P.Y + 13), Gm->Minerals < Cost ? C::Red : C::Ink, 0.5f);
+			D::Text(Out, L + 2, G, T, D::Label(12), FVector2f(S.X * 0.5f, P.Y + 13), Have < Cost ? C::Red : C::Ink, 0.5f);
 		}, [this]() { if (ABSGame* Gm = Game()) Gm->Reroll(); });
 	};
 	auto NextWave = [this](float W) { return MakeButton(TEXT("NEXT WAVE"), true, [this]() { if (ABSGame* Gm = Game()) Gm->CloseShop(); }, W); };
 	auto Peek = [this](const TCHAR* Label, float W) { return MakeButton(Label, false, [this]() { bShopPeek = !bShopPeek; }, W); };
-
-	auto Hint = [](){ return SNew(SBSPaint).Size(FVector2D(330, 16)).Paint([](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
+	// (Swarm mode: the hive cluster.)
+	auto PeekHive = [this, Peek](float W)
 	{
-		D::Text(Out, L, G, TEXT("Troops, tanks, SCVs and turrets stay in the armoury."), D::Body(9), FVector2f(G.GetLocalSize().X * 0.5f, 2), C::Muted, 0.5f);
+		return SNew(SOverlay)
+			+ SOverlay::Slot()[ SNew(SBox).Visibility_Lambda([this]() { ABSGame* Gm = Game(); return Gm && Gm->Shop.bZerg ? EVisibility::Collapsed : EVisibility::Visible; })[ Peek(TEXT("ARMOURY"), W) ] ]
+			+ SOverlay::Slot()[ SNew(SBox).Visibility_Lambda([this]() { ABSGame* Gm = Game(); return Gm && Gm->Shop.bZerg ? EVisibility::Visible : EVisibility::Collapsed; })[ Peek(TEXT("HIVE"), W) ] ];
+	};
+
+	auto Hint = [this](){ return SNew(SBSPaint).Size(FVector2D(330, 16)).Paint([this](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
+	{
+		ABSGame* Gm = Game();
+		D::Text(Out, L, G, Gm && Gm->Shop.bZerg ? TEXT("The hive cluster stays below.") : TEXT("Troops, tanks, SCVs and turrets stay in the armoury."), D::Body(9), FVector2f(G.GetLocalSize().X * 0.5f, 2), C::Muted, 0.5f);
 		return L + 2;
 	}); };
 	auto Backdrop = [](float Radius, float Alpha)
@@ -1561,7 +1689,8 @@ TSharedRef<SWidget> SBSHud::BuildShop()
 	auto Minerals = SNew(SBSPaint).Size(FVector2D(300, 18)).Paint([this](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
 	{
 		ABSGame* Gm = Game(); if (!Gm) return L;
-		D::Text(Out, L, G, FString::Printf(TEXT("%d MINERALS"), FMath::FloorToInt(Gm->Minerals)), D::Label(11), FVector2f(G.GetLocalSize().X * 0.5f, 1), C::Cyan, 0.5f);
+		const FString M = Gm->Shop.bZerg ? FString::Printf(TEXT("%d MINERALS   %d VESPENE"), FMath::FloorToInt(Gm->Sw.Minerals), FMath::FloorToInt(Gm->Sw.Gas)) : FString::Printf(TEXT("%d MINERALS"), FMath::FloorToInt(Gm->Minerals));
+		D::Text(Out, L, G, M, D::Label(11), FVector2f(G.GetLocalSize().X * 0.5f, 1), C::Cyan, 0.5f);
 		return L + 1;
 	});
 	auto Full = SNew(SOverlay)
@@ -1575,7 +1704,7 @@ TSharedRef<SWidget> SBSHud::BuildShop()
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0, 10, 0, 0)
 			[
 				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[ Peek(TEXT("ARMOURY"), 100) ]
+				+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[ PeekHive(100) ]
 				+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[ Reroll(120) ]
 				+ SHorizontalBox::Slot().AutoWidth().Padding(4, 0)[ NextWave(120) ]
 			]
@@ -1879,6 +2008,39 @@ int32 SBSHud::PaintWorld(const FGeometry& G, FSlateWindowElementList& Out, int32
 		}
 	}
 
+	// Swarm mode: the base's taps. Hatcheries ready to inject glow green, evolution chambers show their research (amber ring:
+	// idle), the chrysalis pulses pink while Kerrigan can be summoned.
+	if (Gm->bSwarm && Gm->Mode == EBSMode::Lane)
+	{
+		const float Pulse = 0.55f + 0.45f * FMath::Sin(NowS * 3.85);
+		auto Ring = [&](const FVector2D& At, float R, const FLinearColor& Col, float Frac)
+		{
+			const float Gz = BSTerrain::Height(At.X, At.Y) + 0.1f;
+			const int32 Seg = 32, N = FMath::Max(2, FMath::CeilToInt(Seg * Frac));
+			D::FPts Pts;
+			for (int32 k = 0; k <= N; k++)
+			{
+				const float A = -PI / 2 + 2 * PI * Frac * k / N;
+				FVector2D P;
+				if (!WorldToLocal(BSSpace::ToWorld(At.X + FMath::Cos(A) * R, At.Y + FMath::Sin(A) * R, Gz), P)) return;
+				Pts.Add(FVector2f(P));
+			}
+			D::Lines(Out, L + 3, G, Pts, Col, 3.f, Frac >= 1);
+		};
+		const TArray<ABSGame::FHatch> Hs = Gm->HatchSpots();
+		for (int32 i = 0; i < Hs.Num(); i++) if (Gm->InjectReady(i)) Ring(Hs[i].P, i ? 2.2f : 3.f, FLinearColor(0.55f, 0.88f, 0.54f, Pulse), 1);
+		for (int32 i = 0; i < BSSwarm::ChamberMax; i++)
+		{
+			if (!Gm->Sw.ChamberAt[i]) continue;
+			const auto& R = Gm->Sw.Research[i];
+			if (!R.Id.IsEmpty()) Ring(BSSwarm::ChamberSpots[i], 1.8f, FLinearColor(0.37f, 0.89f, 1.f), FMath::Clamp(R.T / FMath::Max(0.01f, R.Dur), 0.02f, 1.f));
+			else Ring(BSSwarm::ChamberSpots[i], 1.8f, FLinearColor(1.f, 0.75f, 0.24f, Pulse), 1);
+		}
+		BSSwarm::FCost Hc;
+		if (Gm->Sw.Parts.Contains(TEXT("chrysalis")) && Gm->SwarmState(TEXT("hero"), FString()).IsEmpty() && Gm->SwarmCost(TEXT("hero"), FString(), Hc) && Gm->Sw.Minerals >= Hc.M && Gm->Sw.Gas >= Hc.G)
+			Ring(BSSwarm::Chrysalis, 1.6f, FLinearColor(1.f, 0.48f, 0.85f, Pulse), 1);
+	}
+
 	// Swarm mode: where Kerrigan was sent (bright while she is on her way, dim while she holds it).
 	if (const FBSEnemy* He = Gm->bSwarm ? Gm->HeroAlive() : nullptr; He && (He->bOrder || He->bHold))
 	{
@@ -1996,11 +2158,23 @@ void SBSHud::Tap(const FGeometry& Geo, const FVector2D& ScreenPos)
 	const FVector2D Px = Geo.AbsoluteToLocal(ScreenPos) * Geo.Scale;
 	FVector Origin, Dir;
 	if (!PC->DeprojectScreenPositionToWorld(Px.X, Px.Y, Origin, Dir) || FMath::Abs(Dir.Z) < 1e-4) return;
-	const float T = -Origin.Z / Dir.Z;
+	// Onto the terrain (cliffs, plateaus and the high open ground in the north), not just the plane z = 0: a few
+	// refinements of the height under the hit.
+	float T = -Origin.Z / Dir.Z;
+	for (int32 k = 0; k < 4 && T >= 0; k++)
+	{
+		const FVector P = Origin + Dir * T;
+		T = (BSTerrain::Height(P.Y / BSSpace::UnitsPerMetre, P.X / BSSpace::UnitsPerMetre) * BSSpace::UnitsPerMetre - Origin.Z) / Dir.Z;
+	}
 	if (T < 0) return;
 	const FVector Hit = Origin + Dir * T;
-	// Swarm mode: a tap sends Kerrigan there.
-	if (Gm->bSwarm) { Gm->HeroOrder(Hit.Y / BSSpace::UnitsPerMetre, Hit.X / BSSpace::UnitsPerMetre); return; }
+	// Swarm mode: a tap on the base injects, evolves or summons; anywhere else it sends Kerrigan there.
+	if (Gm->bSwarm)
+	{
+		const float Sx = Hit.Y / BSSpace::UnitsPerMetre, Sy = Hit.X / BSSpace::UnitsPerMetre;
+		if (!Gm->BaseTap(Sx, Sy)) Gm->HeroOrder(Sx, Sy);
+		return;
+	}
 	if (Gm->FocusAt(Hit.Y / BSSpace::UnitsPerMetre, Hit.X / BSSpace::UnitsPerMetre)) Gm->Toast(TEXT("Focus fire"));
 }
 
@@ -2146,6 +2320,7 @@ FReply SBSHud::OnKeyDown(const FGeometry& Geo, const FKeyEvent& Key)
 	if (Gm->bSwarm)
 	{
 		if (K == EKeys::K) { HeroButton(); return FReply::Handled(); }
+		if (K == EKeys::SpaceBar && !Gm->Shop.bOpen) { Gm->BroodHold(); return FReply::Handled(); }
 		for (const BSSwarm::FAbility& A : BSSwarm::Abilities()) if (K == FKey(A.Key)) { Gm->HeroCast(A.Id); return FReply::Handled(); }
 		if (K == EKeys::S || K == EKeys::A || K == EKeys::R) return FReply::Handled();
 	}
