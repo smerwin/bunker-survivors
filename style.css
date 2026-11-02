@@ -30,6 +30,12 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #topbar .stat:last-child { flex: 1 1 0; overflow: hidden; }
 #topbar .stat b { display: block; font: 500 clamp(14px, 4.3vw, 24px)/1 var(--wide); white-space: nowrap; letter-spacing: 0.02em; margin-top: 3px; }
 #topbar .sep { width: 1px; height: 30px; background: var(--hair); flex: none; }
+#hud .swarmOnly { display: none; }
+#hud.swarm .stat.swarmOnly { display: flex; }
+#hud.swarm .sep.swarmOnly { display: block; }
+.vespene { width: 14px; height: 18px; border-radius: 4px 4px 7px 7px; background: linear-gradient(160deg, #b6ff9a, #3fc46a 55%, #1d7a3c); flex: none; }
+.mode.swarmMode { border-color: rgba(255, 122, 217, 0.55); }
+.mode.swarmMode.locked { opacity: 0.55; filter: grayscale(0.7); }
 .crystal { width: 13px; height: 20px; background: linear-gradient(160deg, #a6f2ff, #3db6e6 55%, #1c6f9c); clip-path: polygon(50% 0, 100% 30%, 82% 100%, 18% 100%, 0 30%); flex: none; }
 #wavering { width: 34px; height: 34px; flex: none; }
 #wavering circle { fill: none; stroke-width: 3; }
@@ -277,6 +283,15 @@ button { font: inherit; color: inherit; cursor: pointer; }
 #start #status { color: var(--green); opacity: 0.8; }
 
 /* Narrow phones: tighter command bar; the stim state shows on the troop portraits instead of a label. */
+@media (max-width: 560px) {
+  /* Swarm mode on phones: the vespene stat takes the place of the wave and kills; Kerrigan's seven buttons shrink to fit. */
+  #hud.swarm .phoneSwarmHide { display: none !important; }
+  #hud.swarm #abilities { gap: 4px; }
+  #hud.swarm .ability { width: 50px; }
+  #hud.swarm .ability .tile { width: 44px; height: 44px; border-radius: 10px; }
+  #hud.swarm .ability .cd { font-size: 16px; }
+  #hud.swarm .ability b { font-size: 8.5px; letter-spacing: 0.02em; }
+}
 @media (max-width: 420px) {
   #topbar { gap: 8px; padding-left: 10px; padding-right: 88px; }
   #topbar .sep { display: none; }

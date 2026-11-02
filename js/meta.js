@@ -11,7 +11,7 @@ window.BS = window.BS || {};
   function load() {
     if (st) return st;
     try { st = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch (e) { st = null; }
-    st = Object.assign({ gas: 0, perks: {}, buys: {}, best: 0 }, st || {});
+    st = Object.assign({ gas: 0, perks: {}, buys: {}, best: 0, swarm: false }, st || {});
     return st;
   }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (e) { /* private mode */ } }
@@ -49,12 +49,17 @@ window.BS = window.BS || {};
       s.buys[id] = (s.buys[id] || 0) + 1; save();
       return was.filter(c => Meta.unlocked(c));
     },
-    // The run is over (evacuated: the Hyperion took you off): bank its vespene and best wave. Returns { gas, unlocked: [cards] }.
+    // Swarm mode: open once a run has escaped Kerrigan on the Hyperion.
+    swarmOpen: () => load().swarm,
+    // The run is over (evacuated: the Hyperion took you off; in swarm mode, the bunker razed): bank its vespene and best
+    // wave. Returns { gas, unlocked: [cards], swarm: true when this run opened swarm mode }.
     endRun(mode, wavesCleared, evacuated) {
       const s = load(), G = BS.META.gas, was = BS.CARDS.filter(c => !Meta.unlocked(c));
       const gas = Math.round((wavesCleared * G.perWave + Math.floor(wavesCleared / 10) * G.milestone + (evacuated ? G.evac : 0)) * (mode === 'arena' ? G.arena : 1));
-      s.gas += gas; s.best = Math.max(s.best, wavesCleared); save();
-      return { gas, unlocked: was.filter(c => Meta.unlocked(c)) };
+      const opened = evacuated && mode !== 'swarm' && !s.swarm;
+      if (opened) s.swarm = true;
+      s.gas += gas; if (mode !== 'swarm') s.best = Math.max(s.best, wavesCleared); save();
+      return { gas, unlocked: was.filter(c => Meta.unlocked(c)), swarm: opened };
     },
   };
 

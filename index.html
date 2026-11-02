@@ -17,12 +17,14 @@
   <div id="hud" class="hidden">
     <div id="topbar" class="glass">
       <div class="stat"><i class="crystal"></i><div><small>MINERALS</small><b id="minerals">0</b></div></div>
-      <div class="sep"></div>
-      <div class="stat"><div><small>WAVE</small><b id="wave" class="amber">00</b></div><svg id="wavering" viewBox="0 0 36 36"><circle class="track" cx="18" cy="18" r="15"/><circle id="waveArc" class="arc" cx="18" cy="18" r="15"/><text id="waveSecs" x="18" y="22">0</text></svg></div>
+      <div class="sep swarmOnly"></div>
+      <div class="stat swarmOnly"><i class="vespene"></i><div><small>VESPENE</small><b id="gasT">0</b></div></div>
+      <div class="sep phoneSwarmHide"></div>
+      <div class="stat phoneSwarmHide"><div><small>WAVE</small><b id="wave" class="amber">00</b></div><svg id="wavering" viewBox="0 0 36 36"><circle class="track" cx="18" cy="18" r="15"/><circle id="waveArc" class="arc" cx="18" cy="18" r="15"/><text id="waveSecs" x="18" y="22">0</text></svg></div>
       <div class="sep"></div>
       <div class="stat"><div><small>HYPERION</small><b id="evacT">30:00</b></div></div>
-      <div class="sep"></div>
-      <div class="stat"><div><small>KILLS</small><b id="kills">0</b></div></div>
+      <div class="sep phoneSwarmHide"></div>
+      <div class="stat phoneSwarmHide"><div><small>KILLS</small><b id="kills">0</b></div></div>
     </div>
     <div id="sysbtns">
       <button id="mute" class="glass sys" aria-label="Sound"></button>
@@ -44,7 +46,7 @@
     <div id="banner"></div>
     <div id="bottom">
       <div id="abilities"></div>
-      <div id="armouryHead"><small>ARMOURY</small><span class="rule"></span><button id="armouryToggle" aria-label="Toggle armoury">&#8964;</button></div>
+      <div id="armouryHead"><small id="armouryLabel">ARMOURY</small><span class="rule"></span><button id="armouryToggle" aria-label="Toggle armoury">&#8964;</button></div>
       <div id="armoury"></div>
     </div>
     <div id="shop" class="modal hidden"><div class="card glass">
@@ -63,6 +65,7 @@
       <button id="resumeRun" class="mode glass resume hidden"><img src="icon/btn-building-terran-bunker.png" alt=""><span><b>RESUME RUN</b><small id="resumeLine"></small></span></button>
       <button class="mode glass" data-mode="lane"><img src="icon/btn-unit-terran-marine.png" alt=""><span><b>LANE DEFENCE</b><small>Hold the lane for 30 minutes as the Swarm pours down from the north.</small></span><em id="tagLane"></em></button>
       <button class="mode glass arena" data-mode="arena"><img src="icon/btn-unit-zerg-ultralisk.png" alt=""><span><b>360 ARENA</b><small>Waves from every side for 30 minutes. Bigger, faster, deadlier.</small></span><em id="tagArena"></em></button>
+      <button id="swarmMode" class="mode glass swarmMode locked"><img src="icon/btn-unit-zerg-kerriganinfested.png" alt=""><span><b>THE SWARM</b><small id="swarmLine">Escape Kerrigan on the Hyperion to unlock.</small></span></button>
     </div>
     <div class="foot"><button id="hyperionBtn" class="glass"><img src="icon/btn-unit-terran-battlecruiser.png" alt=""><span>HYPERION<small id="gasLine"></small></span></button><p id="best"></p><p id="status">CONNECTING TO STARCRAFT II...</p><p id="progress"></p><button id="relink" class="hidden">LINK STARCRAFT II FOLDER AGAIN</button></div>
   </div>
@@ -94,6 +97,7 @@
 <script src="js/fx.js"></script>
 <script src="js/render.js"></script>
 <script src="js/game.js"></script>
+<script src="js/swarm.js"></script>
 <script src="js/hud.js"></script>
 <script src="js/link.js"></script>
 <script src="js/main.js"></script>
