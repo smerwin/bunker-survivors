@@ -5,7 +5,7 @@ window.BS = window.BS || {};
   'use strict';
 
   const $ = id => document.getElementById(id);
-  let renderer, game = null, hud = null, mode = 'lane', attract = [], last = performance.now(), savedShop = null;
+  let renderer, game = null, hud = null, mode = 'lane', swarm = false, attract = [], last = performance.now(), savedShop = null;
   const touch = matchMedia('(pointer: coarse)').matches;
   // Phones get a smaller cap on live zerg and a lower render resolution, so big swarms stay smooth.
   BS.perfScale = touch ? 0.65 : 1;
@@ -29,6 +29,11 @@ window.BS = window.BS || {};
     } catch (e) { /* private mode */ }
     $(isPortrait() ? 'tagLane' : 'tagArena').textContent = isPortrait() ? 'BEST ON PHONE' : 'BEST ON DESKTOP';
     document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { Checkpoint.clear(); start(b.dataset.mode); }));
+    // The Swarm: open once a run has escaped Kerrigan (?swarm=1 opens it for playtesting).
+    const q0 = new URLSearchParams(location.search), swarmOpen = BS.Meta.swarmOpen() || q0.get('swarm') === '1';
+    $('swarmMode').classList.toggle('locked', !swarmOpen);
+    if (swarmOpen) $('swarmLine').textContent = 'Play the zerg: feed the hives, summon Kerrigan and raze the bunker before the Hyperion gets them out.';
+    $('swarmMode').onclick = () => { if (swarmOpen) start('lane', null, true); };
     // A run the browser threw away while it was in the background (or lost to a dropped WebGL context): carry on.
     const cp = Checkpoint.load();
     if (cp) {
@@ -50,7 +55,7 @@ window.BS = window.BS || {};
     });
     requestAnimationFrame(loop);
     const m = new URLSearchParams(location.search).get('mode');
-    if (m === 'lane' || m === 'arena') { Checkpoint.clear(); start(m); }
+    if (m === 'lane' || m === 'arena') { Checkpoint.clear(); start(m, null, q0.get('swarm') === '1'); }
     else if (cp && (document.wasDiscarded || takeFlag('bs.autoResume'))) ready.then(() => resumeRun(cp));
   }
   // Resuming puts a whole army in place at once: load every model it needs first, so nothing pops in half-built.
@@ -128,9 +133,9 @@ window.BS = window.BS || {};
     for (const [k, x, y] of zerg) put(k, x, y, Math.atan2(-y, -x) + (Math.random() - 0.5) * 0.6, /^stand/i, 3);
   }
 
-  function start(m, resume) {
+  function start(m, resume, sw) {
     if (game) return;
-    mode = m;
+    mode = m; swarm = !!sw;
     BS.audio.unlock();
     for (const h of attract) h.release();
     attract = [];
@@ -138,7 +143,7 @@ window.BS = window.BS || {};
     $('hud').classList.remove('hidden');
     renderer.setGroundShape(mode);
     renderer.setCameraMode(mode);
-    game = new BS.Game(renderer, { mode });
+    game = new BS.Game(renderer, { mode, swarm });
     hud = new BS.Hud(game, renderer);
     window.game = game;                     // for poking at from the browser console
     if (resume) game.restore(resume);
@@ -161,7 +166,7 @@ window.BS = window.BS || {};
     $('pause').onclick = togglePause;
     $('resume').onclick = togglePause;
     $('mute').onclick = () => BS.audio.setMuted(!BS.audio.muted);
-    $('redeploy').onclick = () => { Checkpoint.clear(); location.search = '?mode=' + mode; };
+    $('redeploy').onclick = () => { Checkpoint.clear(); location.search = '?mode=' + mode + (swarm ? '&swarm=1' : ''); };
     document.querySelectorAll('.menuBtn').forEach(b => { b.onclick = () => { if (game.over) Checkpoint.clear(); location.search = ''; }; });
     document.addEventListener('visibilitychange', () => { if (document.hidden && game && !game.over) { setPaused(true); Checkpoint.save(game); } });
     window.addEventListener('pagehide', () => { if (game && !game.over) Checkpoint.save(game); });
@@ -191,14 +196,14 @@ window.BS = window.BS || {};
 
   function showGameOver() {
     $('overModal').classList.remove('hidden');
-    $('overTitle').textContent = game.won ? 'EVACUATED' : 'BUNKER LOST';
+    $('overTitle').textContent = game.swarm ? (game.won ? 'BUNKER RAZED' : 'THEY GOT AWAY') : game.won ? 'EVACUATED' : 'BUNKER LOST';
     document.querySelector('#overModal .card').classList.toggle('won', !!game.won);
-    $('overStats').innerHTML = [['WAVE', game.wave], ['KILLS', game.kills], ['SCORE', game.finalScore]].map(([k, v]) => '<div><small>' + k + '</small><b>' + Number(v).toLocaleString('en-US') + '</b></div>').join('');
+    $('overStats').innerHTML = [['WAVE', game.wave], ['KILLS', game.swarm ? game.sw.kills : game.kills], ['SCORE', game.finalScore]].map(([k, v]) => '<div><small>' + k + '</small><b>' + Number(v).toLocaleString('en-US') + '</b></div>').join('');
     const b = $('overBest');
     b.textContent = game.newBest ? 'NEW BEST' : 'BEST ' + Number(game.best).toLocaleString('en-US');
     b.classList.toggle('new', !!game.newBest);
     const mr = game.metaResult;
-    $('overMeta').innerHTML = mr ? '+' + mr.gas + ' VESPENE FOR THE HYPERION' + mr.unlocked.map(c => '<span>NEW CARD: ' + BS.Meta.cardName(c).toUpperCase() + '</span>').join('') : '';
+    $('overMeta').innerHTML = mr ? '+' + mr.gas + ' VESPENE FOR THE HYPERION' + mr.unlocked.map(c => '<span>NEW CARD: ' + BS.Meta.cardName(c).toUpperCase() + '</span>').join('') + (mr.swarm ? '<span>NEW MODE: THE SWARM</span>' : '') : '';
   }
 
   // ---- Input ------------------------------------------------------------------------------------------
@@ -254,7 +259,12 @@ window.BS = window.BS || {};
       if (dragging && moved <= 6 && performance.now() - downT < 350) {
         const now = performance.now();
         if (now - lastTap < 300) { if (renderer.cam.fp) renderer.setBunkerView(true); else renderer.setCameraMode(mode); lastTap = 0; }
-        else { lastTap = now; const w = renderer.screenToGround(ev.clientX, ev.clientY); if (w && game.focusAt(w[0], w[1])) game.toast('Focus fire!'); }
+        else {
+          lastTap = now; const w = renderer.screenToGround(ev.clientX, ev.clientY);
+          // Swarm mode: a tap sends Kerrigan there.
+          if (w && game.swarm) game.heroOrder(w[0], w[1]);
+          else if (w && game.focusAt(w[0], w[1])) game.toast('Focus fire!');
+        }
       }
       dragging = false; pinch = 0;
     };
@@ -271,6 +281,10 @@ window.BS = window.BS || {};
       }
       if (k === 'p' || k === 'escape') togglePause();
       else if (k === 'v') hud.toggleView();
+      // Swarm mode: K summons Kerrigan (or sends her back to advancing), Q W E R T Y her spells.
+      else if (game.swarm && k === 'k') hud.heroButton();
+      else if (game.swarm && BS.SWARM.abilities.some(a => a.key.toLowerCase() === k)) game.heroCast(BS.SWARM.abilities.find(a => a.key.toLowerCase() === k).id);
+      else if (game.swarm && 'sary'.includes(k)) { /* the Terrans' abilities */ }
       else if (k === 's') game.useStim(); else if (k === 'a') game.callAirStrike(); else if (k === 'r') game.emergencyRepair(); else if (k === 'y') game.useYamato();
       else if (k === '+' || k === '=') renderer.zoomBy(0.85); else if (k === '-') renderer.zoomBy(1.18);
       else if (k === 'arrowup') renderer.panBy(0, 40); else if (k === 'arrowdown') renderer.panBy(0, -40);

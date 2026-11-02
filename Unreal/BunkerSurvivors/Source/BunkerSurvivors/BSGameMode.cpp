@@ -39,10 +39,13 @@ void ABSGameMode::StartPlay()
 	FParse::Value(Cmd, TEXT("BSShotStart="), ShotStart);     // e.g. -BSShotStart=200 -BSShotEvery=0.1 for animation frames
 	NextShot = ShotEvery > 0 ? FMath::Max(ShotStart, ShotEvery) : 0;
 
+	// Redeploy reopens the level with ?mode=lane (and ?swarm=1 for a swarm run); playtests start with -BSAutoStart=lane
+	// (with -BSSwarm: a swarm run, which -BSSwarm also opens on the start screen).
 	FString Auto = UGameplayStatics::ParseOption(OptionsString, TEXT("mode"));
-	if (Auto.IsEmpty()) FParse::Value(Cmd, TEXT("BSAutoStart="), Auto);
-	if (Auto == TEXT("lane")) StartGame(EBSMode::Lane);
-	else if (Auto == TEXT("arena")) StartGame(EBSMode::Arena);
+	bool bSwarmRun = UGameplayStatics::ParseOption(OptionsString, TEXT("swarm")) == TEXT("1");
+	if (Auto.IsEmpty()) { FParse::Value(Cmd, TEXT("BSAutoStart="), Auto); bSwarmRun = FParse::Param(Cmd, TEXT("BSSwarm")); }
+	if (Auto == TEXT("lane")) StartGame(EBSMode::Lane, bSwarmRun);
+	else if (Auto == TEXT("arena")) StartGame(EBSMode::Arena, bSwarmRun);
 	else
 	{
 		// Start screen: a staged, slowly orbiting scene behind the menu.
@@ -54,15 +57,18 @@ void ABSGameMode::StartPlay()
 	}
 }
 
-void ABSGameMode::StartGame(EBSMode Mode)
+void ABSGameMode::StartGame(EBSMode Mode, bool bSwarm)
 {
 	if (Game && Game->bStarted) return;
 	if (Game) { Game->Destroy(); Game = nullptr; }
 	if (APlayerController* PC = GetWorld()->GetFirstPlayerController())
 		if (ABSCameraPawn* Cam = Cast<ABSCameraPawn>(PC->GetPawn())) Cam->SetAttract(false);
 	Game = GetWorld()->SpawnActor<ABSGame>();
-	Game->Init(Assets, Mode);
+	Game->Init(Assets, Mode, bSwarm);
 	const TCHAR* Cmd = FCommandLine::Get();
+	// Playtesting swarm mode: -BSSwarmGrant=5000 hands the swarm that many minerals and vespene to start with.
+	float Grant = 0;
+	if (bSwarm && FParse::Value(Cmd, TEXT("BSSwarmGrant="), Grant)) { Game->Sw.Minerals += Grant; Game->Sw.Gas += Grant; }
 	FParse::Value(Cmd, TEXT("BSSpeed="), Game->TimeScale);
 	float Minerals = 0;
 	if (FParse::Value(Cmd, TEXT("BSMinerals="), Minerals)) Game->Minerals = Minerals;
@@ -134,7 +140,7 @@ void ABSGameMode::StartGame(EBSMode Mode)
 void ABSGameMode::Restart(bool bSameMode)
 {
 	FString Opt;
-	if (bSameMode && Game) Opt = Game->Mode == EBSMode::Arena ? TEXT("mode=arena") : TEXT("mode=lane");
+	if (bSameMode && Game) Opt = FString(Game->Mode == EBSMode::Arena ? TEXT("mode=arena") : TEXT("mode=lane")) + (Game->bSwarm ? TEXT("?swarm=1") : TEXT(""));
 	UGameplayStatics::OpenLevel(this, FName(*GetWorld()->GetMapName().Replace(*GetWorld()->StreamingLevelsPrefix, TEXT(""))), true, Opt);
 }
 

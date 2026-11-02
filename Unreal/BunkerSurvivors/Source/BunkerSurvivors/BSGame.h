@@ -159,7 +159,8 @@ struct FBSBanshee
 
 struct FBSTarget
 {
-	enum EKind : uint8 { None, Bunker, Tank, Scv, Trooper, Structure, Mech, Bc, Air, Reaper, Ghost } Kind = None;
+	// Point: a spot on the ground (swarm mode: where the player sent Kerrigan); never valid, never attacked.
+	enum EKind : uint8 { None, Bunker, Tank, Scv, Trooper, Structure, Mech, Bc, Air, Reaper, Ghost, Point } Kind = None;
 	TWeakPtr<FBSTank> TankRef;
 	TWeakPtr<FBSScv> ScvRef;
 	TWeakPtr<FBSTrooper> TrooperRef;
@@ -228,6 +229,12 @@ struct FBSEnemy
 	float IrrUntil = 0;               // under a science vessel's Irradiate until then (its haze: IrrActor)
 	ABSModelActor* IrrActor = nullptr;
 	float Ring = 0; bool bRing = false, bRingDone = false;     // zerglings: their spot round the bunker (SurroundGoal)
+	// Swarm mode: the player's own Kerrigan (bHero). Order: the spot she was sent to (attack-move); Hold: where she stands
+	// guard once there; Power scales her spells; Queued: the spell the player asked for (cast as soon as she is free).
+	bool bHero = false, bOrder = false, bHold = false;
+	FVector2D Order = FVector2D::ZeroVector, Hold = FVector2D::ZeroVector;
+	float Power = 1;
+	FString Queued;
 	bool Alive() const { return Hp > 0; }
 };
 
@@ -303,7 +310,7 @@ public:
 	ABSGame();
 	virtual void Tick(float Dt) override;
 
-	void Init(UBSAssets* InAssets, EBSMode InMode);
+	void Init(UBSAssets* InAssets, EBSMode InMode, bool bInSwarm = false);
 	void SetupAttract();                 // staged scene behind the start screen (no simulation)
 	virtual void Destroyed() override;
 	void BuildWorld(EBSMode InMode);
@@ -383,6 +390,40 @@ public:
 
 	// State read by the HUD and camera.
 	EBSMode Mode = EBSMode::Lane;
+	// Swarm mode (BSSwarm.cpp): the player is the zerg, the Terrans play themselves.
+	bool bSwarm = false;
+	// Hyperion perks help the Terrans only when the player is one.
+	int32 Perk(const FString& Id) const { return bSwarm ? 0 : BSMeta::Perk(Id); }
+	// The swarm's economy and army (BSSwarm.cpp). Strains: bred; Evo: evolution levels; Larva: the banked brood budget,
+	// hatched every BroodT s; Hero: the player's Kerrigan while she is out; HeroAt: when she can be summoned again.
+	struct FSwarmState
+	{
+		float Minerals = BSSwarm::Minerals, Gas = BSSwarm::Gas, Larva = 0, BroodT = BSSwarm::Brood, HeroAt = 0, Think = 0;
+		int32 Drones = 0, Extractors = 0, Hatcheries = 1, Queens = 0, Tier = 0, Kills = 0;
+		TSet<FString> Strains;
+		TMap<FString, int32> Evo;
+		TSharedPtr<FBSEnemy> Hero;
+		const BSSwarm::FStrain* Next = nullptr;
+	} Sw;
+	float SwarmIncome() const { return BSSwarm::Income + BSSwarm::DroneIncome * Sw.Drones; }
+	float SwarmGasIncome() const { return BSSwarm::ExtractorGas * Sw.Extractors; }
+	float LarvaRate() const { return BSSwarm::HatchLarva * Sw.Hatcheries * (1 + BSSwarm::QueenBoost * Sw.Queens); }
+	// What the hive cluster can buy (Kind: drone, extractor, hatch, queen, tier, hero, strain, evo; Id for the last two).
+	// SwarmCost: false at its max. SwarmNeeds: the hive tier it needs. SwarmState: "" (buyable), "max", "locked" (the
+	// tier), "need" (the strain it improves is not bred yet), "wait" (Kerrigan, until the hive recovers from her fall).
+	bool SwarmCost(const FString& Kind, const FString& Id, BSSwarm::FCost& Out) const;
+	int32 SwarmNeeds(const FString& Kind, const FString& Id) const;
+	FString SwarmState(const FString& Kind, const FString& Id) const;
+	bool SwarmBuy(const FString& Kind, const FString& Id);
+	int32 EvoLevel(const FString& Id) const { return Sw.Evo.FindRef(Id); }
+	// The player's Kerrigan: alive (null otherwise); a tap on the ground sends her there (attack-move, then hold and guard);
+	// HeroAdvance: back to advancing with the swarm on her own; HeroCast queues a spell (BSSwarm::Abilities); HeroCd: its
+	// cooldown left.
+	FBSEnemy* HeroAlive() const { return Sw.Hero.IsValid() && Sw.Hero->Hp > 0 ? Sw.Hero.Get() : nullptr; }
+	bool HeroOrder(float X, float Y);
+	bool HeroAdvance();
+	bool HeroCast(const FString& Id);
+	float HeroCd(const FString& Id) const;
 	bool bStarted = false, bPaused = false, bOver = false, bHard = false;
 	bool bBunkerView = false;            // the camera is inside the bunker: skip corpses on top of the eye
 	bool NearEye(const FVector& P) const { return bBunkerView && P.X * P.X + P.Y * P.Y < 2.4f * 2.4f && P.Z < 3.f; }
@@ -463,7 +504,8 @@ private:
 	void PlayEnemyAnim(FBSEnemy& E, const FString& Kind);
 	float EnemyCd(const FBSEnemy& E) const { return E.Def->Cd / (bHard ? 1.05f : 1.f) / (E.FuryUntil > Time ? 1.5f : 1.f); }
 	void BuildTargets();
-	void DamageDefender(const FBSTarget& T, float Dmg);
+	void DamageDefender(const FBSTarget& T, float Dmg);       // in swarm mode, a kill pays the swarm (BSSwarm bounty)
+	void HurtDefender(const FBSTarget& T, float Dmg);
 	void HurtEnemy(const TSharedPtr<FBSEnemy>& E, float Dmg, bool bSplash = false);   // bSplash: blasts and flame, which dark swarm does not stop
 	void KillEnemy(const TSharedPtr<FBSEnemy>& E, bool bSuicide);
 	void BanelingBlast(const FBSEnemy& E, bool bFromDeath);
@@ -607,6 +649,26 @@ private:
 	// The finale.
 	void StartFinale();
 	void DropPods(int32 N, float T0, float Every);
+	// Swarm mode (BSSwarm.cpp).
+	void InitSwarm();
+	void UpdateSwarm(float Dt);
+	const BSSwarm::FStrain* SwarmPick() const;
+	void HatchBrood();
+	void SwarmRound(int32 W);
+	const FBSZergDef* SwarmDef(const FString& Type);
+	void SpawnHero();
+	void HeroTarget(FBSEnemy& E, float Dt);
+	bool HeroKit(FBSEnemy& E, float Dt);
+	void TerranThink();                    // the Terran commander, every half second (also the "balanced" bot)
+	void TerranShop();                     // its shop between rounds
+	void ZergBot();                        // -BSAutoPlay in swarm mode: a zerg player working down a build order
+	int32 ZergStep = 0;
+	// Kerrigan's spells (the finale's AI and the player's): Id on the best target about her (T: leap's target). False, with
+	// nothing spent, when there is nothing worth casting it at; bManual (the player said so): one target will do. Damage
+	// scales with E.Power.
+	bool KerriganAbility(FBSEnemy& E, const FString& Id, const FBSTarget* T = nullptr, bool bManual = false);
+	bool KerriganUnstick(FBSEnemy& E, float Dt);
+	void KerriganLeapTo(FBSEnemy& E, float Tx, float Ty, bool bStrike);
 	void UpdatePods(float Dt);
 	bool UpdateKerrigan(const TSharedPtr<FBSEnemy>& E, const FBSTarget& T, float Dt);   // true while she leaps or channels
 	bool KerriganKit(FBSEnemy& E, float Dt);                                            // true when she casts something

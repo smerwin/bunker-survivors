@@ -18,7 +18,7 @@ public:
 	virtual void StartPlay() override;
 	virtual void Tick(float Dt) override;
 
-	void StartGame(EBSMode Mode);
+	void StartGame(EBSMode Mode, bool bSwarm = false);   // bSwarm: swarm mode (the player is the zerg)
 	void Restart(bool bSameMode);
 	ABSGame* GetGame() const { return Game; }
 	UBSAssets* GetAssets() const { return Assets; }

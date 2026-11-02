@@ -40,21 +40,26 @@ window.BS = window.BS || {};
             a: [['Ref_Weapon 01', [-1.51, 4.73, -0.69]], ['Ref_Weapon 04', [1.5, 4.67, -0.62]], ['Ref_Weapon 02', [-1.24, 5.0, -1.21]], ['Ref_Weapon 03', [1.25, 4.92, -1.17]]] },
   };
 
+  // Kerrigan's kit as the finale's AI casts it, in order of preference: [spell, its cooldown field].
+  const KERRIGAN_KIT = [['wave', 'waveCd'], ['grip', 'gripCd'], ['kinetic', 'kineticCd'], ['chain', 'chainCd'], ['mutation', 'mutateCd'], ['banelings', 'banesCd']];
+
   class Game {
     constructor(renderer, opts) {
       this.r = renderer; this.fx = renderer.fx;
       this.mode = opts.mode || 'lane';
+      // Swarm mode (swarm.js): the player is the zerg, the Terrans play themselves.
+      this.swarm = !!opts.swarm;
       this.hard = this.mode === 'arena';
       this.time = 0; this.acc = 0; this.step = 1 / 60;
       this.paused = false; this.over = false; this.started = false;
-      this.minerals = 150 + 50 * BS.Meta.perk('minerals'); this.income = 2; this.kills = 0; this.score = 0;
+      this.minerals = 150 + 50 * this.perk('minerals'); this.income = 2; this.kills = 0; this.score = 0;
       this.shop = null; this.lingerT = 0; this.wavesCleared = 0;
       this.cards = {};                                              // passive shop cards: levels
       this.wave = 0; this.waveTimer = 8; this.waveLen = 30; this.spawnQueue = []; this.spawnTimer = 0;
       this.enemies = []; this.corpses = []; this.projectiles = []; this.floaters = []; this.walkers = []; this.drops = []; this.flashes = [];
       this.focus = null; this.focusUntil = 0; this.shake = 0;
       this.toasts = []; this.waveBanner = null;
-      const hull = T().bunker.hp + 50 * BS.Meta.perk('hull');
+      const hull = T().bunker.hp + 50 * this.perk('hull');
       this.bunker = { x: 0, y: 0, yaw: Math.PI / 2, hp: hull, maxHp: hull, armor: T().bunker.armor, slots: T().bunker.slots, units: [], handle: null, dead: false, flash: 0 };
       this.tanks = []; this.scvs = []; this.banshees = []; this.squad = []; this.structures = []; this.squadDeaths = []; this.boundTeam = 0; this.boundT = 0; this.nextTeam = 0;
       this.up = { stim: 0, weapons: 0, vehicle: 0, vplate: 0, ship: 0, splate: 0, neosteel: 0, plating: 0, hisec: 0, medivac: 0, rails: 0 };
@@ -74,7 +79,10 @@ window.BS = window.BS || {};
       this.bunker.handle.play(/^stand$/i, true);
       this.addScv(true);
       this.initCreep();
+      if (this.swarm) this.initSwarm();
     }
+    // Hyperion perks help the Terrans only when the player is one.
+    perk(id) { return this.swarm ? 0 : BS.Meta.perk(id); }
 
     layout() {
       if (this.mode === 'lane') {
@@ -130,7 +138,7 @@ window.BS = window.BS || {};
     // Three marines double-time it into the bunker while the first wave gathers.
     beginOpening() {
       for (let i = 0; i < 3; i++) this.addWalker('marine', -3.3 + i * 0.25, 3.0 + i * 0.9, 0.5 + i * 0.45);
-      if (BS.Meta.perk('firebat')) this.addWalker('firebat', 3.2, 3.4, 1.2);       // Veteran Fireteam
+      if (this.perk('firebat')) this.addWalker('firebat', 3.2, 3.4, 1.2);       // Veteran Fireteam
     }
     addWalker(type, x, y, delay) {
       const w = { def: BS.INFANTRY[type], type, x, y, delay: delay || 0, walking: false, handle: this.r.spawn(type, x, y, 0, -Math.PI / 4).setTeam(1) };
@@ -651,7 +659,7 @@ window.BS = window.BS || {};
       const interest = Math.min(50 * this.cardLevel('spoils'), Math.floor(this.minerals * 0.1 * this.cardLevel('spoils')));
       this.minerals += interest;
       this.wavesCleared = this.wave;
-      this.shop = { wave: this.wave, bonus, interest, rerolls: 0, free: BS.Meta.perk('reroll'), offers: [] };
+      this.shop = { wave: this.wave, bonus, interest, rerolls: 0, free: this.perk('reroll'), offers: [] };
       this.shop.offers = this.rollOffers();
       this.waveBanner = { text: 'WAVE ' + this.wave + ' CLEARED', t: this.time };
     }
@@ -690,12 +698,12 @@ window.BS = window.BS || {};
       return this.up[m[1]] >= +m[2];
     }
     cardOpen(c) {
-      return BS.Meta.unlocked(c) && (!c.lane || this.mode === 'lane') && this.cardLevel(c) < this.cardMax(c) && this.cardReq(c) && this.wave >= BS.RARITY[c.rarity].from;
+      return (this.swarm || BS.Meta.unlocked(c)) && (!c.lane || this.mode === 'lane') && this.cardLevel(c) < this.cardMax(c) && this.cardReq(c) && this.wave >= BS.RARITY[c.rarity].from;
     }
     // Weighted by rarity (Field Intelligence shifts weight from common cards to the rarer ones); no repeats in one offer,
     // and the first card is always research while there is any left.
     rollOffers() {
-      const luck = BS.Meta.perk('luck'), n = BS.SHOP.offers + BS.Meta.perk('offer');
+      const luck = this.perk('luck'), n = BS.SHOP.offers + this.perk('offer');
       const wt = c => BS.RARITY[c.rarity].weight * (c.rarity === 'common' ? 1 - 0.15 * luck : 1 + 0.3 * luck) * (c.up ? BS.SHOP.research : 1);
       const pool = BS.CARDS.filter(c => this.cardOpen(c)), out = [];
       while (out.length < n && pool.length) {
@@ -729,7 +737,7 @@ window.BS = window.BS || {};
       this.minerals -= cost;
       o.bought = true;
       this.applyCard(c);
-      for (const u of BS.Meta.recordBuy(c.id)) this.toast('New card unlocked: ' + this.cardName(u));
+      if (!this.swarm) for (const u of BS.Meta.recordBuy(c.id)) this.toast('New card unlocked: ' + this.cardName(u));
       return true;
     }
     applyCard(c) {
@@ -783,7 +791,7 @@ window.BS = window.BS || {};
     // from it: the same wave, minerals, cards, research, troops, tanks, turrets, mechs and battlecruiser, back in the
     // shop. Only what was on the field at that moment survives: the zerg, creep and forward base start over.
     snapshot() {
-      if (!this.shop || this.over) return null;
+      if (!this.shop || this.over || this.swarm) return null;
       const alive = l => l.filter(o => !o.dead);
       return { v: 1, mode: this.mode, savedAt: Date.now(),
         time: this.time, wave: this.wave, wavesCleared: this.wavesCleared, minerals: this.minerals, income: this.income, kills: this.kills, score: this.score,
@@ -1498,10 +1506,11 @@ window.BS = window.BS || {};
       const w = this.wave;
       const mule = 30 * this.cardLevel('mule');
       if (mule) { this.minerals += mule; this.floater(0, -3, 2, '+' + mule + ' MULE', '#7fd8ff'); }
-      const finale = !this.finale && this.time >= BS.EVAC.finale;
+      const finale = !this.swarm && !this.finale && this.time >= BS.EVAC.finale;
       const push = finale || !!this.finale;                  // from the finale to the evac every wave is the swarm's last push
       const WV = BS.WAVES, quad = x => 20 + 8 * x + 0.3 * x * x;
       this.waveLen = Math.round(WV.len[0] + (WV.len[1] - WV.len[0]) * clamp((w - 1) / (WV.lenBy - 1), 0, 1));
+      if (this.swarm) return this.swarmRound(w);
       let budget = (w <= WV.knee ? quad(w) : quad(WV.knee) + WV.perWave[0] * (w - WV.knee) + WV.perWave[1] * (w - WV.knee) * (w - WV.knee)) * (this.hard ? 1.15 : 1) * (push ? BS.FINALE.budget : 1);
       // Late game: every high-tech card unlocked brings stranger zerg, and more of them. Guardians come for the mechs;
       // scourge and devourers only when there is Terran air to hunt. The last push throws in the whole late roster.
@@ -1584,11 +1593,6 @@ window.BS = window.BS || {};
         this.toast(ms.toast);
         this.shake = 0.6;
       }
-      // The zerglings' evolution, announced as it happens.
-      const E = BS.LING_EVO, lv = E.plating.waves.indexOf(w) + 1;
-      if (w === E.boost.wave) this.toast('Zerglings evolve: Metabolic Boost');
-      if (lv) this.toast('Zerglings evolve: Melee Attacks and Carapace level ' + lv);
-      if (w === E.adrenal.wave) this.toast('Zerglings evolve: Adrenal Glands');
       if (finale) this.startFinale();
     }
 
@@ -1653,16 +1657,17 @@ window.BS = window.BS || {};
       }
     }
     // Kerrigan: Leaping Strike onto a defender out of reach, Apocalypse on the thickest knot of defenders. Returns true
-    // while she is in the air or channelling (her usual walking and fighting wait).
+    // while she is in the air or channelling (her usual walking and fighting wait). The player's own Kerrigan (swarm
+    // mode, e.hero) casts only when told to: see Game.heroKit in swarm.js.
     updateKerrigan(e, t, dt) {
-      const F = BS.FINALE, L = F.leap, A = F.apocalypse;
+      const F = BS.FINALE, L = F.leap, A = F.apocalypse, P = e.power || 1;
       e.leapCd -= dt; e.apocCd -= dt;
       if (e.blast && this.time >= e.blast.at) {
         const b = e.blast;
         e.blast = null;
         this.fx.stop(b.fx);
         this.fx.play('apocalypse', b.x, b.y, BS.Terrain.height(b.x, b.y), 0, 1.2);
-        for (const tg of this.tgs) if (dist(b.x, b.y, tg.x, tg.y) - tg.radius <= A.radius) this.damageDefender(tg, A.dmg * (tg.structure ? F.structure : 1));
+        for (const tg of this.tgs) if (dist(b.x, b.y, tg.x, tg.y) - tg.radius <= A.radius) this.damageDefender(tg, A.dmg * P * (tg.structure ? F.structure : 1));
         BS.audio.play('explosion', { vol: 0.9 });
         this.shake = Math.min(1, this.shake + 0.5);
       }
@@ -1673,7 +1678,7 @@ window.BS = window.BS || {};
         if (k >= 1) {
           e.leap = null; e.z = BS.Terrain.height(e.x, e.y); e.anim = '';
           this.fx.play('leapImpact', e.x, e.y, e.z, e.yaw, 1.4);
-          for (const tg of this.tgs) if (dist(e.x, e.y, tg.x, tg.y) - tg.radius <= L.radius) this.damageDefender(tg, L.dmg * (tg.structure ? F.structure : 1));
+          for (const tg of this.tgs) if (dist(e.x, e.y, tg.x, tg.y) - tg.radius <= L.radius) this.damageDefender(tg, L.dmg * P * (tg.structure ? F.structure : 1));
           BS.audio.play('ultraliskAttack', { vol: 0.6 });
           this.shake = Math.min(1, this.shake + 0.4);
         }
@@ -1681,40 +1686,19 @@ window.BS = window.BS || {};
       }
       if (e.castUntil > this.time) return true;
       if (e.anim === 'spell') e.anim = '';                              // cast over: back to walking or fighting
+      if (e.hero) return this.heroKit(e, dt);
       const reach = dist(e.x, e.y, t.x, t.y) - t.radius - e.radius;
       if (this.kerriganKit(e, dt)) return true;
-      if (e.apocCd <= 0 && reach <= A.range) {
-        // The defender with the most others round it.
-        let best = null, bestN = -1;
-        for (const tg of this.tgs) {
-          if (dist(e.x, e.y, tg.x, tg.y) - tg.radius > A.range + e.radius) continue;
-          const n = this.tgs.filter(o => dist(o.x, o.y, tg.x, tg.y) < A.radius).length;
-          if (n > bestN) { bestN = n; best = tg; }
-        }
-        if (best) {
-          e.apocCd = A.cd;
-          this.kerriganCast(e, /^spell a$/i, A.delay, null, best);
-          e.blast = { x: best.x, y: best.y, at: this.time + A.delay, fx: this.fx.play('apocalypseChannel', best.x, best.y, BS.Terrain.height(best.x, best.y), 0, 1.2) };
-          BS.audio.play('kerriganPsi', { vol: 0.8 });
-          this.floater(e.x, e.y, e.z + 3, 'APOCALYPSE', '#c08cff');
-          return true;
-        }
-      }
+      if (e.apocCd <= 0 && reach <= A.range && this.kerriganAbility(e, 'apocalypse')) return true;
       if (e.leapCd <= 0 && reach > L.min && reach < L.max) {
-        const a = Math.atan2(e.y - t.y, e.x - t.x), off = t.radius + e.radius + 0.2;
-        const tx = t.x + Math.cos(a) * off, ty = t.y + Math.sin(a) * off;
-        if (BS.Terrain.walkable(tx, ty)) {
-          e.leapCd = L.cd; e.route = null; e.perched = false;
-          e.leap = { fx: e.x, fy: e.y, tx, ty, t: 0 };
-          e.yaw = Math.atan2(ty - e.y, tx - e.x); e.anim = 'leap'; e.handle.play(/^jump$/i, true);
-          this.fx.play('psionicShift', e.x, e.y, e.z + 1, e.yaw);
-          BS.audio.play('kerriganLeap', { vol: 0.8 });
-          this.floater(e.x, e.y, e.z + 3, 'LEAPING STRIKE', '#c08cff');
-          return true;
-        } else e.leapCd = 1;
+        if (this.kerriganAbility(e, 'leap', t)) return true;
+        e.leapCd = 1;
       }
-      // Making no headway on foot for 3 s (wedged on a cliff or against the mesa): Leaping Strike to a clear spot beside
-      // the bunker, on her side of it.
+      return this.kerriganUnstick(e, dt);
+    }
+    // Making no headway on foot for 3 s (wedged on a cliff or against the mesa): Leaping Strike to a clear spot beside
+    // the bunker, on her side of it.
+    kerriganUnstick(e, dt) {
       if (e.attacking || e.wx === undefined || dist(e.x, e.y, e.wx, e.wy) > 0.6) { e.wx = e.x; e.wy = e.y; e.stuck = 0; }
       else if ((e.stuck = (e.stuck || 0) + dt) > 3) {
         const a0 = Math.atan2(e.y, e.x), off = T().bunker.halfSize + e.radius + 0.4;
@@ -1722,14 +1706,21 @@ window.BS = window.BS || {};
           const tx = Math.cos(a0 + da) * off, ty = Math.sin(a0 + da) * off;
           if (!BS.Terrain.walkable(tx, ty)) continue;
           e.stuck = 0; e.route = null; e.perched = false;
-          e.leap = { fx: e.x, fy: e.y, tx, ty, t: 0 };
-          e.yaw = Math.atan2(ty - e.y, tx - e.x); e.anim = 'leap'; e.handle.play(/^jump$/i, true);
-          this.fx.play('psionicShift', e.x, e.y, e.z + 1, e.yaw);
-          BS.audio.play('kerriganLeap', { vol: 0.8 });
+          this.kerriganLeapTo(e, tx, ty, false);
           return true;
         }
       }
       return false;
+    }
+    // strike: a Leaping Strike (named, and on cooldown after); otherwise a hop clear of whatever wedged her.
+    kerriganLeapTo(e, tx, ty, strike) {
+      if (strike) e.leapCd = BS.FINALE.leap.cd;
+      e.route = null; e.perched = false;
+      e.leap = { fx: e.x, fy: e.y, tx, ty, t: 0 };
+      e.yaw = Math.atan2(ty - e.y, tx - e.x); e.anim = 'leap'; e.handle.play(/^jump$/i, true);
+      this.fx.play('psionicShift', e.x, e.y, e.z + 1, e.yaw);
+      BS.audio.play('kerriganLeap', { vol: 0.8 });
+      if (strike) this.floater(e.x, e.y, e.z + 3, 'LEAPING STRIKE', '#c08cff');
     }
     // Kerrigan casts: face the target, play that spell's animation over dur s and name it.
     kerriganCast(e, anim, dur, label, at) {
@@ -1762,58 +1753,91 @@ window.BS = window.BS || {};
       return bn >= min ? best : null;
     }
     pin(tg, s) { tg.obj.stunUntil = Math.max(tg.obj.stunUntil || 0, this.time + s); }
-    // The rest of her Heart of the Swarm kit (BS.FINALE.kit). Returns true when she casts something.
+    // The rest of her Heart of the Swarm kit (BS.FINALE.kit), each spell as soon as it is ready and has something worth
+    // casting at. Returns true when she casts something.
     kerriganKit(e, dt) {
-      const K = BS.FINALE.kit, z = BS.Terrain.height(e.x, e.y);
       for (const k of ['kineticCd', 'gripCd', 'chainCd', 'waveCd', 'mutateCd', 'banesCd']) e[k] -= dt;
-      // Immobilization Wave: everything close round her is struck and frozen.
-      if (e.waveCd <= 0) {
-        const near = this.tgs.filter(tg => dist(e.x, e.y, tg.x, tg.y) - tg.radius <= K.wave.radius);
-        if (near.filter(tg => !tg.structure).length >= K.wave.min) {
+      for (const [id, cd] of KERRIGAN_KIT) {
+        if (e[cd] > 0) continue;
+        if (this.kerriganAbility(e, id)) return true;
+        e[cd] = 1;
+      }
+      return false;
+    }
+    // One of her spells (BS.FINALE: leap, apocalypse and the kit) on the best target about her. False, with nothing
+    // spent, when there is nothing worth casting it at. manual: the player said so (swarm mode), one target will do.
+    // Damage scales with e.power (the player's Kerrigan grows with the hive's tier).
+    kerriganAbility(e, id, t, manual) {
+      const F = BS.FINALE, K = F.kit, P = e.power || 1, z = BS.Terrain.height(e.x, e.y);
+      switch (id) {
+        case 'leap': {
+          if (!t) return false;
+          const a = Math.atan2(e.y - t.y, e.x - t.x), off = t.radius + e.radius + 0.2;
+          const tx = t.x + Math.cos(a) * off, ty = t.y + Math.sin(a) * off;
+          if (!BS.Terrain.walkable(tx, ty)) return false;
+          this.kerriganLeapTo(e, tx, ty, true);
+          return true;
+        }
+        case 'apocalypse': {
+          // The defender with the most others round it.
+          const A = F.apocalypse;
+          let best = null, bestN = -1;
+          for (const tg of this.tgs) {
+            if (dist(e.x, e.y, tg.x, tg.y) - tg.radius > A.range + e.radius) continue;
+            const n = this.tgs.filter(o => dist(o.x, o.y, tg.x, tg.y) < A.radius).length;
+            if (n > bestN) { bestN = n; best = tg; }
+          }
+          if (!best) return false;
+          e.apocCd = A.cd;
+          this.kerriganCast(e, /^spell a$/i, A.delay, null, best);
+          e.blast = { x: best.x, y: best.y, at: this.time + A.delay, fx: this.fx.play('apocalypseChannel', best.x, best.y, BS.Terrain.height(best.x, best.y), 0, 1.2) };
+          BS.audio.play('kerriganPsi', { vol: 0.8 });
+          this.floater(e.x, e.y, e.z + 3, 'APOCALYPSE', '#c08cff');
+          return true;
+        }
+        case 'wave': {
+          // Immobilization Wave: everything close round her is struck and frozen.
+          const near = this.tgs.filter(tg => dist(e.x, e.y, tg.x, tg.y) - tg.radius <= K.wave.radius);
+          if (near.filter(tg => !tg.structure).length < (manual ? 1 : K.wave.min)) return false;
           e.waveCd = K.wave.cd;
           this.kerriganCast(e, /^spell b$/i, 1.0, 'IMMOBILIZATION WAVE');
           this.fx.play('immobilizationWave', e.x, e.y, z, 0, 1.4);
-          for (const tg of near) { if (!tg.structure) { this.damageDefender(tg, K.wave.dmg); this.pin(tg, K.wave.stun); this.fx.play('immobilizationImpact', tg.x, tg.y, BS.Terrain.height(tg.x, tg.y), 0); } }
+          for (const tg of near) { if (!tg.structure) { this.damageDefender(tg, K.wave.dmg * P); this.pin(tg, K.wave.stun); this.fx.play('immobilizationImpact', tg.x, tg.y, BS.Terrain.height(tg.x, tg.y), 0); } }
           BS.audio.play('kerriganPsi', { vol: 0.8 }); this.shake = Math.min(1, this.shake + 0.4);
           return true;
         }
-        e.waveCd = 1;
-      }
-      // Crushing Grip on the thickest knot of troops.
-      if (e.gripCd <= 0) {
-        const tg = this.densestDefender(e, K.grip.range, K.grip.radius, 2);
-        if (tg) {
+        case 'grip': {
+          // Crushing Grip on the thickest knot of troops.
+          const tg = this.densestDefender(e, K.grip.range, K.grip.radius, manual ? 1 : 2);
+          if (!tg) return false;
           e.gripCd = K.grip.cd;
           this.kerriganCast(e, /^spell d$/i, 0.9, 'CRUSHING GRIP', tg);
           this.fx.play('crushingGrip', tg.x, tg.y, BS.Terrain.height(tg.x, tg.y), 0, 1.6);
-          for (const o of this.tgs) if (!o.structure && dist(tg.x, tg.y, o.x, o.y) - o.radius <= K.grip.radius) { this.damageDefender(o, K.grip.dmg); this.pin(o, K.grip.stun); }
+          for (const o of this.tgs) if (!o.structure && dist(tg.x, tg.y, o.x, o.y) - o.radius <= K.grip.radius) { this.damageDefender(o, K.grip.dmg * P); this.pin(o, K.grip.stun); }
           BS.audio.play('crushingGrip', { vol: 0.8 });
           return true;
         }
-        e.gripCd = 1;
-      }
-      // Kinetic Blast at the biggest machine in reach.
-      if (e.kineticCd <= 0) {
-        let tg = null;
-        for (const o of this.tgs) if ((o.kind === 'tank' || o.kind === 'mech') && dist(e.x, e.y, o.x, o.y) - o.radius <= K.kinetic.range && (!tg || o.obj.maxHp > tg.obj.maxHp)) tg = o;
-        if (tg) {
+        case 'kinetic': {
+          // Kinetic Blast at the biggest machine in reach (the player's: any unit in reach, machines first).
+          let tg = null;
+          const rank = o => (o.kind === 'tank' || o.kind === 'mech' ? 1e6 : 0) + (o.obj.maxHp || 0);
+          for (const o of this.tgs) if (((manual && !o.structure) || o.kind === 'tank' || o.kind === 'mech') && dist(e.x, e.y, o.x, o.y) - o.radius <= K.kinetic.range && (!tg || rank(o) > rank(tg))) tg = o;
+          if (!tg) return false;
           e.kineticCd = K.kinetic.cd;
           this.kerriganCast(e, /^spell c$/i, 0.8, 'KINETIC BLAST', tg);
           const tz = BS.Terrain.height(tg.x, tg.y) + 1;
           this.fx.beam([e.x, e.y, z + 2], [tg.x, tg.y, tz], 0.35, [0.75, 0.45, 1], 0.14);
           this.fx.play('kineticImpact', tg.x, tg.y, tz, e.yaw + Math.PI, 1.4);
-          this.damageDefender(tg, K.kinetic.dmg);
+          this.damageDefender(tg, K.kinetic.dmg * P);
           BS.audio.play('kineticBlast', { vol: 0.8 }); BS.audio.play('kineticHit', { vol: 0.7 });
           return true;
         }
-        e.kineticCd = 1;
-      }
-      // Chain Lightning: arcs from troop to troop.
-      if (e.chainCd <= 0) {
-        const pool = this.tgs.filter(o => !o.structure && o.kind !== 'tank' && o.kind !== 'mech');
-        let cur = null, cd = K.chain.range;
-        for (const o of pool) { const dd = dist(e.x, e.y, o.x, o.y); if (dd < cd) { cd = dd; cur = o; } }
-        if (cur) {
+        case 'chain': {
+          // Chain Lightning: arcs from troop to troop.
+          const pool = this.tgs.filter(o => !o.structure && o.kind !== 'tank' && o.kind !== 'mech');
+          let cur = null, cd = K.chain.range;
+          for (const o of pool) { const dd = dist(e.x, e.y, o.x, o.y); if (dd < cd) { cd = dd; cur = o; } }
+          if (!cur) return false;
           e.chainCd = K.chain.cd;
           this.kerriganCast(e, /^spell e$/i, 0.7, 'CHAIN LIGHTNING', cur);
           let from = [e.x, e.y, z + 2];
@@ -1822,7 +1846,7 @@ window.BS = window.BS || {};
             hit.add(cur);
             const to = [cur.x, cur.y, BS.Terrain.height(cur.x, cur.y) + 0.8];
             this.fx.beam(from, to, 0.3, [0.55, 0.65, 1], 0.06);
-            this.damageDefender(cur, K.chain.dmg);
+            this.damageDefender(cur, K.chain.dmg * P);
             from = to;
             let next = null, nd = K.chain.hop;
             for (const o of pool) if (!hit.has(o)) { const dd = dist(cur.x, cur.y, o.x, o.y); if (dd < nd) { nd = dd; next = o; } }
@@ -1831,12 +1855,10 @@ window.BS = window.BS || {};
           BS.audio.play('kerriganChain', { vol: 0.7 });
           return true;
         }
-        e.chainCd = 1;
-      }
-      // Wild Mutation: the zerg round her shrug off half of everything.
-      if (e.mutateCd <= 0) {
-        const kin = this.enemies.filter(o => o !== e && o.hp > 0 && dist(e.x, e.y, o.x, o.y) < K.mutation.radius);
-        if (kin.length >= K.mutation.min) {
+        case 'mutation': {
+          // Wild Mutation: the zerg round her shrug off half of everything.
+          const kin = this.enemies.filter(o => o !== e && o.hp > 0 && dist(e.x, e.y, o.x, o.y) < K.mutation.radius);
+          if (kin.length < (manual ? 1 : K.mutation.min)) return false;
           e.mutateCd = K.mutation.cd;
           this.kerriganCast(e, /^spell$/i, 0.8, 'WILD MUTATION');
           this.fx.play('mutationImpact', e.x, e.y, z, 0, 1.5);
@@ -1844,15 +1866,14 @@ window.BS = window.BS || {};
           BS.audio.play('finaleRoar', { vol: 0.5, gap: 2 });
           return true;
         }
-        e.mutateCd = 1;
-      }
-      // Spawn Banelings round her.
-      if (e.banesCd <= 0) {
-        e.banesCd = K.banelings.cd;
-        this.kerriganCast(e, /^spell f$/i, 0.9, 'SPAWN BANELINGS');
-        for (let i = 0; i < K.banelings.count; i++) { const a = i / K.banelings.count * Math.PI * 2; this.spawnEnemy('baneling', 0, [e.x + Math.cos(a) * 1.4, e.y + Math.sin(a) * 1.4]); }
-        this.fx.play('broodSpellImpact', e.x, e.y, z, 0, 1.2);
-        return true;
+        case 'banelings': {
+          // Spawn Banelings round her.
+          e.banesCd = K.banelings.cd;
+          this.kerriganCast(e, /^spell f$/i, 0.9, 'SPAWN BANELINGS');
+          for (let i = 0; i < K.banelings.count; i++) { const a = i / K.banelings.count * Math.PI * 2; this.spawnEnemy('baneling', 0, [e.x + Math.cos(a) * 1.4, e.y + Math.sin(a) * 1.4]); }
+          this.fx.play('broodSpellImpact', e.x, e.y, z, 0, 1.2);
+          return true;
+        }
       }
       return false;
     }
@@ -1886,6 +1907,7 @@ window.BS = window.BS || {};
       return { speed: w >= E.boost.wave ? E.boost.speed : 1, up: E.plating.waves.filter(x => w >= x).length, cd: w >= E.adrenal.wave ? E.adrenal.cd : 1 };
     }
     zergDef(type) {
+      if (this.swarm) return this.swarmDef(type);
       const base = BS.ZERG[type];
       if (!BS.LING_EVO.types.includes(type)) return base;
       const v = this.lingEvo(), key = type + '/' + v.speed + '/' + v.up + '/' + v.cd, c = this.evoDefs || (this.evoDefs = {});
@@ -2730,7 +2752,8 @@ window.BS = window.BS || {};
       for (const k of ['stimCd', 'strikeCd', 'repairCd', 'yamatoCd']) this.ab[k] = Math.max(0, this.ab[k] - dt);
       for (const k of ['nuke', 'vikings', 'wraiths', 'vessel']) this.techCd[k] = Math.max(0, this.techCd[k] - dt);
       this.waveTimer -= dt;
-      if (!this.wave) { if (this.waveTimer <= 0) this.startWave(); }
+      if (this.swarm) { if (this.waveTimer <= 0) { if (this.wave) { this.endWave(); this.terranShop(); } else this.startWave(); } this.updateSwarm(dt); }
+      else if (!this.wave) { if (this.waveTimer <= 0) this.startWave(); }
       else if (!this.spawnQueue.length) {
         this.lingerT += dt;
         if (!this.waveAlive() || this.lingerT > BS.SHOP.linger) { this.endWave(); return; }
@@ -2805,8 +2828,8 @@ window.BS = window.BS || {};
         if (d.watcher) { this.updateWatcher(e, dt); continue; }
         if (d.detector) { this.updateOverseer(e, dt); continue; }
         if (d.tumors && this.queenCreep(e, dt)) continue;
-        e.retarget -= dt;
-        if (!this.valid(e.target) || e.retarget <= 0) {
+        if (e.hero) this.heroTarget(e, dt);
+        else if ((e.retarget -= dt) <= 0 || !this.valid(e.target)) {
           // Scourge and devourers hunt Terran air; guardians single out mechs; brood queens make for tanks, mechs, troopers.
           let best = null, bd = 1e9;
           for (const t of d.antiAir ? this.airTgs : targets) {
@@ -2840,6 +2863,8 @@ window.BS = window.BS || {};
         if (d.boss === 'kerrigan' && this.updateKerrigan(e, t, dt)) continue;
         if (d.boss === 'leviathan') this.updateLeviathan(e, dt);
         const dx = t.x - e.x, dy = t.y - e.y, dd = Math.hypot(dx, dy);
+        // The player's Kerrigan at the spot she was sent to, nothing to fight: she waits there.
+        if (t.kind === 'point' && dd < 0.6) { e.attacking = false; this.playAnim(e, 'stand'); continue; }
         // A brood queen with no prey about (only the bunker or buildings) presses in under the guns to find some.
         const prey = d.spell !== 'broodling' || BROOD_PRIORITY[t.kind];
         const reach = dd - t.radius - e.radius, range = (prey ? d.range : 4) + (t.kind === 'bunker' ? 0.2 : 0), slowed = e.slowUntil > this.time;
@@ -2879,7 +2904,7 @@ window.BS = window.BS || {};
         }
         // Zerglings in the lane spread round the bunker (surroundGoal) before they bite it.
         const ring = d.surround && this.mode === 'lane' && t.kind === 'bunker' && !e.ringDone && dd < 9;
-        const canAttack = !ring && reach <= range + (high ? 1 : 0) && !(d.burrows && (!e.burrowed || e.burrowT > 0)) && !(e.route && e.route.length && e.highRoute);
+        const canAttack = !ring && t.kind !== 'point' && reach <= range + (high ? 1 : 0) && !(d.burrows && (!e.burrowed || e.burrowT > 0)) && !(e.route && e.route.length && e.highRoute);
         if (canAttack) {
           e.attacking = true;
           e.yaw = Math.atan2(dy, dx);
@@ -2917,7 +2942,7 @@ window.BS = window.BS || {};
           if (e.route && e.route.length) {
             [gx, gy] = e.route[0];
             if (Math.hypot(gx - e.x, gy - e.y) < 0.9) { e.route.shift(); if (!e.route.length && e.highRoute) e.perched = true; }
-          } else if (d.boss === 'kerrigan' && this.mode === 'lane' && !BS.Terrain.clearPath(e.x, e.y, gx, gy)) {
+          } else if (d.boss === 'kerrigan' && this.mode === 'lane' && !e.order && !e.hold && !BS.Terrain.clearPath(e.x, e.y, gx, gy)) {
             // Off her route (after a leap) with a cliff in the way: down the flow towards the bunker.
             const f = BS.Terrain.homeFlow(e.x, e.y); if (f) { gx = e.x + f[0]; gy = e.y + f[1]; }
           }
@@ -3326,7 +3351,7 @@ window.BS = window.BS || {};
       const E = BS.EVAC;
       this.evac = { t: this.time };
       this.waveBanner = { text: 'THE HYPERION HAS ARRIVED  //  GET ABOARD', t: this.time };
-      this.toast(this.bosses().some(e => e.def.untouchable) ? 'Hyperion inbound: hold her off a few seconds more!' : 'Hyperion inbound: hold the bunker!');
+      this.toast(this.swarm ? 'The Hyperion is coming for them: raze the bunker now!' : this.bosses().some(e => e.def.untouchable) ? 'Hyperion inbound: hold her off a few seconds more!' : 'Hyperion inbound: hold the bunker!');
       this.shake = 0.5;
       const h = this.r.spawn('battlecruiser', E.from[0], E.from[1], E.from[2], Math.PI / 2).setTeam(1).setScale(E.scale);
       h.play(/^stand$/i, true);
@@ -3334,8 +3359,8 @@ window.BS = window.BS || {};
     }
     evacuate() {
       if (this.over) return;
-      this.over = true; this.won = true;
-      this.score += BS.EVAC.score;
+      this.over = true; this.won = !this.swarm;
+      if (!this.swarm) this.score += BS.EVAC.score;
       this.endRun();
     }
     // The Hyperion glides in from the south and settles over the bunker.
@@ -3351,6 +3376,7 @@ window.BS = window.BS || {};
     gameOver() {
       if (this.over) return;
       this.over = true; this.bunker.dead = true; this.bunker.hp = 0;
+      if (this.swarm) { this.won = true; this.score += BS.EVAC.score; }
       this.bunker.handle.release();
       this.corpse('bunkerDeath', 0, 0, 0, this.bunker.yaw, 60, 1, true);
       BS.audio.play('explosion', { vol: 0.9 });
@@ -3358,10 +3384,10 @@ window.BS = window.BS || {};
       this.endRun();
     }
     endRun() {
-      this.finalScore = Math.round(this.score + this.kills * 10 + this.wave * 250);
-      this.metaResult = BS.Meta.endRun(this.mode, this.wavesCleared, this.won);
+      this.finalScore = Math.round(this.score + (this.swarm ? this.sw.kills : this.kills) * 10 + this.wave * 250);
+      this.metaResult = BS.Meta.endRun(this.swarm ? 'swarm' : this.mode, this.wavesCleared, this.won);
       try {
-        const key = 'bs.best.' + this.mode, best = parseInt(localStorage.getItem(key) || '0', 10);
+        const key = 'bs.best.' + (this.swarm ? 'swarm' : this.mode), best = parseInt(localStorage.getItem(key) || '0', 10);
         this.best = Math.max(best, this.finalScore); this.newBest = this.finalScore > best;
         localStorage.setItem(key, String(this.best));
       } catch (e) { this.best = this.finalScore; }

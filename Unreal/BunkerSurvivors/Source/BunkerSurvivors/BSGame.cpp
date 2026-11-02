@@ -1,5 +1,4 @@
 #include "BSGame.h"
-#include "Algo/IndexOf.h"
 #include "Misc/CommandLine.h"
 #include "Misc/Parse.h"
 #include "Misc/FileHelper.h"
@@ -209,10 +208,11 @@ bool ABSGame::StepGround(float& X, float& Y, float Mx, float My, bool bDrop) con
 	return false;
 }
 
-void ABSGame::Init(UBSAssets* InAssets, EBSMode InMode)
+void ABSGame::Init(UBSAssets* InAssets, EBSMode InMode, bool bInSwarm)
 {
 	Assets = InAssets;
 	Mode = InMode;
+	bSwarm = bInSwarm;
 	bHard = Mode == EBSMode::Arena;
 	WaveLen = 30.f;
 	BuildPatrol();
@@ -282,7 +282,8 @@ void ABSGame::Init(UBSAssets* InAssets, EBSMode InMode)
 	Bunker.Actor = AcquireModel(TEXT("bunker"));
 	if (Bunker.Actor) { Bunker.Actor->SetSim(0, 0, 0, PI / 2); Bunker.Actor->SetTeamColor(TerranColor); }
 	AddScv(true);
-	GConfig->GetInt(TEXT("BunkerSurvivors"), *(FString(TEXT("Best.")) + (Mode == EBSMode::Lane ? TEXT("Lane") : TEXT("Arena"))), Best, GGameUserSettingsIni);
+	GConfig->GetInt(TEXT("BunkerSurvivors"), *(FString(TEXT("Best.")) + (bSwarm ? TEXT("Swarm") : Mode == EBSMode::Lane ? TEXT("Lane") : TEXT("Arena"))), Best, GGameUserSettingsIni);
+	if (bSwarm) InitSwarm();
 }
 
 void ABSGame::SetupAttract()
@@ -618,9 +619,9 @@ void ABSGame::BeginOpening()
 	}
 	// Hyperion perks (bots play with none): War Chest, Reinforced Bunker, and a Veteran Fireteam firebat comes along.
 	if (bAutoPlay) return;
-	Minerals += 50 * BSMeta::Perk(TEXT("minerals"));
-	Bunker.MaxHp = Bunker.Hp = BSDefs::BunkerHp + 50 * BSMeta::Perk(TEXT("hull"));
-	if (BSMeta::Perk(TEXT("firebat"))) AddInfantry(TEXT("firebat"), true);
+	Minerals += 50 * Perk(TEXT("minerals"));
+	Bunker.MaxHp = Bunker.Hp = BSDefs::BunkerHp + 50 * Perk(TEXT("hull"));
+	if (Perk(TEXT("firebat"))) AddInfantry(TEXT("firebat"), true);
 }
 
 void ABSGame::UpdateReinforcements(float Dt)
@@ -1461,7 +1462,7 @@ void ABSGame::EndWave()
 	Minerals += Interest;
 	WavesCleared = Wave;
 	Shop = FShop();
-	Shop.bOpen = true; Shop.Wave = Wave; Shop.Bonus = Bonus; Shop.Interest = Interest; Shop.Free = BSMeta::Perk(TEXT("reroll"));
+	Shop.bOpen = true; Shop.Wave = Wave; Shop.Bonus = Bonus; Shop.Interest = Interest; Shop.Free = Perk(TEXT("reroll"));
 	Shop.Offers = RollOffers();
 	Shop.Bought.Init(false, Shop.Offers.Num());
 	WaveBanner = FString::Printf(TEXT("WAVE %d CLEARED"), Wave); WaveBannerT = Time; WaveSerial++;
@@ -1536,14 +1537,14 @@ bool ABSGame::ReqMet(const FString& R) const
 
 bool ABSGame::CardOpen(const FBSCardDef& C) const
 {
-	return BSMeta::Unlocked(C) && (!C.bLane || Mode == EBSMode::Lane) && CardLevel(C) < CardMax(C) && CardReq(C) && Wave >= BSDefs::FindRarity(C.Rarity).From;
+	return (bSwarm || BSMeta::Unlocked(C)) && (!C.bLane || Mode == EBSMode::Lane) && CardLevel(C) < CardMax(C) && CardReq(C) && Wave >= BSDefs::FindRarity(C.Rarity).From;
 }
 
 // Weighted by rarity (Field Intelligence shifts weight from common cards to the rarer ones, research weighs double); no
 // repeats in one offer, and the first card is always research while there is any left.
 TArray<FString> ABSGame::RollOffers()
 {
-	const int32 Luck = BSMeta::Perk(TEXT("luck")), N = BSDefs::ShopOffers + BSMeta::Perk(TEXT("offer"));
+	const int32 Luck = Perk(TEXT("luck")), N = BSDefs::ShopOffers + Perk(TEXT("offer"));
 	auto Wt = [Luck](const FBSCardDef* C)
 	{
 		return BSDefs::FindRarity(C->Rarity).Weight * (C->Rarity == TEXT("common") ? 1 - 0.15f * Luck : 1 + 0.3f * Luck) * (C->Up.IsEmpty() ? 1.f : BSDefs::ShopResearchWeight);
@@ -1589,7 +1590,7 @@ bool ABSGame::BuyCard(int32 Index)
 	Minerals -= Cost;
 	Shop.Bought[Index] = true;
 	ApplyCard(*C);
-	if (!bAutoPlay) for (const FBSCardDef* U : BSMeta::RecordBuy(C->Id)) Toast(TEXT("New card unlocked: ") + BSMeta::CardName(*U));
+	if (!bAutoPlay && !bSwarm) for (const FBSCardDef* U : BSMeta::RecordBuy(C->Id)) Toast(TEXT("New card unlocked: ") + BSMeta::CardName(*U));
 	return true;
 }
 
@@ -2510,10 +2511,11 @@ void ABSGame::StartWave()
 	const int32 Mule = 30 * CardLevel(TEXT("mule"));
 	if (Mule) { Minerals += Mule; Floater(0, -3, 2, FString::Printf(TEXT("+%d MULE"), Mule), FLinearColor(0.5f, 0.85f, 1)); }
 	const int32 Wv = Wave;
-	const bool bFinale = !Finale.bOn && Time >= BSDefs::FinaleAt;
+	const bool bFinale = !bSwarm && !Finale.bOn && Time >= BSDefs::FinaleAt;
 	const bool bPush = bFinale || Finale.bOn;              // from the finale to the evac every wave is the swarm's last push
 	auto Quad = [](float X) { return 20 + 8 * X + 0.3f * X * X; };
 	WaveLen = FMath::RoundToFloat(BSDefs::WaveLenStart + (BSDefs::WaveLenEnd - BSDefs::WaveLenStart) * FMath::Clamp((Wv - 1) / float(BSDefs::WaveLenBy - 1), 0.f, 1.f));
+	if (bSwarm) { SwarmRound(Wv); return; }
 	float Budget = (Wv <= BSDefs::WaveKnee ? Quad(Wv) : Quad(BSDefs::WaveKnee) + BSDefs::WavePerWaveA * (Wv - BSDefs::WaveKnee) + BSDefs::WavePerWaveB * FMath::Square(float(Wv - BSDefs::WaveKnee))) * (bHard ? 1.15f : 1.f) * (bPush ? BSDefs::FinaleBudget : 1.f);
 	// Late game: every high-tech card unlocked brings stranger zerg, and more of them. Guardians come for the mechs;
 	// scourge and devourers only when there is Terran air to hunt. The last push throws in the whole late roster.
@@ -2637,11 +2639,6 @@ void ABSGame::StartWave()
 		Toast(Ms.Toast);
 		Shake = 0.6f;
 	}
-	// The zerglings' evolution, announced as it happens.
-	const int32 PlateLv = Algo::IndexOf(BSLingEvo::PlatingWaves, Wv) + 1;
-	if (Wv == BSLingEvo::BoostWave) Toast(TEXT("Zerglings evolve: Metabolic Boost"));
-	if (PlateLv) Toast(FString::Printf(TEXT("Zerglings evolve: Melee Attacks and Carapace level %d"), PlateLv));
-	if (Wv == BSLingEvo::AdrenalWave) Toast(TEXT("Zerglings evolve: Adrenal Glands"));
 	if (bFinale) StartFinale();
 }
 
@@ -2739,7 +2736,7 @@ bool ABSGame::UpdateKerrigan(const TSharedPtr<FBSEnemy>& EP, const FBSTarget& T,
 		const FVector At(E.Blast.X, E.Blast.Y, BSTerrain::Height(E.Blast.X, E.Blast.Y));
 		if (!PlayFx(TEXT("apocalypse"), At, 0, 1.2f)) EmitExplosion(At + FVector(0, 0, 0.3f), BSDefs::ApocRadius, FLinearColor(0.85f, 0.5f, 1.f), FLinearColor(0.35f, 0.1f, 0.6f), 24);
 		const TArray<FBSTarget> Under = Targets;
-		for (const FBSTarget& O : Under) if (FMath::Sqrt(Dist2(E.Blast.X, E.Blast.Y, O.X, O.Y)) - O.Radius <= BSDefs::ApocRadius) DamageDefender(O, BSDefs::ApocDmg * (O.bStructure ? BSDefs::BossStructure : 1.f));
+		for (const FBSTarget& O : Under) if (FMath::Sqrt(Dist2(E.Blast.X, E.Blast.Y, O.X, O.Y)) - O.Radius <= BSDefs::ApocRadius) DamageDefender(O, BSDefs::ApocDmg * E.Power * (O.bStructure ? BSDefs::BossStructure : 1.f));
 		PlaySound(BSSounds::Explosion, 0.9f);
 		Shake = FMath::Min(1.f, Shake + 0.5f);
 	}
@@ -2754,7 +2751,7 @@ bool ABSGame::UpdateKerrigan(const TSharedPtr<FBSEnemy>& EP, const FBSTarget& T,
 			E.LeapT = -1; E.Z = BSTerrain::Height(E.X, E.Y); E.Anim.Reset();
 			PlayFx(TEXT("leapImpact"), FVector(E.X, E.Y, E.Z), E.Yaw, 1.4f);
 			const TArray<FBSTarget> Under = Targets;
-			for (const FBSTarget& O : Under) if (FMath::Sqrt(Dist2(E.X, E.Y, O.X, O.Y)) - O.Radius <= BSDefs::LeapRadius) DamageDefender(O, BSDefs::LeapDmg * (O.bStructure ? BSDefs::BossStructure : 1.f));
+			for (const FBSTarget& O : Under) if (FMath::Sqrt(Dist2(E.X, E.Y, O.X, O.Y)) - O.Radius <= BSDefs::LeapRadius) DamageDefender(O, BSDefs::LeapDmg * E.Power * (O.bStructure ? BSDefs::BossStructure : 1.f));
 			PlaySound(TEXT("ultraliskAttack"), 0.6f);
 			Shake = FMath::Min(1.f, Shake + 0.4f);
 		}
@@ -2762,49 +2759,22 @@ bool ABSGame::UpdateKerrigan(const TSharedPtr<FBSEnemy>& EP, const FBSTarget& T,
 	}
 	if (E.CastUntil > Time) return true;
 	if (E.Anim == TEXT("spell")) E.Anim.Empty();                  // cast over: back to walking or fighting
+	if (E.bHero) return HeroKit(E, Dt);                           // the player's own (swarm mode) casts only when told to
 	const float Reach = FMath::Sqrt(Dist2(E.X, E.Y, T.X, T.Y)) - T.Radius - E.Radius;
 	if (KerriganKit(E, Dt)) return true;
-	if (E.ApocCd <= 0 && Reach <= BSDefs::ApocRange)
-	{
-		// The defender with the most others round it.
-		const FBSTarget* Knot = nullptr; int32 BestN = -1;
-		for (const FBSTarget& O : Targets)
-		{
-			if (FMath::Sqrt(Dist2(E.X, E.Y, O.X, O.Y)) - O.Radius > BSDefs::ApocRange + E.Radius) continue;
-			int32 N = 0;
-			for (const FBSTarget& Q : Targets) N += Dist2(Q.X, Q.Y, O.X, O.Y) < BSDefs::ApocRadius * BSDefs::ApocRadius;
-			if (N > BestN) { BestN = N; Knot = &O; }
-		}
-		if (Knot)
-		{
-			E.ApocCd = BSDefs::ApocCd;
-			KerriganCast(E, TEXT("spell a"), BSDefs::ApocDelay, nullptr, Knot);
-			E.Blast = FVector2D(Knot->X, Knot->Y); E.BlastAt = Time + BSDefs::ApocDelay;
-			E.BlastFx = PlayFx(TEXT("apocalypseChannel"), FVector(Knot->X, Knot->Y, BSTerrain::Height(Knot->X, Knot->Y)), 0, 1.2f);
-			PlaySound(TEXT("kerriganPsi"), 0.8f);
-			Floater(E.X, E.Y, E.Z + 3, TEXT("APOCALYPSE"), FLinearColor(0.75f, 0.55f, 1.f));
-			return true;
-		}
-	}
+	if (E.ApocCd <= 0 && Reach <= BSDefs::ApocRange && KerriganAbility(E, TEXT("apocalypse"))) return true;
 	if (E.LeapCd <= 0 && Reach > BSDefs::LeapMin && Reach < BSDefs::LeapMax)
 	{
-		const float A = FMath::Atan2(E.Y - T.Y, E.X - T.X), Off = T.Radius + E.Radius + 0.2f;
-		const float Tx = T.X + FMath::Cos(A) * Off, Ty = T.Y + FMath::Sin(A) * Off;
-		if (BSTerrain::Walkable(Tx, Ty))
-		{
-			E.LeapCd = BSDefs::LeapCd; E.Route.Reset(); E.bPerched = false;
-			E.LeapT = 0; E.LeapFrom = FVector2D(E.X, E.Y); E.LeapTo = FVector2D(Tx, Ty);
-			E.Yaw = FMath::Atan2(Ty - E.Y, Tx - E.X); E.Anim = TEXT("leap");
-			if (E.Actor) E.Actor->Play(TEXT("jump"), true);
-			PlayFx(TEXT("psionicShift"), FVector(E.X, E.Y, E.Z + 1), E.Yaw);
-			PlaySound(TEXT("kerriganLeap"), 0.8f);
-			Floater(E.X, E.Y, E.Z + 3, TEXT("LEAPING STRIKE"), FLinearColor(0.75f, 0.55f, 1.f));
-			return true;
-		}
+		if (KerriganAbility(E, TEXT("leap"), &T)) return true;
 		E.LeapCd = 1;
 	}
-	// Making no headway on foot for 3 s (wedged on a cliff or against the mesa): Leaping Strike to a clear spot beside the
-	// bunker, on her side of it.
+	return KerriganUnstick(E, Dt);
+}
+
+// Making no headway on foot for 3 s (wedged on a cliff or against the mesa): Leaping Strike to a clear spot beside the
+// bunker, on her side of it.
+bool ABSGame::KerriganUnstick(FBSEnemy& E, float Dt)
+{
 	if (E.bAttacking || FVector2D::Distance(FVector2D(E.X, E.Y), E.StuckAt) > 0.6f) { E.StuckAt = FVector2D(E.X, E.Y); E.Stuck = 0; }
 	else if ((E.Stuck += Dt) > 3)
 	{
@@ -2813,16 +2783,25 @@ bool ABSGame::UpdateKerrigan(const TSharedPtr<FBSEnemy>& EP, const FBSTarget& T,
 		{
 			const float Tx = FMath::Cos(A0 + Da) * Off, Ty = FMath::Sin(A0 + Da) * Off;
 			if (!BSTerrain::Walkable(Tx, Ty)) continue;
-			E.Stuck = 0; E.Route.Reset(); E.bPerched = false;
-			E.LeapT = 0; E.LeapFrom = FVector2D(E.X, E.Y); E.LeapTo = FVector2D(Tx, Ty);
-			E.Yaw = FMath::Atan2(Ty - E.Y, Tx - E.X); E.Anim = TEXT("leap");
-			if (E.Actor) E.Actor->Play(TEXT("jump"), true);
-			PlayFx(TEXT("psionicShift"), FVector(E.X, E.Y, E.Z + 1), E.Yaw);
-			PlaySound(TEXT("kerriganLeap"), 0.8f);
+			E.Stuck = 0;
+			KerriganLeapTo(E, Tx, Ty, false);
 			return true;
 		}
 	}
 	return false;
+}
+
+// bStrike: a Leaping Strike (named, and on cooldown after); otherwise a hop clear of whatever wedged her.
+void ABSGame::KerriganLeapTo(FBSEnemy& E, float Tx, float Ty, bool bStrike)
+{
+	if (bStrike) E.LeapCd = BSDefs::LeapCd;
+	E.Route.Reset(); E.bPerched = false;
+	E.LeapT = 0; E.LeapFrom = FVector2D(E.X, E.Y); E.LeapTo = FVector2D(Tx, Ty);
+	E.Yaw = FMath::Atan2(Ty - E.Y, Tx - E.X); E.Anim = TEXT("leap");
+	if (E.Actor) E.Actor->Play(TEXT("jump"), true);
+	PlayFx(TEXT("psionicShift"), FVector(E.X, E.Y, E.Z + 1), E.Yaw);
+	PlaySound(TEXT("kerriganLeap"), 0.8f);
+	if (bStrike) Floater(E.X, E.Y, E.Z + 3, TEXT("LEAPING STRIKE"), FLinearColor(0.75f, 0.55f, 1.f));
 }
 
 // Kerrigan casts: face the target, play that spell's sequence over Dur s and name it.
@@ -2871,121 +2850,153 @@ void ABSGame::PinDefender(const FBSTarget& T, float S)
 	if (TSharedPtr<FBSSpecial> O = T.SpecialRef.Pin()) O->StunUntil = FMath::Max(O->StunUntil, Until);
 }
 
-// The rest of her Heart of the Swarm kit (see BSDefs). Returns true when she casts something.
+// The rest of her Heart of the Swarm kit (see BSDefs), each spell as soon as it is ready and has something worth casting
+// at, in order of preference. Returns true when she casts something.
 bool ABSGame::KerriganKit(FBSEnemy& E, float Dt)
 {
-	const float Gz = BSTerrain::Height(E.X, E.Y);
 	E.KineticCd -= Dt; E.GripCd -= Dt; E.ChainCd -= Dt; E.WaveCd -= Dt; E.MutateCd -= Dt; E.BanesCd -= Dt;
+	const TPair<const TCHAR*, float*> Kit[] = { { TEXT("wave"), &E.WaveCd }, { TEXT("grip"), &E.GripCd }, { TEXT("kinetic"), &E.KineticCd },
+		{ TEXT("chain"), &E.ChainCd }, { TEXT("mutation"), &E.MutateCd }, { TEXT("banelings"), &E.BanesCd } };
+	for (const auto& K : Kit)
+	{
+		if (*K.Value > 0) continue;
+		if (KerriganAbility(E, K.Key)) return true;
+		*K.Value = 1;
+	}
+	return false;
+}
+
+bool ABSGame::KerriganAbility(FBSEnemy& E, const FString& Id, const FBSTarget* T, bool bManual)
+{
+	const float Gz = BSTerrain::Height(E.X, E.Y), P = E.Power;
 	const TArray<FBSTarget> Tgs = Targets;      // (what she kills drops out of Targets)
-	// Immobilization Wave: the troops and machines close round her are struck and frozen (buildings are spared).
-	if (E.WaveCd <= 0)
+	if (Id == TEXT("leap"))
 	{
-		TArray<FBSTarget> Close;
-		for (const FBSTarget& O : Tgs) if (!O.bStructure && FMath::Sqrt(Dist2(E.X, E.Y, O.X, O.Y)) - O.Radius <= BSDefs::WaveRadius) Close.Add(O);
-		if (Close.Num() >= BSDefs::WaveMin)
-		{
-			E.WaveCd = BSDefs::WaveCd;
-			KerriganCast(E, TEXT("spell b"), 1.f, TEXT("IMMOBILIZATION WAVE"), nullptr);
-			PlayFx(TEXT("immobilizationWave"), FVector(E.X, E.Y, Gz), 0, 1.4f);
-			for (const FBSTarget& O : Close)
-			{
-				DamageDefender(O, BSDefs::WaveDmg); PinDefender(O, BSDefs::WaveStun);
-				PlayFx(TEXT("immobilizationImpact"), FVector(O.X, O.Y, BSTerrain::Height(O.X, O.Y)));
-			}
-			PlaySound(TEXT("kerriganPsi"), 0.8f);
-			Shake = FMath::Min(1.f, Shake + 0.4f);
-			return true;
-		}
-		E.WaveCd = 1;
+		if (!T) return false;
+		const float A = FMath::Atan2(E.Y - T->Y, E.X - T->X), Off = T->Radius + E.Radius + 0.2f;
+		const float Tx = T->X + FMath::Cos(A) * Off, Ty = T->Y + FMath::Sin(A) * Off;
+		if (!BSTerrain::Walkable(Tx, Ty)) return false;
+		KerriganLeapTo(E, Tx, Ty, true);
+		return true;
 	}
-	// Crushing Grip on the thickest knot of troops.
-	if (E.GripCd <= 0)
+	if (Id == TEXT("apocalypse"))
 	{
-		FBSTarget Knot;
-		if (DensestDefender(E, BSDefs::GripRange, BSDefs::GripRadius, 2, Knot))
-		{
-			E.GripCd = BSDefs::GripCd;
-			KerriganCast(E, TEXT("spell d"), 0.9f, TEXT("CRUSHING GRIP"), &Knot);
-			PlayFx(TEXT("crushingGrip"), FVector(Knot.X, Knot.Y, BSTerrain::Height(Knot.X, Knot.Y)), 0, 1.6f);
-			for (const FBSTarget& O : Tgs)
-				if (!O.bStructure && FMath::Sqrt(Dist2(Knot.X, Knot.Y, O.X, O.Y)) - O.Radius <= BSDefs::GripRadius) { DamageDefender(O, BSDefs::GripDmg); PinDefender(O, BSDefs::GripStun); }
-			PlaySound(TEXT("crushingGrip"), 0.8f);
-			return true;
-		}
-		E.GripCd = 1;
-	}
-	// Kinetic Blast at the biggest machine in reach.
-	if (E.KineticCd <= 0)
-	{
-		const FBSTarget* Big = nullptr; float BigHp = 0;
+		// The defender with the most others round it.
+		const FBSTarget* Knot = nullptr; int32 BestN = -1;
 		for (const FBSTarget& O : Tgs)
 		{
-			if ((O.Kind != FBSTarget::Tank && O.Kind != FBSTarget::Mech) || FMath::Sqrt(Dist2(E.X, E.Y, O.X, O.Y)) - O.Radius > BSDefs::KineticRange) continue;
-			const TSharedPtr<FBSTank> K = O.TankRef.Pin(); const TSharedPtr<FBSMech> M = O.MechRef.Pin();
-			const float Mhp = K ? K->MaxHp : M ? M->MaxHp : 0.f;
-			if (!Big || Mhp > BigHp) { Big = &O; BigHp = Mhp; }
+			if (FMath::Sqrt(Dist2(E.X, E.Y, O.X, O.Y)) - O.Radius > BSDefs::ApocRange + E.Radius) continue;
+			int32 N = 0;
+			for (const FBSTarget& Q : Tgs) N += Dist2(Q.X, Q.Y, O.X, O.Y) < BSDefs::ApocRadius * BSDefs::ApocRadius;
+			if (N > BestN) { BestN = N; Knot = &O; }
 		}
-		if (Big)
-		{
-			E.KineticCd = BSDefs::KineticCd;
-			KerriganCast(E, TEXT("spell c"), 0.8f, TEXT("KINETIC BLAST"), Big);
-			const float Tz = BSTerrain::Height(Big->X, Big->Y) + 1;
-			AddFx(EBSFxKind::Tracer, FVector(E.X, E.Y, Gz + 2), FVector(Big->X, Big->Y, Tz), 0.35f, 0.12f, FLinearColor(0.75f, 0.45f, 1.f), 22);
-			PlayFx(TEXT("kineticImpact"), FVector(Big->X, Big->Y, Tz), E.Yaw + PI, 1.4f);
-			DamageDefender(*Big, BSDefs::KineticDmg);
-			PlaySound(TEXT("kineticBlast"), 0.8f); PlaySound(TEXT("kineticHit"), 0.7f);
-			return true;
-		}
-		E.KineticCd = 1;
+		if (!Knot) return false;
+		E.ApocCd = BSDefs::ApocCd;
+		KerriganCast(E, TEXT("spell a"), BSDefs::ApocDelay, nullptr, Knot);
+		E.Blast = FVector2D(Knot->X, Knot->Y); E.BlastAt = Time + BSDefs::ApocDelay;
+		E.BlastFx = PlayFx(TEXT("apocalypseChannel"), FVector(Knot->X, Knot->Y, BSTerrain::Height(Knot->X, Knot->Y)), 0, 1.2f);
+		PlaySound(TEXT("kerriganPsi"), 0.8f);
+		Floater(E.X, E.Y, E.Z + 3, TEXT("APOCALYPSE"), FLinearColor(0.75f, 0.55f, 1.f));
+		return true;
 	}
-	// Chain Lightning: arcs from troop to troop.
-	if (E.ChainCd <= 0)
+	if (Id == TEXT("wave"))
 	{
+		// Immobilization Wave: the troops and machines close round her are struck and frozen (buildings are spared).
+		TArray<FBSTarget> Close;
+		for (const FBSTarget& O : Tgs) if (!O.bStructure && FMath::Sqrt(Dist2(E.X, E.Y, O.X, O.Y)) - O.Radius <= BSDefs::WaveRadius) Close.Add(O);
+		if (Close.Num() < (bManual ? 1 : BSDefs::WaveMin)) return false;
+		E.WaveCd = BSDefs::WaveCd;
+		KerriganCast(E, TEXT("spell b"), 1.f, TEXT("IMMOBILIZATION WAVE"), nullptr);
+		PlayFx(TEXT("immobilizationWave"), FVector(E.X, E.Y, Gz), 0, 1.4f);
+		for (const FBSTarget& O : Close)
+		{
+			DamageDefender(O, BSDefs::WaveDmg * P); PinDefender(O, BSDefs::WaveStun);
+			PlayFx(TEXT("immobilizationImpact"), FVector(O.X, O.Y, BSTerrain::Height(O.X, O.Y)));
+		}
+		PlaySound(TEXT("kerriganPsi"), 0.8f);
+		Shake = FMath::Min(1.f, Shake + 0.4f);
+		return true;
+	}
+	if (Id == TEXT("grip"))
+	{
+		// Crushing Grip on the thickest knot of troops.
+		FBSTarget Knot;
+		if (!DensestDefender(E, BSDefs::GripRange, BSDefs::GripRadius, bManual ? 1 : 2, Knot)) return false;
+		E.GripCd = BSDefs::GripCd;
+		KerriganCast(E, TEXT("spell d"), 0.9f, TEXT("CRUSHING GRIP"), &Knot);
+		PlayFx(TEXT("crushingGrip"), FVector(Knot.X, Knot.Y, BSTerrain::Height(Knot.X, Knot.Y)), 0, 1.6f);
+		for (const FBSTarget& O : Tgs)
+			if (!O.bStructure && FMath::Sqrt(Dist2(Knot.X, Knot.Y, O.X, O.Y)) - O.Radius <= BSDefs::GripRadius) { DamageDefender(O, BSDefs::GripDmg * P); PinDefender(O, BSDefs::GripStun); }
+		PlaySound(TEXT("crushingGrip"), 0.8f);
+		return true;
+	}
+	if (Id == TEXT("kinetic"))
+	{
+		// Kinetic Blast at the biggest machine in reach (the player's: any unit in reach, machines first).
+		auto Rank = [](const FBSTarget& O)
+		{
+			const TSharedPtr<FBSTank> K = O.TankRef.Pin(); const TSharedPtr<FBSMech> M = O.MechRef.Pin(); const TSharedPtr<FBSTrooper> R = O.TrooperRef.Pin();
+			const float Mhp = K ? K->MaxHp : M ? M->MaxHp : R ? R->MaxHp : 0.f;
+			return (O.Kind == FBSTarget::Tank || O.Kind == FBSTarget::Mech ? 1e6f : 0.f) + Mhp;
+		};
+		const FBSTarget* Big = nullptr;
+		for (const FBSTarget& O : Tgs)
+		{
+			if (!((bManual && !O.bStructure) || O.Kind == FBSTarget::Tank || O.Kind == FBSTarget::Mech) || FMath::Sqrt(Dist2(E.X, E.Y, O.X, O.Y)) - O.Radius > BSDefs::KineticRange) continue;
+			if (!Big || Rank(O) > Rank(*Big)) Big = &O;
+		}
+		if (!Big) return false;
+		E.KineticCd = BSDefs::KineticCd;
+		KerriganCast(E, TEXT("spell c"), 0.8f, TEXT("KINETIC BLAST"), Big);
+		const float Tz = BSTerrain::Height(Big->X, Big->Y) + 1;
+		AddFx(EBSFxKind::Tracer, FVector(E.X, E.Y, Gz + 2), FVector(Big->X, Big->Y, Tz), 0.35f, 0.12f, FLinearColor(0.75f, 0.45f, 1.f), 22);
+		PlayFx(TEXT("kineticImpact"), FVector(Big->X, Big->Y, Tz), E.Yaw + PI, 1.4f);
+		DamageDefender(*Big, BSDefs::KineticDmg * P);
+		PlaySound(TEXT("kineticBlast"), 0.8f); PlaySound(TEXT("kineticHit"), 0.7f);
+		return true;
+	}
+	if (Id == TEXT("chain"))
+	{
+		// Chain Lightning: arcs from troop to troop.
 		TArray<const FBSTarget*> Pool;
 		for (const FBSTarget& O : Tgs) if (!O.bStructure && O.Kind != FBSTarget::Tank && O.Kind != FBSTarget::Mech) Pool.Add(&O);
 		const FBSTarget* Cur = nullptr; float CurD = BSDefs::ChainRange;
 		for (const FBSTarget* O : Pool) { const float Dd = FMath::Sqrt(Dist2(E.X, E.Y, O->X, O->Y)); if (Dd < CurD) { CurD = Dd; Cur = O; } }
-		if (Cur)
+		if (!Cur) return false;
+		E.ChainCd = BSDefs::ChainCd;
+		KerriganCast(E, TEXT("spell e"), 0.7f, TEXT("CHAIN LIGHTNING"), Cur);
+		FVector From(E.X, E.Y, Gz + 2);
+		TArray<const FBSTarget*> Struck;
+		for (int32 j = 0; j < BSDefs::ChainJumps && Cur; j++)
 		{
-			E.ChainCd = BSDefs::ChainCd;
-			KerriganCast(E, TEXT("spell e"), 0.7f, TEXT("CHAIN LIGHTNING"), Cur);
-			FVector From(E.X, E.Y, Gz + 2);
-			TArray<const FBSTarget*> Struck;
-			for (int32 j = 0; j < BSDefs::ChainJumps && Cur; j++)
-			{
-				Struck.Add(Cur);
-				const FVector To(Cur->X, Cur->Y, BSTerrain::Height(Cur->X, Cur->Y) + 0.8f);
-				AddFx(EBSFxKind::Tracer, From, To, 0.3f, 0.05f, FLinearColor(0.55f, 0.65f, 1.f), 22);
-				DamageDefender(*Cur, BSDefs::ChainDmg);
-				From = To;
-				const FBSTarget* Next = nullptr; float NextD = BSDefs::ChainHop;
-				for (const FBSTarget* O : Pool) if (!Struck.Contains(O)) { const float Dd = FMath::Sqrt(Dist2(Cur->X, Cur->Y, O->X, O->Y)); if (Dd < NextD) { NextD = Dd; Next = O; } }
-				Cur = Next;
-			}
-			PlaySound(TEXT("kerriganChain"), 0.7f);
-			return true;
+			Struck.Add(Cur);
+			const FVector To(Cur->X, Cur->Y, BSTerrain::Height(Cur->X, Cur->Y) + 0.8f);
+			AddFx(EBSFxKind::Tracer, From, To, 0.3f, 0.05f, FLinearColor(0.55f, 0.65f, 1.f), 22);
+			DamageDefender(*Cur, BSDefs::ChainDmg * P);
+			From = To;
+			const FBSTarget* Next = nullptr; float NextD = BSDefs::ChainHop;
+			for (const FBSTarget* O : Pool) if (!Struck.Contains(O)) { const float Dd = FMath::Sqrt(Dist2(Cur->X, Cur->Y, O->X, O->Y)); if (Dd < NextD) { NextD = Dd; Next = O; } }
+			Cur = Next;
 		}
-		E.ChainCd = 1;
+		PlaySound(TEXT("kerriganChain"), 0.7f);
+		return true;
 	}
-	// Wild Mutation: the zerg round her shrug off half of everything.
-	if (E.MutateCd <= 0)
+	if (Id == TEXT("mutation"))
 	{
+		// Wild Mutation: the zerg round her shrug off half of everything.
 		TArray<TSharedPtr<FBSEnemy>> Kin;
 		for (const TSharedPtr<FBSEnemy>& O : Enemies) if (O.Get() != &E && O->Alive() && Dist2(E.X, E.Y, O->X, O->Y) < BSDefs::MutationRadius * BSDefs::MutationRadius) Kin.Add(O);
-		if (Kin.Num() >= BSDefs::MutationMin)
-		{
-			E.MutateCd = BSDefs::MutationCd;
-			KerriganCast(E, TEXT("spell"), 0.8f, TEXT("WILD MUTATION"), nullptr);
-			PlayFx(TEXT("mutationImpact"), FVector(E.X, E.Y, Gz), 0, 1.5f);
-			for (int32 i = 0; i < Kin.Num(); i++) { Kin[i]->MutatedUntil = Time + BSDefs::MutationDur; if (i < 12) PlayFx(TEXT("mutationBuff"), FVector(Kin[i]->X, Kin[i]->Y, Kin[i]->Z)); }
-			PlaySound(TEXT("finaleRoar"), 0.5f, 2.f);
-			return true;
-		}
-		E.MutateCd = 1;
+		if (Kin.Num() < (bManual ? 1 : BSDefs::MutationMin)) return false;
+		E.MutateCd = BSDefs::MutationCd;
+		KerriganCast(E, TEXT("spell"), 0.8f, TEXT("WILD MUTATION"), nullptr);
+		PlayFx(TEXT("mutationImpact"), FVector(E.X, E.Y, Gz), 0, 1.5f);
+		for (int32 i = 0; i < Kin.Num(); i++) { Kin[i]->MutatedUntil = Time + BSDefs::MutationDur; if (i < 12) PlayFx(TEXT("mutationBuff"), FVector(Kin[i]->X, Kin[i]->Y, Kin[i]->Z)); }
+		PlaySound(TEXT("finaleRoar"), 0.5f, 2.f);
+		return true;
 	}
-	// Spawn Banelings round her.
-	if (E.BanesCd <= 0)
+	if (Id == TEXT("banelings"))
 	{
+		// Spawn Banelings round her.
 		E.BanesCd = BSDefs::BanesCd;
 		KerriganCast(E, TEXT("spell f"), 0.9f, TEXT("SPAWN BANELINGS"), nullptr);
 		for (int32 i = 0; i < BSDefs::BanesCount; i++)
@@ -3037,6 +3048,7 @@ FVector2D ABSGame::SurroundGoal(FBSEnemy& E)
 
 const FBSZergDef* ABSGame::ZergDef(const FString& Type)
 {
+	if (bSwarm) return SwarmDef(Type);
 	const FBSZergDef* Base = BSDefs::FindZerg(Type);
 	if (!Base || !BSLingEvo::Evolves(Type)) return Base;
 	const bool bBoost = Wave >= BSLingEvo::BoostWave, bAdrenal = Wave >= BSLingEvo::AdrenalWave;
@@ -3962,9 +3974,9 @@ void ABSGame::CastSpell(FBSEnemy& E, const FBSTarget& T)
 	{
 		// Dark swarm over the zerg pressing the defiler's target: ranged fire into it does a quarter damage.
 		const float Dd = FMath::Max(0.001f, FMath::Sqrt(Dist2(E.X, E.Y, T.X, T.Y))), K = FMath::Min(3.5f, Dd) / Dd;
-		FBSSwarm Sw; Sw.X = T.X + (E.X - T.X) * K; Sw.Y = T.Y + (E.Y - T.Y) * K; Sw.Until = Time + 8;
-		Sw.Fx = PlayFx(TEXT("darkSwarm"), FVector(Sw.X, Sw.Y, BSTerrain::Height(Sw.X, Sw.Y)), 0, 1.3f);
-		Swarms.Add(Sw);
+		FBSSwarm Cloud; Cloud.X = T.X + (E.X - T.X) * K; Cloud.Y = T.Y + (E.Y - T.Y) * K; Cloud.Until = Time + 8;
+		Cloud.Fx = PlayFx(TEXT("darkSwarm"), FVector(Cloud.X, Cloud.Y, BSTerrain::Height(Cloud.X, Cloud.Y)), 0, 1.3f);
+		Swarms.Add(Cloud);
 		Toast(TEXT("Dark swarm"));
 	}
 	else
@@ -4152,6 +4164,35 @@ void ABSGame::BuildTargets()
 
 void ABSGame::DamageDefender(const FBSTarget& T, float Dmg)
 {
+	const bool bAlive = bSwarm && T.Kind != FBSTarget::Bunker && T.IsValid(Bunker);
+	HurtDefender(T, Dmg);
+	// Swarm mode: every Terran the swarm kills feeds it.
+	if (!bAlive || T.IsValid(Bunker)) return;
+	int32 M = BSSwarm::BountyAir;
+	switch (T.Kind)
+	{
+	case FBSTarget::Trooper: M = BSSwarm::BountyTrooper; break;
+	case FBSTarget::Scv: M = BSSwarm::BountyScv; break;
+	case FBSTarget::Tank: M = BSSwarm::BountyTank; break;
+	case FBSTarget::Structure: M = BSSwarm::BountyStructure; break;
+	case FBSTarget::Reaper: M = BSSwarm::BountyReaper; break;
+	case FBSTarget::Ghost: M = BSSwarm::BountyGhost; break;
+	case FBSTarget::Bc: M = BSSwarm::BountyBc; break;
+	case FBSTarget::Mech:
+	{
+		const TSharedPtr<FBSMech> Mk = T.MechRef.Pin();
+		const FString K = Mk ? Mk->Def->Key : FString();
+		M = BSSwarm::BountyMech * (K == TEXT("odin") ? 3 : K == TEXT("thor") ? 2 : 1);
+		break;
+	}
+	default: break;
+	}
+	Sw.Minerals += M; Sw.Kills++;
+	Floater(T.X, T.Y, 2, FString::Printf(TEXT("+%d"), M), FLinearColor(0.55f, 0.88f, 0.54f));
+}
+
+void ABSGame::HurtDefender(const FBSTarget& T, float Dmg)
+{
 	if (!T.IsValid(Bunker)) return;
 	// A science vessel's Defensive Matrix soaks it first.
 	if (FBSShield* Sh = ShieldOf(T)) if (Sh->Hp > 0) { const float A = FMath::Min(Sh->Hp, Dmg); Sh->Hp -= A; Dmg -= A; if (Dmg <= 0) return; }
@@ -4256,7 +4297,7 @@ void ABSGame::HurtEnemy(const TSharedPtr<FBSEnemy>& E, float Dmg, bool bSplash)
 	if (!E || !E->Alive() || E->Def->bUntouchable) return;
 	// Dark swarm: ground zerg under a cloud take a quarter from shots (blasts and flame still get through).
 	if (!bSplash && !E->Def->bFlying)
-		for (const FBSSwarm& Sw : Swarms) if (Dist2(Sw.X, Sw.Y, E->X, E->Y) < Sw.R * Sw.R) { Dmg *= 0.25f; break; }
+		for (const FBSSwarm& Cloud : Swarms) if (Dist2(Cloud.X, Cloud.Y, E->X, E->Y) < Cloud.R * Cloud.R) { Dmg *= 0.25f; break; }
 	if (E->MutatedUntil > Time) Dmg *= 0.5f;                               // Kerrigan's Wild Mutation
 	E->Hp -= FMath::Max(0.5f, Dmg - E->Def->Armor);
 	E->Flash = 1;
@@ -4372,7 +4413,9 @@ void ABSGame::Step(float Dt)
 	NukeCd = FMath::Max(0.f, NukeCd - Dt); VikingCd = FMath::Max(0.f, VikingCd - Dt); WraithCd = FMath::Max(0.f, WraithCd - Dt); VesselCd = FMath::Max(0.f, VesselCd - Dt);
 
 	WaveTimer -= Dt;
-	if (Wave == 0) { if (WaveTimer <= 0) StartWave(); }
+	// Swarm mode: the Terrans' rounds run on the clock alone (their shop between, at once), and the swarm grows.
+	if (bSwarm) { if (WaveTimer <= 0) { if (Wave) { EndWave(); TerranShop(); } else StartWave(); } UpdateSwarm(Dt); }
+	else if (Wave == 0) { if (WaveTimer <= 0) StartWave(); }
 	else if (SpawnQueue.Num() == 0)
 	{
 		LingerT += Dt;
@@ -4476,9 +4519,9 @@ void ABSGame::UpdateEnemies(float Dt)
 		if (D->bWatcher) { UpdateWatcher(EP, Dt); continue; }
 		if (D->bDetector) { UpdateOverseer(EP, Dt); continue; }
 		if (D->bTumors && QueenCreep(E, Dt)) continue;
-		E.Retarget -= Dt;
 		const TArray<FBSTarget>& Pool = D->bAntiAir ? AirTargets : Targets;       // scourge and devourers hunt Terran air
-		if (!E.Target.IsValid(Bunker) || E.Retarget <= 0)
+		if (E.bHero) HeroTarget(E, Dt);
+		else if ((E.Retarget -= Dt) <= 0 || !E.Target.IsValid(Bunker))
 		{
 			const FBSTarget* BestT = nullptr; float Bd = 1e9f;
 			for (const FBSTarget& T : Pool)
@@ -4529,6 +4572,8 @@ void ABSGame::UpdateEnemies(float Dt)
 		if (D->Boss == TEXT("kerrigan") && UpdateKerrigan(EP, T, Dt)) continue;
 		if (D->Boss == TEXT("leviathan")) UpdateLeviathan(EP, Dt);
 		const float Dx = T.X - E.X, Dy = T.Y - E.Y, Dd = FMath::Sqrt(Dx * Dx + Dy * Dy);
+		// The player's Kerrigan at the spot she was sent to, nothing to fight: she waits there.
+		if (T.Kind == FBSTarget::Point && Dd < 0.6f) { E.bAttacking = false; PlayEnemyAnim(E, TEXT("stand")); continue; }
 		const float Reach = Dd - T.Radius - E.Radius;
 		// A brood queen with no prey about (only the bunker or buildings) presses in under the guns to find some.
 		const bool bPrey = D->Spell != TEXT("broodling") || BroodPriority(T.Kind) > 0;
@@ -4578,7 +4623,7 @@ void ABSGame::UpdateEnemies(float Dt)
 		}
 		// Zerglings in the lane spread round the bunker (SurroundGoal) before they bite it.
 		const bool bRing = D->bSurround && Mode == EBSMode::Lane && T.Kind == FBSTarget::Bunker && !E.bRingDone && Dd < 9;
-		const bool bCanAttack = !bRing && Reach <= Range + (bHigh ? 1.f : 0.f) && !(D->bBurrows && (!E.bBurrowed || E.BurrowT > 0)) && !(E.Route.Num() && E.bHighRoute);
+		const bool bCanAttack = !bRing && T.Kind != FBSTarget::Point && Reach <= Range + (bHigh ? 1.f : 0.f) && !(D->bBurrows && (!E.bBurrowed || E.BurrowT > 0)) && !(E.Route.Num() && E.bHighRoute);
 		if (bCanAttack)
 		{
 			E.bAttacking = true;
@@ -4668,7 +4713,7 @@ void ABSGame::UpdateEnemies(float Dt)
 				Gx = E.Route[0].X; Gy = E.Route[0].Y;
 				if (Dist2(Gx, Gy, E.X, E.Y) < 0.81f) { E.Route.RemoveAt(0); if (!E.Route.Num() && E.bHighRoute) E.bPerched = true; }
 			}
-			else if (D->Boss == TEXT("kerrigan") && Mode == EBSMode::Lane && !BSTerrain::ClearPath(E.X, E.Y, Gx, Gy))
+			else if (D->Boss == TEXT("kerrigan") && Mode == EBSMode::Lane && !E.bOrder && !E.bHold && !BSTerrain::ClearPath(E.X, E.Y, Gx, Gy))
 			{
 				// Off her route (after a leap) with a cliff in the way: down the flow towards the bunker.
 				FVector2D Flow;
@@ -5329,6 +5374,7 @@ void ABSGame::CrowdTick(float Dt)
 void ABSGame::AutoPlay()
 {
 	const float Before = Minerals;
+	if (bSwarm) { ZergBot(); return; }          // the Terrans already play themselves (TerranThink); the bot is the zerg
 	const float StimCd = Ab.StimCd, StrikeCd = Ab.StrikeCd, RepairCd = Ab.RepairCd, YamatoCd = Ab.YamatoCd;
 	AutoPlayImpl();
 	if (Minerals < Before - 0.01f) { Tele.Purchases++; TotalPurchases++; Tele.Spent += Before - Minerals; TotalSpent += Before - Minerals; }
@@ -5358,6 +5404,8 @@ void ABSGame::AutoPlayImpl()
 		}
 		return;
 	}
+	// The balanced commander (the default, also used for demos) is the Terran commander of swarm mode: TerranThink.
+	if (Bot != TEXT("marines") && Bot != TEXT("mech")) { TerranThink(); return; }
 	if (Bunker.Hp < Bunker.MaxHp * 0.45f) EmergencyRepair();
 	if (Up.bStim && Ab.StimCd <= 0 && Enemies.Num() > 6) UseStim();
 	if (Enemies.Num() > 14 && Ab.StrikeCd <= 0 && Minerals > 260) CallAirStrike();
@@ -5386,24 +5434,6 @@ void ABSGame::AutoPlayImpl()
 		if (N < Bunker.Slots && Minerals >= 100) { AddInfantry(TEXT("marauder")); return; }
 		return;
 	}
-	// Balanced commander (the default, also used for demos).
-	const int32 InfantryN = N;
-	int32 Firebats = 0; for (auto& U : Bunker.Units) if (U.Def->Key == TEXT("firebat")) Firebats++;
-	if (InfantryN < 3 && Minerals >= 50) { AddInfantry(TEXT("marine")); return; }
-	if (!Up.bStim && Minerals >= 100) { BuyUpgrade(TEXT("stim")); return; }
-	if (InfantryN >= 4 && Tanks.Num() < 1) { if (Minerals >= TankCost()) DropTank(); return; }   // save up for the first tank
-	if (InfantryN < Bunker.Slots && Minerals >= 100) { AddInfantry(Firebats < 1 ? TEXT("firebat") : (InfantryN % 2 ? TEXT("marauder") : TEXT("marine"))); return; }
-	if (Up.Weapons < 1 && Minerals >= 100) { BuyUpgrade(TEXT("weapons")); return; }
-	if (Scvs.Num() < 2 && Minerals >= 50) { AddScv(); return; }
-	if (!Up.bNeosteel && Minerals >= 150) { BuyUpgrade(TEXT("neosteel")); return; }
-	if (Tanks.Num() < FMath::Min(TankMax, 2) && Minerals >= TankCost()) { DropTank(); return; }
-	if (UpgradeAvailable(TEXT("weapons")) && Minerals >= CostOfUpgrade(TEXT("weapons"))) { BuyUpgrade(TEXT("weapons")); return; }
-	if (UpgradeAvailable(TEXT("medivac")) && Minerals >= 200) { BuyUpgrade(TEXT("medivac")); return; }
-	if (UpgradeAvailable(TEXT("plating")) && Up.Plating < 1 && Minerals >= 250) { BuyUpgrade(TEXT("plating")); return; }
-	if (UpgradeAvailable(TEXT("vehicle")) && Minerals >= CostOfUpgrade(TEXT("vehicle"))) { BuyUpgrade(TEXT("vehicle")); return; }
-	if (UpgradeAvailable(TEXT("hisec")) && Minerals >= 200) { BuyUpgrade(TEXT("hisec")); return; }
-	if (Tanks.Num() < TankMax && Minerals >= TankCost()) { DropTank(); return; }
-	if (UpgradeAvailable(TEXT("plating")) && Minerals >= CostOfUpgrade(TEXT("plating"))) { BuyUpgrade(TEXT("plating")); return; }
 }
 
 // Bots in the shop: research in the order the balanced commander wants it, then the strongest passives, rerolling
@@ -5412,14 +5442,13 @@ void ABSGame::AutoShop()
 {
 	static const TCHAR* Order[] = { TEXT("weapons"), TEXT("neosteel"), TEXT("stim"), TEXT("medivac"), TEXT("plating"), TEXT("hisec"), TEXT("vehicle"), TEXT("rails"),
 		TEXT("refinery"), TEXT("shield"), TEXT("firesup"), TEXT("spoils"), TEXT("incinerator"), TEXT("bounty"), TEXT("mule"), TEXT("scvrepair"), TEXT("medpacks"),
-		TEXT("concussive"), TEXT("rotors"), TEXT("recruit"), TEXT("siegerange"), TEXT("goliath"), TEXT("thor"), TEXT("nuke"), TEXT("bc"), TEXT("odin"), TEXT("vikings"),
-		TEXT("capacitors"), TEXT("maelstrom"), TEXT("fortified") };
-	auto Rank = [](const FString& Id) { for (int32 i = 0; i < UE_ARRAY_COUNT(Order); i++) if (Id == Order[i]) return i; return 99; };
+		TEXT("concussive"), TEXT("rotors"), TEXT("recruit"), TEXT("siegerange"), TEXT("goliath"), TEXT("thor"), TEXT("nuke"), TEXT("bc"), TEXT("odin"), TEXT("vikings") };
+	auto Rank = [](const FString& Id) { for (int32 i = 0; i < UE_ARRAY_COUNT(Order); i++) if (Id == Order[i]) return i; return int32(INDEX_NONE); };
 	if (Bot == TEXT("passive")) return;
 	for (int32 Pass = 0; Pass < 4; Pass++)
 	{
 		TArray<int32> Idx;
-		for (int32 i = 0; i < Shop.Offers.Num(); i++) if (!Shop.Bought[i]) Idx.Add(i);
+		for (int32 i = 0; i < Shop.Offers.Num(); i++) if (!Shop.Bought[i] && Rank(Shop.Offers[i]) != INDEX_NONE) Idx.Add(i);
 		Idx.Sort([&](int32 A, int32 B) { return Rank(Shop.Offers[A]) < Rank(Shop.Offers[B]); });
 		bool bAny = false;
 		for (const int32 i : Idx)
@@ -5439,7 +5468,8 @@ void ABSGame::StartEvac()
 {
 	Evac.bOn = true; Evac.T = Time; Evac.P = BSDefs::EvacFrom;
 	WaveBanner = TEXT("THE HYPERION HAS ARRIVED  //  GET ABOARD"); WaveBannerT = Time; WaveSerial++;
-	Toast(Bosses().ContainsByPredicate([](const TSharedPtr<FBSEnemy>& B) { return B->Def->bUntouchable; }) ? TEXT("Hyperion inbound: hold her off a few seconds more!") : TEXT("Hyperion inbound: hold the bunker!"));
+	Toast(bSwarm ? TEXT("The Hyperion is coming for them: raze the bunker now!")
+		: Bosses().ContainsByPredicate([](const TSharedPtr<FBSEnemy>& B) { return B->Def->bUntouchable; }) ? TEXT("Hyperion inbound: hold her off a few seconds more!") : TEXT("Hyperion inbound: hold the bunker!"));
 	Shake = 0.5f;
 	Evac.Actor = AcquireModel(TEXT("battlecruiser"));
 	if (Evac.Actor) { Evac.Actor->SetScale(BSDefs::EvacScale); Evac.Actor->SetTeamColor(TerranColor); Evac.Actor->SetSim(Evac.P.X, Evac.P.Y, Evac.P.Z, PI / 2); Evac.Actor->Play(StandNames, true); }
@@ -5448,8 +5478,8 @@ void ABSGame::StartEvac()
 void ABSGame::Evacuate()
 {
 	if (bOver) return;
-	bOver = true; bWon = true;
-	Score += BSDefs::EvacScore;
+	bOver = true; bWon = !bSwarm;                // swarm mode: they got away
+	if (!bSwarm) Score += BSDefs::EvacScore;
 	EndReason = TEXT("evacuated");
 	FinishRun();
 }
@@ -5467,6 +5497,7 @@ void ABSGame::GameOver()
 {
 	if (bOver) return;
 	bOver = true; Bunker.bDead = true; Bunker.Hp = 0;
+	if (bSwarm) { bWon = true; Score += BSDefs::EvacScore; }   // swarm mode: the bunker razed is the zerg's win
 	ReleaseModel(Bunker.Actor); Bunker.Actor = nullptr;
 	Corpse(TEXT("bunkerDeath"), 0, 0, 0, PI / 2, 60, 1, true);
 	AddFx(EBSFxKind::Blast, FVector(0, 0, 0.05f), FVector::ZeroVector, 1.2f, 6, FLinearColor(1, 0.5f, 0.2f), 10);
@@ -5478,14 +5509,14 @@ void ABSGame::GameOver()
 
 void ABSGame::FinishRun()
 {
-	FinalScore = FMath::RoundToInt(Score + Kills * 10 + Wave * 250);
+	FinalScore = FMath::RoundToInt(Score + (bSwarm ? Sw.Kills : Kills) * 10 + Wave * 250);
 	WriteTelemetry(TEXT("wave"));
 	WriteTelemetry(TEXT("final"));
 	if (bAutoPlay) return;
-	MetaResult = BSMeta::EndRun(Mode == EBSMode::Arena, WavesCleared, bWon);
+	MetaResult = BSMeta::EndRun(Mode == EBSMode::Arena, bSwarm, WavesCleared, bWon);
 	bNewBest = FinalScore > Best;
 	Best = FMath::Max(Best, FinalScore);
-	GConfig->SetInt(TEXT("BunkerSurvivors"), *(FString(TEXT("Best.")) + (Mode == EBSMode::Lane ? TEXT("Lane") : TEXT("Arena"))), Best, GGameUserSettingsIni);
+	GConfig->SetInt(TEXT("BunkerSurvivors"), *(FString(TEXT("Best.")) + (bSwarm ? TEXT("Swarm") : Mode == EBSMode::Lane ? TEXT("Lane") : TEXT("Arena"))), Best, GGameUserSettingsIni);
 	GConfig->Flush(false, GGameUserSettingsIni);
 }
 
@@ -5505,8 +5536,22 @@ FString ABSGame::DebugState() const
 	for (const TSharedPtr<FBSStructure>& S : Structures) Str += FString::Printf(TEXT("%s:%d:%.0f "), S->bCc ? TEXT("cc") : S->bSam ? TEXT("sam") : TEXT("sensor"), S->bReady ? 1 : 0, S->Hp);
 	FString Ban;
 	for (const TSharedPtr<FBSBanshee>& Bn : Banshees) Ban += FString::Printf(TEXT("%d@%.1f,%.1f "), (int32)Bn->State, Bn->X, Bn->Y);
-	return FString::Printf(TEXT("t=%.1f wave=%d enemies=%d kills=%d minerals=%.0f bunker=%.0f/%.0f units=%d tanks=%d scvs=%d over=%d squad=[%s] structures=[%s] banshees=[%s] radar=%d rails=%d bunkerActor[%s]"),
-		Time, Wave, Enemies.Num(), Kills, Minerals, Bunker.Hp, Bunker.MaxHp, Bunker.Units.Num(), Tanks.Num(), Scvs.Num(), bOver ? 1 : 0, *Out, *Str, *Ban, SensorUp() ? 1 : 0, Up.bRails ? 1 : 0, *B);
+	// Swarm mode: the player's economy, tier, larva, strains and evolutions, Kerrigan, and the zerg on the field by kind.
+	FString Swm;
+	if (bSwarm)
+	{
+		TMap<FString, int32> Kinds;
+		for (const TSharedPtr<FBSEnemy>& E : Enemies) Kinds.FindOrAdd(E->Def->Key)++;
+		FString Zg, Ev;
+		for (const auto& K : Kinds) Zg += FString::Printf(TEXT("%s:%d "), *K.Key, K.Value);
+		for (const auto& K : Sw.Evo) Ev += FString::Printf(TEXT("%s:%d "), *K.Key, K.Value);
+		const FBSEnemy* H = HeroAlive();
+		Swm = FString::Printf(TEXT(" swarm[min=%.0f gas=%.0f tier=%d hatch=%d queens=%d drones=%d extractors=%d larva=%.1f rate=%.2f strains=%d evo=[%s] kills=%d hero=%s step=%d zerg=[%s]]"),
+			Sw.Minerals, Sw.Gas, Sw.Tier, Sw.Hatcheries, Sw.Queens, Sw.Drones, Sw.Extractors, Sw.Larva, LarvaRate(), Sw.Strains.Num(), *Ev.TrimEnd(), Sw.Kills,
+			H ? *FString::Printf(TEXT("%.0f/%.0f%s"), H->Hp, H->MaxHp, H->bOrder ? TEXT(" order") : H->bHold ? TEXT(" hold") : TEXT("")) : Time < Sw.HeroAt ? TEXT("recovering") : TEXT("none"), ZergStep, *Zg.TrimEnd());
+	}
+	return FString::Printf(TEXT("t=%.1f wave=%d enemies=%d kills=%d minerals=%.0f bunker=%.0f/%.0f units=%d tanks=%d scvs=%d over=%d squad=[%s] structures=[%s] banshees=[%s] radar=%d rails=%d%s bunkerActor[%s]"),
+		Time, Wave, Enemies.Num(), Kills, Minerals, Bunker.Hp, Bunker.MaxHp, Bunker.Units.Num(), Tanks.Num(), Scvs.Num(), bOver ? 1 : 0, *Out, *Str, *Ban, SensorUp() ? 1 : 0, Up.bRails ? 1 : 0, *Swm, *B);
 }
 
 void ABSGame::WriteTelemetry(const FString& Kind)

@@ -73,6 +73,8 @@ private:
 	TSharedRef<SWidget> BuildHyperion();             // start screen: perks bought with vespene, and the card list
 	TSharedRef<SWidget> MakePerk(int32 Index);
 	TSharedRef<SWidget> MakeAbility(int32 Index);
+	TSharedRef<SWidget> MakeSwarmAbility(int32 Index);   // swarm mode: -1 Kerrigan's button, else her spells (BSSwarm::Abilities)
+	void HeroButton();                                    // summon Kerrigan, or send her back to advancing with the swarm
 	TSharedRef<SWidget> MakeArmouryCard(int32 Index);
 	TSharedRef<SWidget> MakeArmouryRow(int32 Index);
 	TSharedRef<SWidget> MakeButton(const FString& Label, bool bPrimary, TFunction<void()> OnClick, float Width = 150);

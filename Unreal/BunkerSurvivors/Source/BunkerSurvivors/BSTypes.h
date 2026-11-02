@@ -322,6 +322,44 @@ namespace BSLingEvo
 	inline bool Evolves(const FString& Key) { return Key == TEXT("zergling") || Key == TEXT("wingling"); }
 }
 
+// Swarm mode (BSSwarm.cpp): the player's zerg. Minerals come from drones (DroneIncome a second each, on top of the
+// hatchery's own Income), vespene from extractors. Hatcheries hatch larva (the FBSZergDef budget) a second, more with every
+// Spawn Larva (queens); every Brood seconds the banked larva hatches as one brood of whatever strains are bred (weighted
+// as the waves weight them), banking at most Bank broods' worth. The lair and the hive open the later strains and
+// evolutions; the hive lets the player summon Kerrigan (Hero*: cost, her hit points, damage, armour and spell power;
+// after she falls, HeroRespawn s before she can be summoned again; melee and carapace evolutions strengthen her too).
+// Evolutions: +EvoDmg damage a level (melee or missile by range), +1 armour and +EvoHp hit points a carapace level, and
+// the strain upgrades. Every Terran killed pays bounty minerals. TerranIncome: the Terran commander's mineral income,
+// times this. Port of BS.SWARM in units.js; keep the two in step.
+namespace BSSwarm
+{
+	struct FCost { int32 M = 0, G = 0; };
+	struct FTier { const TCHAR* Name; const TCHAR* Icon; FCost Cost; };
+	// Budget, Weight: 0 = the FBSZergDef's own. Max: never more than this many on the field. bLane: lane mode only.
+	struct FStrain { const TCHAR* Id; const TCHAR* Name; int32 Tier; FCost Cost; const TCHAR* Icon; int32 Budget = 0; float Weight = 0; int32 Max = 0; bool bLane = false; };
+	// One level per Costs entry (Tiers and Icons alike); Need: the strain it improves.
+	struct FEvo { const TCHAR* Id; const TCHAR* Name; TArray<const TCHAR*> Icons; TArray<FCost> Costs; TArray<int32> Tiers; const TCHAR* Need = nullptr; bool Levels() const { return Costs.Num() > 1; } };
+	struct FAbility { const TCHAR* Id; const TCHAR* Name; const TCHAR* Icon; const TCHAR* Key; FLinearColor Accent; };
+
+	constexpr float Minerals = 200, Gas = 0, Income = 2, DroneIncome = 0.4f, ExtractorGas = 1, HatchLarva = 1.6f, QueenBoost = 0.15f, Brood = 6, Bank = 3;
+	constexpr int32 DroneCost = 50, DroneMax = 30, ExtractorCost = 75, ExtractorMax = 4;
+	inline const int32 HatchCosts[] = { 300, 400, 550, 700, 900 };
+	inline const int32 QueenCosts[] = { 100, 150, 200, 275, 350, 450 };
+	constexpr float EvoDmg = 0.2f, EvoHp = 0.1f, TerranIncome = 1.5f;
+	// Bounty (minerals) for each Terran the swarm kills, by kind; mechs: x2 a thor, x3 the Odin.
+	constexpr int32 BountyTrooper = 12, BountyScv = 10, BountyTank = 45, BountyMech = 70, BountyStructure = 35, BountyReaper = 20, BountyGhost = 30, BountyAir = 40, BountyBc = 250;
+	inline const FCost HeroCost{ 4000, 3500 };
+	constexpr int32 HeroTier = 2, HeroPods = 4;
+	constexpr float HeroRespawn = 60, HeroHp = 3000, HeroDmg = 45, HeroStructure = 20, HeroArmor = 1, HeroPower = 1, HeroEngage = 3, HeroGuard = 7;
+	const TArray<FTier>& Tiers();
+	const TArray<FStrain>& Strains();
+	const FStrain* FindStrain(const FString& Id);
+	const TArray<FEvo>& Evos();
+	const FEvo* FindEvo(const FString& Id);
+	const TArray<FAbility>& Abilities();            // Kerrigan's spells on the player's bar
+	const FAbility* FindAbility(const FString& Id);
+}
+
 // Sound keys -> exported sound files (S_<key>_<n> in /Game/SC2/Sounds).
 namespace BSSounds
 {

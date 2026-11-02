@@ -34,6 +34,15 @@ for (const p of BS.META.perks) icons.add(p.icon);                         // Hyp
  'btn-upgrade-terran-buildingarmor', 'btn-upgrade-terran-hisecautotracking', 'btn-unit-terran-battlecruiser',
  'btn-building-terran-missileturret', 'btn-building-terran-sensortower-silver', 'btn-ability-terran-unloadall',
  'btn-unit-terran-goliath', 'btn-unit-terran-thor', 'btn-unit-terran-odin', 'btn-unit-terran-vikingfighter', 'btn-ability-terran-nuclearstrike'].forEach(i => icons.add(i));
+// Swarm mode: the hive cluster (economy, tiers, strains, evolutions) and Kerrigan's bar.
+if (BS.SWARM) {
+  const S = BS.SWARM;
+  ['btn-unit-zerg-drone', 'btn-building-zerg-extractor', 'btn-building-zerg-hatchery', 'btn-unit-zerg-queen', 'btn-unit-zerg-kerriganinfested'].forEach(i => icons.add(i));
+  for (const t of S.tiers) icons.add(t.icon);
+  for (const s of S.strains) icons.add(s.icon);
+  for (const v of S.evo) { if (v.icon) icons.add(v.icon); (v.icons || []).forEach(i => icons.add(i)); }
+  for (const a of S.abilities) icons.add(a.icon);
+}
 
 function write(rel, buf) {
   const p = path.join(outDir, rel);
@@ -51,13 +60,15 @@ async function main() {
   const manifest = { sc2Version: sc2.version, exportedAt: new Date().toISOString(), models: {}, icons: {}, sounds: {}, textures: {}, failures: [] };
   // BS_FX_ONLY=1 re-exports just the particle effects into the existing manifest.
   const FX_ONLY = process.env.BS_FX_ONLY === '1';
-  if (FX_ONLY) Object.assign(manifest, JSON.parse(fs.readFileSync(path.join(outDir, 'manifest.json'), 'utf8')), { failures: [] });
+  // BS_ICONS_ONLY=1 re-exports just the icons into the existing manifest.
+  const ICONS_ONLY = process.env.BS_ICONS_ONLY === '1';
+  if (FX_ONLY || ICONS_ONLY) Object.assign(manifest, JSON.parse(fs.readFileSync(path.join(outDir, 'manifest.json'), 'utf8')), { failures: [] });
 
   // Extra models (zerg variants, projectile meshes) and particle effects come from client/js/units.js.
   const UNREAL_MODELS = BS.EXTRA_MODELS;
   const FX = BS.fxList();
 
-  for (const [key, m3] of Object.entries(FX_ONLY ? {} : Object.assign({}, BS.MODELS, UNREAL_MODELS))) {
+  for (const [key, m3] of Object.entries(FX_ONLY || ICONS_ONLY ? {} : Object.assign({}, BS.MODELS, UNREAL_MODELS))) {
     try {
       const { glb, report } = convertM3(sc2, m3, { name: key });
       if (!report.stats.primitives) { manifest.failures.push({ key, m3, reason: 'no drawable geometry' }); console.log('  skip  ' + key + ' (no mesh)'); continue; }
@@ -85,6 +96,7 @@ async function main() {
     manifest.icons[name] = rel.replace(/\\/g, '/');
   }
   console.log('  icons ' + Object.keys(manifest.icons).length);
+  if (ICONS_ONLY) { write('manifest.json', Buffer.from(JSON.stringify(manifest, null, 2))); return; }
 
   for (const [key, list] of Object.entries(FX_ONLY ? {} : BS.SOUNDS)) {
     manifest.sounds[key] = [];

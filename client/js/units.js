@@ -610,6 +610,68 @@ window.BS = window.BS || {};
   };
 
   // Abilities on the action bar.
+  // Swarm mode (swarm.js): the player's zerg. Minerals come from drones (income a second each, on top of the
+  // hatchery's own), vespene from extractors. Hatcheries hatch larva (the BS.ZERG budget) a second, more with every
+  // Spawn Larva; every brood seconds the banked larva hatches as one brood of whatever strains are bred (weighted as the
+  // waves weight them), banking at most bank broods' worth. The lair and the hive open the later strains, evolutions
+  // and evolutions; the hive lets the player summon Kerrigan (hero: cost, her hit points, damage, armour and spell power;
+  // after she falls, respawn s before she can be summoned again; melee and carapace evolutions strengthen her too).
+  // Evolutions: +evoDmg damage a level (melee or missile by range), +1 armour and +evoHp hit
+  // points a carapace level, and the strain upgrades. Every Terran killed pays bounty minerals. terran.income: the
+  // Terran commander's mineral income, times this.
+  BS.SWARM = {
+    minerals: 200, gas: 0, income: 2,
+    drone: { cost: 50, income: 0.4, max: 30 }, extractor: { cost: 75, gas: 1, max: 4 },
+    hatch: { larva: 1.6, costs: [300, 400, 550, 700, 900] }, queen: { boost: 0.15, costs: [100, 150, 200, 275, 350, 450] },
+    brood: 6, bank: 3,
+    tiers: [{ name: 'Hatchery', icon: 'btn-building-zerg-hatchery' }, { name: 'Lair', icon: 'btn-building-zerg-lair', cost: [200, 150] }, { name: 'Hive', icon: 'btn-building-zerg-hive', cost: [400, 300] }],
+    strains: [
+      { id: 'zergling', name: 'Zerglings', tier: 0, cost: [0, 0], icon: 'btn-unit-zerg-zergling' },
+      { id: 'baneling', name: 'Banelings', tier: 0, cost: [100, 25], icon: 'btn-unit-zerg-baneling' },
+      { id: 'roach', name: 'Roaches', tier: 0, cost: [150, 50], icon: 'btn-unit-zerg-roach' },
+      { id: 'queen', name: 'Queens', tier: 0, cost: [150, 0], icon: 'btn-unit-zerg-queen', budget: 8, weight: 1, max: 4 },
+      { id: 'hydralisk', name: 'Hydralisks', tier: 1, cost: [100, 75], icon: 'btn-unit-zerg-hydralisk' },
+      { id: 'wingling', name: 'Winglings', tier: 1, cost: [100, 50], icon: 'btn-unit-zerg-zergling', lane: true },
+      { id: 'infested', name: 'Infested Marines', tier: 1, cost: [75, 50], icon: 'btn-unit-zerg-infestedmarine' },
+      { id: 'mutalisk', name: 'Mutalisks', tier: 1, cost: [150, 150], icon: 'btn-unit-zerg-mutalisk' },
+      { id: 'lurker', name: 'Lurkers', tier: 1, cost: [150, 150], icon: 'btn-unit-zerg-lurker' },
+      { id: 'scourge', name: 'Scourge', tier: 1, cost: [75, 75], icon: 'btn-unit-zerg-scourge' },
+      { id: 'overlordCreep', name: 'Creep Overlords', tier: 1, cost: [100, 50], icon: 'btn-unit-zerg-overlord', budget: 8, weight: 0.8, max: 3 },
+      { id: 'overlordDrop', name: 'Overlord Drops', tier: 1, cost: [100, 100], icon: 'btn-unit-zerg-overlord', budget: 14, weight: 0.8, max: 3 },
+      { id: 'nydus', name: 'Nydus Worms', tier: 1, cost: [150, 150], icon: 'btn-building-zerg-nydusworm', budget: 26, weight: 0.5, max: 1 },
+      { id: 'ultralisk', name: 'Ultralisks', tier: 2, cost: [200, 200], icon: 'btn-unit-zerg-ultralisk' },
+      { id: 'broodlord', name: 'Brood Lords', tier: 2, cost: [250, 250], icon: 'btn-unit-zerg-broodlord' },
+      { id: 'guardian', name: 'Guardians', tier: 2, cost: [200, 200], icon: 'btn-unit-zerg-broodlord', weight: 1 },
+      { id: 'devourer', name: 'Devourers', tier: 2, cost: [150, 150], icon: 'btn-unit-zerg-mutalisk' },
+      { id: 'defiler', name: 'Defilers', tier: 2, cost: [150, 150], icon: 'btn-ability-zerg-darkswarm', max: 3 },
+      { id: 'viper', name: 'Vipers', tier: 2, cost: [200, 200], icon: 'btn-unit-zerg-viper', max: 3 },
+      { id: 'broodqueen', name: 'Brood Queens', tier: 2, cost: [150, 150], icon: 'btn-unit-zerg-broodqueen' },
+    ],
+    evo: [
+      { id: 'melee', name: 'Melee Attacks', icons: ['btn-upgrade-zerg-meleeattacks-level1', 'btn-upgrade-zerg-meleeattacks-level2', 'btn-upgrade-zerg-meleeattacks-level3'], costs: [[100, 100], [150, 150], [200, 200]], tiers: [0, 1, 2] },
+      { id: 'missile', name: 'Missile Attacks', icons: ['btn-upgrade-zerg-missileattacks-level1', 'btn-upgrade-zerg-missileattacks-level2', 'btn-upgrade-zerg-missileattacks-level3'], costs: [[100, 100], [150, 150], [200, 200]], tiers: [0, 1, 2] },
+      { id: 'carapace', name: 'Carapace', icons: ['btn-upgrade-zerg-groundcarapace-level1', 'btn-upgrade-zerg-groundcarapace-level2', 'btn-upgrade-zerg-groundcarapace-level3'], costs: [[150, 150], [225, 225], [300, 300]], tiers: [0, 1, 2] },
+      { id: 'boost', name: 'Metabolic Boost', icon: 'btn-upgrade-zerg-metabolicboost', cost: [100, 100], tier: 0, need: 'zergling' },
+      { id: 'hooks', name: 'Centrifugal Hooks', icon: 'btn-upgrade-zerg-centrifugalhooks', cost: [150, 150], tier: 1, need: 'baneling' },
+      { id: 'glial', name: 'Glial Reconstitution', icon: 'btn-upgrade-zerg-glialreconstitution', cost: [100, 100], tier: 1, need: 'roach' },
+      { id: 'spines', name: 'Grooved Spines', icon: 'btn-upgrade-zerg-groovedspines', cost: [100, 100], tier: 1, need: 'hydralisk' },
+      { id: 'adrenal', name: 'Adrenal Glands', icon: 'btn-upgrade-zerg-adrenalglands', cost: [200, 200], tier: 2, need: 'zergling' },
+      { id: 'chitin', name: 'Chitinous Plating', icon: 'btn-upgrade-zerg-chitinousplating', cost: [150, 150], tier: 2, need: 'ultralisk' },
+    ],
+    evoDmg: 0.2, evoHp: 0.1,
+    bounty: { trooper: 12, scv: 10, tank: 45, mech: 70, structure: 35, reaper: 20, ghost: 30, air: 40, bc: 250 },
+    hero: { cost: [4000, 3500], tier: 2, respawn: 60, hp: 3000, dmg: 45, structure: 20, armor: 1, power: 1, pods: 4, engage: 3, guard: 7 },
+    abilities: [
+      { id: 'leap', name: 'LEAP', icon: 'btn-ability-kerrigan-leapingstrike', key: 'Q', accent: '#c08cff' },
+      { id: 'kinetic', name: 'KINETIC', icon: 'btn-ability-kerrigan-kineticblast', key: 'W', accent: '#c08cff' },
+      { id: 'chain', name: 'CHAIN', icon: 'btn-ability-kerrigan-chainreaction', key: 'E', accent: '#5fe3ff' },
+      { id: 'grip', name: 'GRIP', icon: 'btn-ability-kerrigan-crushinggrip', key: 'R', accent: '#c08cff' },
+      { id: 'mutation', name: 'MUTATION', icon: 'btn-ability-kerrigan-wildmutation', key: 'T', accent: '#8de08a' },
+      { id: 'apocalypse', name: 'APOCALYPSE', icon: 'btn-ability-kerrigan-apocalypse', key: 'Y', accent: '#ff7ad9' },
+    ],
+    terran: { income: 1.5 },
+  };
+
   BS.ABILITIES = [
     { id: 'stim', name: 'STIM', icon: 'btn-ability-terran-stimpack', key: 'S', accent: '#ffbf3c' },
     { id: 'strike', name: 'AIR STRIKE', icon: 'btn-unit-terran-banshee', key: 'A', accent: '#ff7a47' },

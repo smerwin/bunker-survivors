@@ -408,3 +408,74 @@ namespace BSDefs
 		return FMath::Clamp(Hold - 2, 1.5f, 3.f);
 	}
 }
+
+// Swarm mode; matches BS.SWARM in client/js/units.js.
+namespace BSSwarm
+{
+	const TArray<FTier>& Tiers()
+	{
+		static const TArray<FTier> V = {
+			{ TEXT("Hatchery"), TEXT("btn-building-zerg-hatchery"), {} },
+			{ TEXT("Lair"), TEXT("btn-building-zerg-lair"), { 200, 150 } },
+			{ TEXT("Hive"), TEXT("btn-building-zerg-hive"), { 400, 300 } },
+		};
+		return V;
+	}
+	const TArray<FStrain>& Strains()
+	{
+		static const TArray<FStrain> V = {
+			{ TEXT("zergling"), TEXT("Zerglings"), 0, { 0, 0 }, TEXT("btn-unit-zerg-zergling") },
+			{ TEXT("baneling"), TEXT("Banelings"), 0, { 100, 25 }, TEXT("btn-unit-zerg-baneling") },
+			{ TEXT("roach"), TEXT("Roaches"), 0, { 150, 50 }, TEXT("btn-unit-zerg-roach") },
+			{ TEXT("queen"), TEXT("Queens"), 0, { 150, 0 }, TEXT("btn-unit-zerg-queen"), 8, 1, 4 },
+			{ TEXT("hydralisk"), TEXT("Hydralisks"), 1, { 100, 75 }, TEXT("btn-unit-zerg-hydralisk") },
+			{ TEXT("wingling"), TEXT("Winglings"), 1, { 100, 50 }, TEXT("btn-unit-zerg-zergling"), 0, 0, 0, true },
+			{ TEXT("infested"), TEXT("Infested Marines"), 1, { 75, 50 }, TEXT("btn-unit-zerg-infestedmarine") },
+			{ TEXT("mutalisk"), TEXT("Mutalisks"), 1, { 150, 150 }, TEXT("btn-unit-zerg-mutalisk") },
+			{ TEXT("lurker"), TEXT("Lurkers"), 1, { 150, 150 }, TEXT("btn-unit-zerg-lurker") },
+			{ TEXT("scourge"), TEXT("Scourge"), 1, { 75, 75 }, TEXT("btn-unit-zerg-scourge") },
+			{ TEXT("overlordCreep"), TEXT("Creep Overlords"), 1, { 100, 50 }, TEXT("btn-unit-zerg-overlord"), 8, 0.8f, 3 },
+			{ TEXT("overlordDrop"), TEXT("Overlord Drops"), 1, { 100, 100 }, TEXT("btn-unit-zerg-overlord"), 14, 0.8f, 3 },
+			{ TEXT("nydus"), TEXT("Nydus Worms"), 1, { 150, 150 }, TEXT("btn-building-zerg-nydusworm"), 26, 0.5f, 1 },
+			{ TEXT("ultralisk"), TEXT("Ultralisks"), 2, { 200, 200 }, TEXT("btn-unit-zerg-ultralisk") },
+			{ TEXT("broodlord"), TEXT("Brood Lords"), 2, { 250, 250 }, TEXT("btn-unit-zerg-broodlord") },
+			{ TEXT("guardian"), TEXT("Guardians"), 2, { 200, 200 }, TEXT("btn-unit-zerg-broodlord"), 0, 1 },
+			{ TEXT("devourer"), TEXT("Devourers"), 2, { 150, 150 }, TEXT("btn-unit-zerg-mutalisk") },
+			{ TEXT("defiler"), TEXT("Defilers"), 2, { 150, 150 }, TEXT("btn-ability-zerg-darkswarm"), 0, 0, 3 },
+			{ TEXT("viper"), TEXT("Vipers"), 2, { 200, 200 }, TEXT("btn-unit-zerg-viper"), 0, 0, 3 },
+			{ TEXT("broodqueen"), TEXT("Brood Queens"), 2, { 150, 150 }, TEXT("btn-unit-zerg-broodqueen") },
+		};
+		return V;
+	}
+	const FStrain* FindStrain(const FString& Id) { return Strains().FindByPredicate([&](const FStrain& S) { return Id == S.Id; }); }
+	const TArray<FEvo>& Evos()
+	{
+		static const TArray<FEvo> V = {
+			{ TEXT("melee"), TEXT("Melee Attacks"), { TEXT("btn-upgrade-zerg-meleeattacks-level1"), TEXT("btn-upgrade-zerg-meleeattacks-level2"), TEXT("btn-upgrade-zerg-meleeattacks-level3") }, { { 100, 100 }, { 150, 150 }, { 200, 200 } }, { 0, 1, 2 } },
+			{ TEXT("missile"), TEXT("Missile Attacks"), { TEXT("btn-upgrade-zerg-missileattacks-level1"), TEXT("btn-upgrade-zerg-missileattacks-level2"), TEXT("btn-upgrade-zerg-missileattacks-level3") }, { { 100, 100 }, { 150, 150 }, { 200, 200 } }, { 0, 1, 2 } },
+			{ TEXT("carapace"), TEXT("Carapace"), { TEXT("btn-upgrade-zerg-groundcarapace-level1"), TEXT("btn-upgrade-zerg-groundcarapace-level2"), TEXT("btn-upgrade-zerg-groundcarapace-level3") }, { { 150, 150 }, { 225, 225 }, { 300, 300 } }, { 0, 1, 2 } },
+			{ TEXT("boost"), TEXT("Metabolic Boost"), { TEXT("btn-upgrade-zerg-metabolicboost") }, { { 100, 100 } }, { 0 }, TEXT("zergling") },
+			{ TEXT("hooks"), TEXT("Centrifugal Hooks"), { TEXT("btn-upgrade-zerg-centrifugalhooks") }, { { 150, 150 } }, { 1 }, TEXT("baneling") },
+			{ TEXT("glial"), TEXT("Glial Reconstitution"), { TEXT("btn-upgrade-zerg-glialreconstitution") }, { { 100, 100 } }, { 1 }, TEXT("roach") },
+			{ TEXT("spines"), TEXT("Grooved Spines"), { TEXT("btn-upgrade-zerg-groovedspines") }, { { 100, 100 } }, { 1 }, TEXT("hydralisk") },
+			{ TEXT("adrenal"), TEXT("Adrenal Glands"), { TEXT("btn-upgrade-zerg-adrenalglands") }, { { 200, 200 } }, { 2 }, TEXT("zergling") },
+			{ TEXT("chitin"), TEXT("Chitinous Plating"), { TEXT("btn-upgrade-zerg-chitinousplating") }, { { 150, 150 } }, { 2 }, TEXT("ultralisk") },
+		};
+		return V;
+	}
+	const FEvo* FindEvo(const FString& Id) { return Evos().FindByPredicate([&](const FEvo& E) { return Id == E.Id; }); }
+	const TArray<FAbility>& Abilities()
+	{
+		static const FLinearColor Violet = FLinearColor::FromSRGBColor(FColor(0xC0, 0x8C, 0xFF));
+		static const TArray<FAbility> V = {
+			{ TEXT("leap"), TEXT("LEAP"), TEXT("btn-ability-kerrigan-leapingstrike"), TEXT("Q"), Violet },
+			{ TEXT("kinetic"), TEXT("KINETIC"), TEXT("btn-ability-kerrigan-kineticblast"), TEXT("W"), Violet },
+			{ TEXT("chain"), TEXT("CHAIN"), TEXT("btn-ability-kerrigan-chainreaction"), TEXT("E"), FLinearColor::FromSRGBColor(FColor(0x5F, 0xE3, 0xFF)) },
+			{ TEXT("grip"), TEXT("GRIP"), TEXT("btn-ability-kerrigan-crushinggrip"), TEXT("R"), Violet },
+			{ TEXT("mutation"), TEXT("MUTATION"), TEXT("btn-ability-kerrigan-wildmutation"), TEXT("T"), FLinearColor::FromSRGBColor(FColor(0x8D, 0xE0, 0x8A)) },
+			{ TEXT("apocalypse"), TEXT("APOCALYPSE"), TEXT("btn-ability-kerrigan-apocalypse"), TEXT("Y"), FLinearColor::FromSRGBColor(FColor(0xFF, 0x7A, 0xD9)) },
+		};
+		return V;
+	}
+	const FAbility* FindAbility(const FString& Id) { return Abilities().FindByPredicate([&](const FAbility& A) { return Id == A.Id; }); }
+}

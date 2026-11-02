@@ -5,6 +5,7 @@
 #include "BSCameraPawn.h"
 #include "BSModelActor.h"
 #include "BSMeta.h"
+#include "BSTerrain.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Fonts/FontMeasure.h"
 #include "Rendering/DrawElements.h"
@@ -584,18 +585,32 @@ TSharedRef<SWidget> SBSHud::BuildCommandStrip()
 			D::Text(Out, L + 2, G, Label, D::Label(8.5f), FVector2f(X, 8), C::Muted);
 			D::Text(Out, L + 2, G, Value, D::Fit(Value, [](float S) { return D::Num(S); }, 20, 12, Wd - 8), FVector2f(X + Shake, 19), Col);
 		};
-		const int32 N = bWide ? 5 : 4;
+		// Swarm mode: the swarm's minerals, its vespene, and its kills; a narrow strip drops the wave and kills (as the
+		// browser's phone layout does).
+		const bool bSwm = Gm->bSwarm;
+		const bool bWaveKills = !bSwm || bWide;
+		const int32 N = bSwm ? (bWide ? 5 : 3) : bWide ? 5 : 4;
 		const float Sw = W / N;
+		int32 Slot = 0;
 		// Minerals.
 		{
 			const float Pulse = MineralFlash;
 			D::Crystal(Out, L + 2, G, FVector2f(20, 30), 9, FMath::Lerp(C::Cyan, FLinearColor::White, Pulse * 0.6f));
 			const FLinearColor Col = FMath::Lerp(FMath::Lerp(C::Ink, C::Cyan, Pulse), C::Red, MineralFail);
 			Section(36, Sw - 36, TEXT("MINERALS"), D::Int(ShownMinerals), Col, MineralFail * FMath::Sin(NowS * 60) * 3);
+			Slot++;
+		}
+		if (bSwm)
+		{
+			const float X = Sw * Slot++;
+			D::Line(Out, L + 2, G, FVector2f(X, 12), FVector2f(X, 38), C::Hair);
+			D::Crystal(Out, L + 2, G, FVector2f(X + 18, 30), 9, C::Green);
+			Section(X + 34, Sw - 36, TEXT("VESPENE"), D::Int(FMath::FloorToFloat(Gm->Sw.Gas)), C::Ink);
 		}
 		// Wave with a ring counting down to the next one.
+		if (bWaveKills)
 		{
-			const float X = Sw;
+			const float X = Sw * Slot++;
 			D::Line(Out, L + 2, G, FVector2f(X, 12), FVector2f(X, 38), C::Hair);
 			Section(X + 14, Sw - 50, TEXT("WAVE"), FString::Printf(TEXT("%02d"), Gm->Wave), C::Amber);
 			const FVector2f Rc(X + Sw - 24, 25);
@@ -606,20 +621,21 @@ TSharedRef<SWidget> SBSHud::BuildCommandStrip()
 		}
 		// Time left until the Hyperion takes everyone off (amber from the finale on).
 		{
-			const float X = Sw * 2;
+			const float X = Sw * Slot++;
 			const int32 Ev = FMath::CeilToInt(Gm->EvacIn());
 			D::Line(Out, L + 2, G, FVector2f(X, 12), FVector2f(X, 38), C::Hair);
 			Section(X + 14, Sw - 18, TEXT("HYPERION"), FString::Printf(TEXT("%02d:%02d"), Ev / 60, Ev % 60), Ev <= BSDefs::EvacAt - BSDefs::FinaleAt ? C::Amber : C::Ink);
 		}
 		// Kills.
+		if (bWaveKills)
 		{
-			const float X = Sw * 3;
+			const float X = Sw * Slot++;
 			D::Line(Out, L + 2, G, FVector2f(X, 12), FVector2f(X, 38), C::Hair);
-			Section(X + 14, Sw - 18, TEXT("KILLS"), D::Int(Gm->Kills), C::Ink);
+			Section(X + 14, Sw - 18, TEXT("KILLS"), D::Int(bSwm ? Gm->Sw.Kills : Gm->Kills), C::Ink);
 		}
-		if (bWide)
+		if (bWide && !bSwm)
 		{
-			const float X = Sw * 4;
+			const float X = Sw * Slot++;
 			D::Line(Out, L + 2, G, FVector2f(X, 12), FVector2f(X, 38), C::Hair);
 			Section(X + 14, Sw - 18, TEXT("SCORE"), D::Int(Gm->Score + Gm->Kills * 10 + Gm->Wave * 250), C::Ink);
 		}
@@ -836,10 +852,95 @@ TSharedRef<SWidget> SBSHud::MakeAbility(int32 Index)
 	});
 }
 
+// Swarm mode: Kerrigan's button first (summon her; once she is out, send her back to advancing with the swarm), then her
+// spells.
+void SBSHud::HeroButton()
+{
+	ABSGame* Gm = Game(); if (!Gm) return;
+	if (Gm->HeroAlive()) Gm->HeroAdvance(); else Gm->SwarmBuy(TEXT("hero"), FString());
+}
+
+TSharedRef<SWidget> SBSHud::MakeSwarmAbility(int32 Index)
+{
+	// Seven tiles, narrower than the Terran four so the bar fits a phone's width.
+	const FVector2D Size(56, 92);
+	return PaintedButton(Size, [this, Index](const FGeometry& G, FSlateWindowElementList& Out, int32 L, bool bHover, bool bPress)
+	{
+		ABSGame* Gm = Game(); if (!Gm) return;
+		const FBSEnemy* E = Gm->HeroAlive();
+		FString Name, Icon, Key, Sub;
+		FLinearColor Accent = FLinearColor(1.f, 0.48f, 0.85f);
+		float Cd = 0, Full = 1;
+		bool bLocked = false, bPoor = false, bActive = false;
+		if (Index < 0)
+		{
+			Icon = TEXT("btn-unit-zerg-kerriganinfested"); Key = TEXT("K");
+			const FString St = Gm->SwarmState(TEXT("hero"), FString());
+			if (E) { Sub = FString::Printf(TEXT("%d%%"), FMath::CeilToInt(E->Hp / FMath::Max(1.f, E->MaxHp) * 100)); bActive = !E->bOrder && !E->bHold; }
+			else if (St == TEXT("locked")) { Sub = TEXT("HIVE"); bLocked = true; }
+			else if (St == TEXT("wait")) { Sub = TEXT("RECOVERING"); bLocked = true; Cd = Gm->Sw.HeroAt - Gm->Time; Full = BSSwarm::HeroRespawn; }
+			else { const BSSwarm::FCost& C0 = BSSwarm::HeroCost; Sub = FString::Printf(TEXT("%d + %dg"), C0.M, C0.G); bPoor = Gm->Sw.Minerals < C0.M || Gm->Sw.Gas < C0.G; }
+			Name = E ? (E->bOrder || E->bHold ? TEXT("ADVANCE") : TEXT("KERRIGAN")) : TEXT("SUMMON");
+		}
+		else
+		{
+			const BSSwarm::FAbility& A = BSSwarm::Abilities()[Index];
+			Name = A.Name; Icon = A.Icon; Key = A.Key; Accent = A.Accent;
+			const FString Id = A.Id;
+			Full = Id == TEXT("leap") ? BSDefs::LeapCd : Id == TEXT("apocalypse") ? BSDefs::ApocCd : Id == TEXT("kinetic") ? BSDefs::KineticCd : Id == TEXT("grip") ? BSDefs::GripCd
+				: Id == TEXT("chain") ? BSDefs::ChainCd : BSDefs::MutationCd;
+			if (!E) bLocked = true;
+			else { Cd = Gm->HeroCd(Id); Sub = A.Key; }
+		}
+		const bool bReady = !bLocked && !bPoor && Cd <= 0;
+		const float W = G.GetLocalSize().X, Is = 44;
+		const FVector2f Ip((W - Is) * 0.5f, 4 + (bPress ? 1.f : 0.f));
+		if (bReady)
+		{
+			const float Glow = 0.5f + 0.5f * FMath::Sin(NowS * 3.5 + Index);
+			D::RLine(Out, L, G, Ip - FVector2f(4, 4), FVector2f(Is + 8, Is + 8), 16, C::A(Accent, 0.18f + 0.3f * Glow), 2);
+		}
+		D::RFill(Out, L + 1, G, Ip - FVector2f(2, 2), FVector2f(Is + 4, Is + 4), 13, C::Glass);
+		const FLinearColor Tint = (bLocked || bPoor) ? FLinearColor(0.32f, 0.34f, 0.38f) : FLinearColor::White;
+		if (const FSlateBrush* B = Gm->GetAssets()->IconBrush(Icon)) D::Image(Out, L + 2, G, B, Ip + FVector2f(3, 3), FVector2f(Is - 6, Is - 6), Tint);
+		else D::Text(Out, L + 2, G, Name.Left(2), D::Title(18), Ip + FVector2f(Is * 0.5f, Is * 0.5f - 12), C::A(Accent, bLocked ? 0.4f : 0.9f), 0.5f);   // icon not exported
+		if (Cd > 0)
+		{
+			D::Pie(Out, L + 3, G, Ip + FVector2f(Is, Is) * 0.5f, Is * 0.5f - 3, FMath::Min(1.f, Cd / FMath::Max(0.01f, Full)), C::A(FLinearColor::Black, 0.68f));
+			D::Text(Out, L + 4, G, FString::FromInt(FMath::CeilToInt(Cd)), D::Num(18), Ip + FVector2f(Is * 0.5f, Is * 0.5f - 13), C::Ink, 0.5f, true);
+		}
+		if (bActive) D::RLine(Out, L + 4, G, Ip - FVector2f(2, 2), FVector2f(Is + 4, Is + 4), 13, C::A(Accent, 0.5f + 0.5f * FMath::Sin(NowS * 6)), 2);
+		D::RLine(Out, L + 4, G, Ip - FVector2f(2, 2), FVector2f(Is + 4, Is + 4), 13, bHover ? C::A(Accent, 0.95f) : C::A(Accent, bReady ? 0.6f : 0.25f), bHover ? 1.5f : 1.f);
+		if (!Portrait())
+		{
+			D::RFill(Out, L + 5, G, Ip + FVector2f(-4, -2), FVector2f(15, 15), 4, C::Dark);
+			D::Text(Out, L + 6, G, Key, D::Bold(8.5f), Ip + FVector2f(3.5f, -1), C::Muted, 0.5f);
+		}
+		const FSlateFontInfo Nf = D::Fit(Name, [](float S) { return D::Label(S); }, 9, 5, W - 2);
+		D::Text(Out, L + 2, G, Name, Nf, FVector2f(W * 0.5f, Is + 10), bLocked ? C::Muted : C::Ink, 0.5f, true);
+		if (!Sub.IsEmpty() && D::Measure(Sub, D::Label(8)).X > W - 8 && !(Index < 0 && !E && !bLocked))
+			D::Text(Out, L + 2, G, Sub, D::Fit(Sub, [](float Sz) { return D::Label(Sz); }, 8, 5.5f, W - 2), FVector2f(W * 0.5f, Is + 27), bLocked ? C::Muted : Accent, 0.5f);
+		else if (!Sub.IsEmpty())
+		{
+			// (Kerrigan's price is too long for a pill on these tiles: plain text, fitted.)
+			if (Index < 0 && !E && !bLocked) D::Text(Out, L + 2, G, Sub, D::Fit(Sub, [](float Sz) { return D::Bold(Sz); }, 8.5f, 5.5f, W - 2), FVector2f(W * 0.5f, Is + 27), bPoor ? C::Red : C::Cyan, 0.5f);
+			else D::CostPill(Out, L + 2, G, FVector2f(W * 0.5f, Is + 33), Sub, false, bLocked ? C::Muted : Accent);
+		}
+	},
+	[this, Index]()
+	{
+		ABSGame* Gm = Game(); if (!Gm) return;
+		if (Index < 0) HeroButton(); else Gm->HeroCast(BSSwarm::Abilities()[Index].Id);
+	});
+}
+
 TSharedRef<SWidget> SBSHud::BuildAbilityRow()
 {
 	TSharedRef<SHorizontalBox> Row = SNew(SHorizontalBox);
-	for (int32 i = 0; i < Abilities().Num(); i++) Row->AddSlot().AutoWidth().Padding(6, 0)[ MakeAbility(i) ];
+	// Swarm mode: Kerrigan and her spells instead of the Terran abilities.
+	auto SwarmVis = [this](bool bSwarmItem) { ABSGame* Gm = Game(); return (Gm && Gm->bSwarm == bSwarmItem) ? EVisibility::Visible : EVisibility::Collapsed; };
+	for (int32 i = -1; i < BSSwarm::Abilities().Num(); i++) Row->AddSlot().AutoWidth().Padding(1, 0)[ SNew(SBox).Visibility_Lambda([SwarmVis]() { return SwarmVis(true); })[ MakeSwarmAbility(i) ] ];
+	for (int32 i = 0; i < Abilities().Num(); i++) Row->AddSlot().AutoWidth().Padding(6, 0)[ SNew(SBox).Visibility_Lambda([SwarmVis]() { return SwarmVis(false); })[ MakeAbility(i) ] ];
 	return Row;
 }
 
@@ -858,7 +959,13 @@ struct FBSArmItem
 	TFunction<void(ABSGame*)> Buy;
 	TFunction<bool(ABSGame*)> Hidden;       // high tech stays hidden until a shop card unlocks it
 	bool bTech = false;
-	bool IsHidden(ABSGame* G) const { return Hidden && Hidden(G); }
+	// Swarm mode's hive cluster (bSwarm items show only there, the rest only outside it): Price ("m + gg"), Poor (short of
+	// either), Note (a count or level, shown in place of pips).
+	bool bSwarm = false;
+	TFunction<FString(ABSGame*)> Price;
+	TFunction<bool(ABSGame*)> Poor;
+	TFunction<FString(ABSGame*)> Note;
+	bool IsHidden(ABSGame* G) const { return G->bSwarm != bSwarm || (Hidden && Hidden(G)); }
 };
 
 static const TArray<FBSArmItem>& ArmItems()
@@ -916,6 +1023,38 @@ static const TArray<FBSArmItem>& ArmItems()
 			[](ABSGame* G) { return !G->HasSensor(); }, [](ABSGame* G) { G->BuildStructure(false); });
 		Simple(TEXT("tank"), TEXT("Siege Tank"), TEXT("Air-dropped, long-range splash"), TEXT("btn-unit-terran-siegetank"), 0,
 			[](ABSGame* G) { return G->Tanks.Num() < G->TankMax; }, [](ABSGame* G) { G->DropTank(); });
+		// Swarm mode: the hive cluster. Economy, the tiers, strains to breed, evolutions; two prices (minerals + vespene).
+		auto Swarm = [&Out](const FString& Kind, const FString& Id, const FString& Name, TFunction<FString(ABSGame*)> Icon, TFunction<FString(ABSGame*)> Note, const FString& MaxLabel)
+		{
+			FBSArmItem I; I.Id = Kind + TEXT(":") + Id; I.Name = Name; I.bSwarm = true;
+			I.Icon = Icon; I.Note = Note;
+			I.Cost = [Kind, Id](ABSGame* G) { BSSwarm::FCost C; G->SwarmCost(Kind, Id, C); return C.M; };
+			I.Price = [Kind, Id](ABSGame* G) { BSSwarm::FCost C; G->SwarmCost(Kind, Id, C); return C.G ? FString::Printf(TEXT("%d + %dg"), C.M, C.G) : FString::FromInt(C.M); };
+			I.Poor = [Kind, Id](ABSGame* G) { BSSwarm::FCost C; return G->SwarmCost(Kind, Id, C) && (G->Sw.Minerals < C.M || G->Sw.Gas < C.G); };
+			I.Avail = [Kind, Id](ABSGame* G) { return G->SwarmState(Kind, Id).IsEmpty(); };
+			I.Tag = [Kind, Id, MaxLabel](ABSGame* G)
+			{
+				const FString St = G->SwarmState(Kind, Id);
+				return St == TEXT("max") ? MaxLabel : St == TEXT("locked") ? FString(BSSwarm::Tiers()[G->SwarmNeeds(Kind, Id)].Name).ToUpper() : FString(TEXT("LOCKED"));
+			};
+			I.Level = [](ABSGame*) { return -1; };
+			I.Buy = [Kind, Id](ABSGame* G) { G->SwarmBuy(Kind, Id); };
+			Out.Add(I);
+		};
+		auto Fixed = [](const TCHAR* Icon) { const FString Ic = Icon; return TFunction<FString(ABSGame*)>([Ic](ABSGame*) { return Ic; }); };
+		Swarm(TEXT("drone"), FString(), TEXT("Drone"), Fixed(TEXT("btn-unit-zerg-drone")), [](ABSGame* G) { return FString::FromInt(G->Sw.Drones); }, TEXT("MAX"));
+		Swarm(TEXT("extractor"), FString(), TEXT("Extractor"), Fixed(TEXT("btn-building-zerg-extractor")), [](ABSGame* G) { return FString::FromInt(G->Sw.Extractors); }, TEXT("MAX"));
+		Swarm(TEXT("hatch"), FString(), TEXT("Hatchery"), Fixed(TEXT("btn-building-zerg-hatchery")), [](ABSGame* G) { return FString::Printf(TEXT("%d  %.1f/s"), G->Sw.Hatcheries, G->LarvaRate()); }, TEXT("MAX"));
+		Swarm(TEXT("queen"), FString(), TEXT("Spawn Larva"), Fixed(TEXT("btn-unit-zerg-queen")), [](ABSGame* G) { return G->Sw.Queens ? FString::Printf(TEXT("LV %d"), G->Sw.Queens) : FString(); }, TEXT("MAX"));
+		Swarm(TEXT("tier"), FString(), TEXT("Evolve Tier"), [](ABSGame* G) { const auto& T = BSSwarm::Tiers(); return FString(T[FMath::Min(G->Sw.Tier + 1, T.Num() - 1)].Icon); },
+			[](ABSGame* G) { return FString(BSSwarm::Tiers()[G->Sw.Tier].Name).ToUpper(); }, TEXT("HIVE"));
+		for (const BSSwarm::FStrain& S : BSSwarm::Strains()) Swarm(TEXT("strain"), S.Id, S.Name, Fixed(S.Icon), [](ABSGame*) { return FString(); }, TEXT("BRED"));
+		for (const BSSwarm::FEvo& V : BSSwarm::Evos())
+		{
+			const FString Id = V.Id;
+			Swarm(TEXT("evo"), Id, V.Name, [Id](ABSGame* G) { const BSSwarm::FEvo* E = BSSwarm::FindEvo(Id); return FString(E->Icons[FMath::Min(G->EvoLevel(Id), E->Icons.Num() - 1)]); },
+				[Id](ABSGame* G) { return BSSwarm::FindEvo(Id)->Levels() && G->EvoLevel(Id) ? FString::Printf(TEXT("LV %d"), G->EvoLevel(Id)) : FString(); }, TEXT("DONE"));
+		}
 		return Out;
 	}();
 	return Items;
@@ -931,14 +1070,17 @@ TSharedRef<SWidget> SBSHud::MakeArmouryCard(int32 Index)
 		const FBSArmItem& I = ArmItems()[Index];
 		const bool bAvail = I.Avail(Gm);
 		const int32 Cost = I.Cost(Gm);
-		const bool bPoor = bAvail && Gm->Minerals < Cost;
+		const bool bPoor = bAvail && (I.Poor ? I.Poor(Gm) : Gm->Minerals < Cost);
 		const FVector2f S((float)Size.X, (float)Size.Y), P(0, bPress ? 1.f : 0.f);
 		D::RFill(Out, L, G, P, S, 12, bHover ? C::GlassHi : C::Glass);
 		D::RLine(Out, L + 1, G, P, S, 12, bHover ? C::A(C::Cyan, 0.7f) : I.bTech ? C::A(C::Violet, 0.8f) : C::Hair, I.bTech ? 1.5f : 1.f);
 		const float Is = 44;
 		const FVector2f Ip(P.X + (S.X - Is) * 0.5f, P.Y + 8);
-		D::Image(Out, L + 2, G, Gm->GetAssets()->IconBrush(I.Icon(Gm)), Ip, FVector2f(Is, Is), (bAvail && !bPoor) ? FLinearColor::White : FLinearColor(0.3f, 0.32f, 0.36f));
+		const FSlateBrush* Ib = Gm->GetAssets()->IconBrush(I.Icon(Gm));
+		D::Image(Out, L + 2, G, Ib, Ip, FVector2f(Is, Is), (bAvail && !bPoor) ? FLinearColor::White : FLinearColor(0.3f, 0.32f, 0.36f));
+		if (!Ib) D::Text(Out, L + 2, G, I.Name.Left(2).ToUpper(), D::Title(16), Ip + FVector2f(Is * 0.5f, Is * 0.5f - 10), C::A(C::Violet, 0.8f), 0.5f);   // icon not exported
 		D::RLine(Out, L + 3, G, Ip - FVector2f(1, 1), FVector2f(Is + 2, Is + 2), 7, C::A(C::Ink, 0.2f));
+		if (I.Note) { const FString Nt = I.Note(Gm); if (!Nt.IsEmpty()) { const FVector2f Ns = D::Measure(Nt, D::Bold(7.5f)); D::RFill(Out, L + 4, G, FVector2f(Ip.X + Is - Ns.X - 6, Ip.Y + Is - 13), FVector2f(Ns.X + 6, 13), 4, C::A(C::Dark, 0.85f)); D::Text(Out, L + 5, G, Nt, D::Bold(7.5f), FVector2f(Ip.X + Is - 3, Ip.Y + Is - 13), C::Amber, 1.f); } }
 		const int32 Lv = I.Level(Gm);
 		if (Lv >= 0)
 			for (int32 k = 0; k < I.MaxLevel; k++)
@@ -952,7 +1094,7 @@ TSharedRef<SWidget> SBSHud::MakeArmouryCard(int32 Index)
 		const FLinearColor Nc = bAvail ? C::Ink : C::Muted;
 		D::Text(Out, L + 2, G, L1.ToUpper(), Nf, FVector2f(S.X * 0.5f, Ny), Nc, 0.5f);
 		if (!L2.IsEmpty()) D::Text(Out, L + 2, G, L2.ToUpper(), Nf, FVector2f(S.X * 0.5f, Ny + 11), Nc, 0.5f);
-		if (bAvail) D::CostPill(Out, L + 3, G, FVector2f(S.X * 0.5f, P.Y + S.Y - 13), FString::FromInt(Cost), true, bPoor ? C::Red : C::Cyan);
+		if (bAvail) D::CostPill(Out, L + 3, G, FVector2f(S.X * 0.5f, P.Y + S.Y - 13), I.Price ? I.Price(Gm) : FString::FromInt(Cost), true, bPoor ? C::Red : C::Cyan);
 		else
 		{
 			const FString Tag = I.Tag(Gm);
@@ -976,20 +1118,28 @@ TSharedRef<SWidget> SBSHud::MakeArmouryRow(int32 Index)
 		const FBSArmItem& I = ArmItems()[Index];
 		const bool bAvail = I.Avail(Gm);
 		const int32 Cost = I.Cost(Gm);
-		const bool bPoor = bAvail && Gm->Minerals < Cost;
+		const bool bPoor = bAvail && (I.Poor ? I.Poor(Gm) : Gm->Minerals < Cost);
 		const FVector2f S((float)Size.X, (float)Size.Y - 4), P(bPress ? 1.f : 0.f, 0);
 		D::RFill(Out, L, G, P, S, 10, bHover ? C::GlassHi : C::Glass);
 		D::RLine(Out, L + 1, G, P, S, 10, bHover ? C::A(C::Cyan, 0.7f) : C::Hair);
 		const float Is = 36;
-		D::Image(Out, L + 2, G, Gm->GetAssets()->IconBrush(I.Icon(Gm)), P + FVector2f(8, 7), FVector2f(Is, Is), (bAvail && !bPoor) ? FLinearColor::White : FLinearColor(0.3f, 0.32f, 0.36f));
+		const FSlateBrush* Ib = Gm->GetAssets()->IconBrush(I.Icon(Gm));
+		D::Image(Out, L + 2, G, Ib, P + FVector2f(8, 7), FVector2f(Is, Is), (bAvail && !bPoor) ? FLinearColor::White : FLinearColor(0.3f, 0.32f, 0.36f));
+		if (!Ib) D::Text(Out, L + 2, G, I.Name.Left(2).ToUpper(), D::Title(14), P + FVector2f(8 + Is * 0.5f, 7 + Is * 0.5f - 9), C::A(C::Violet, 0.8f), 0.5f);   // icon not exported
 		D::RLine(Out, L + 3, G, P + FVector2f(7, 6), FVector2f(Is + 2, Is + 2), 6, C::A(C::Ink, 0.2f));
 		const float Tx = P.X + 54, RightW = 62, TextW = S.X - 54 - RightW;
 		D::Text(Out, L + 2, G, I.Name.ToUpper(), D::Fit(I.Name.ToUpper(), [](float Sz) { return D::Label(Sz); }, 10, 7, TextW), FVector2f(Tx, P.Y + 9), bAvail ? C::Ink : C::Muted);
-		D::Text(Out, L + 2, G, I.Short, D::Fit(I.Short, [](float Sz) { return D::Body(Sz); }, 9, 6.5f, TextW, D::BodySlack), FVector2f(Tx, P.Y + 26), C::Muted);
+		const FString Line2 = I.Note ? I.Note(Gm) : I.Short;
+		D::Text(Out, L + 2, G, Line2, D::Fit(Line2, [](float Sz) { return D::Body(Sz); }, 9, 6.5f, TextW, D::BodySlack), FVector2f(Tx, P.Y + 26), I.Note ? C::Amber : C::Muted);
 		const int32 Lv = I.Level(Gm);
 		if (Lv >= 0) for (int32 k = 0; k < I.MaxLevel; k++) D::RFill(Out, L + 3, G, FVector2f(Tx + k * 8, P.Y + 41), FVector2f(5, 3), 1.5f, k < Lv ? C::Amber : C::Faint);
 		const FVector2f Pc(P.X + S.X - RightW * 0.5f - 4, P.Y + S.Y * 0.5f);
-		if (bAvail) D::CostPill(Out, L + 3, G, Pc, FString::FromInt(Cost), true, bPoor ? C::Red : C::Cyan);
+		if (bAvail)
+		{
+			const FString Pr = I.Price ? I.Price(Gm) : FString::FromInt(Cost);
+			if (D::Measure(Pr, D::Bold(9)).X > RightW - 22) D::Text(Out, L + 3, G, Pr, D::Fit(Pr, [](float Sz) { return D::Bold(Sz); }, 9, 6.5f, RightW + 6), Pc - FVector2f(0, 6), bPoor ? C::Red : C::Cyan, 0.5f);
+			else D::CostPill(Out, L + 3, G, Pc, Pr, true, bPoor ? C::Red : C::Cyan);
+		}
 		else
 		{
 			const FString Tag = I.Tag(Gm);
@@ -1012,8 +1162,9 @@ TSharedRef<SWidget> SBSHud::BuildArmouryStrip()
 		[this](const FGeometry& G, FSlateWindowElementList& Out, int32 L, bool bHover, bool)
 	{
 		const float W = G.GetLocalSize().X;
-		D::Text(Out, L, G, TEXT("ARMOURY"), D::Label(9), FVector2f(12, 6), bHover ? C::Cyan : C::Muted);
-		const float Tw = D::Measure(TEXT("ARMOURY"), D::Label(9)).X;
+		const FString Lab = Game() && Game()->bSwarm ? TEXT("HIVE CLUSTER") : TEXT("ARMOURY");
+		D::Text(Out, L, G, Lab, D::Label(9), FVector2f(12, 6), bHover ? C::Cyan : C::Muted);
+		const float Tw = D::Measure(Lab, D::Label(9)).X;
 		D::Line(Out, L, G, FVector2f(20 + Tw, 13), FVector2f(W - 40, 13), C::Hair);
 		D::Chevron(Out, L + 1, G, FVector2f(W - 24, 13), !bArmouryOpen, bHover ? C::Cyan : C::Muted);
 	}, [this]() { bArmouryOpen = !bArmouryOpen; });
@@ -1034,10 +1185,11 @@ TSharedRef<SWidget> SBSHud::BuildArmouryColumn()
 	return SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(2, 0, 0, 6)
 		[
-			SNew(SBSPaint).Size(FVector2D(236, 18)).Paint([](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
+			SNew(SBSPaint).Size(FVector2D(236, 18)).Paint([this](const FGeometry& G, FSlateWindowElementList& Out, int32 L)
 			{
-				D::Text(Out, L, G, TEXT("ARMOURY"), D::Label(9), FVector2f(2, 2), C::Muted);
-				const float Tw = D::Measure(TEXT("ARMOURY"), D::Label(9)).X;
+				const FString Lab = Game() && Game()->bSwarm ? TEXT("HIVE CLUSTER") : TEXT("ARMOURY");
+				D::Text(Out, L, G, Lab, D::Label(9), FVector2f(2, 2), C::Muted);
+				const float Tw = D::Measure(Lab, D::Label(9)).X;
 				D::Line(Out, L, G, FVector2f(10 + Tw, 9), FVector2f(234, 9), C::Hair);
 				return L + 2;
 			})
@@ -1139,11 +1291,44 @@ TSharedRef<SWidget> SBSHud::BuildStartScreen()
 		}, [this]() { bHyperion = true; });
 	};
 
-	auto Cards = [ModeCard, HyperionCard]()
+	// The Swarm: open once a run has escaped Kerrigan (-BSSwarm opens it for playtesting); greyed out until then.
+	auto SwarmCard = [this]()
+	{
+		const FVector2D Size(340, 96);
+		return PaintedButton(Size, [this, Size](const FGeometry& G, FSlateWindowElementList& Out, int32 L, bool bHover, bool bPress)
+		{
+			static const bool bForce = FParse::Param(FCommandLine::Get(), TEXT("BSSwarm"));
+			const bool bOpen = bForce || BSMeta::SwarmOpen();
+			const FVector2f S((float)Size.X, (float)Size.Y), P(0, bPress && bOpen ? 1.f : 0.f);
+			const FLinearColor Acc(1.f, 0.48f, 0.85f);
+			const bool bHot = bHover && bOpen;
+			D::Panel(Out, L, G, P, S, 16, bHot ? C::GlassHi : C::Glass);
+			D::RLine(Out, L + 1, G, P, S, 16, bHot ? C::A(Acc, 0.9f) : C::A(Acc, bOpen ? 0.3f : 0.12f), bHot ? 1.5f : 1.f);
+			D::RFill(Out, L + 1, G, P + FVector2f(0, 22), FVector2f(3, S.Y - 44), 1.5f, C::A(Acc, bOpen ? 1.f : 0.35f));
+			UBSAssets* As = GM.IsValid() ? GM->GetAssets() : nullptr;
+			const FSlateBrush* Ib = As ? As->IconBrush(TEXT("btn-unit-zerg-kerriganinfested")) : nullptr;
+			if (!Ib && As) Ib = As->IconBrush(TEXT("btn-unit-zerg-zergling"));      // (until her icon is exported)
+			if (Ib) D::Image(Out, L + 2, G, Ib, P + FVector2f(18, 18), FVector2f(60, 60), bOpen ? FLinearColor::White : FLinearColor(0.3f, 0.32f, 0.36f));
+			D::RLine(Out, L + 3, G, P + FVector2f(17, 17), FVector2f(62, 62), 10, C::A(C::Ink, 0.2f));
+			D::Text(Out, L + 2, G, TEXT("THE SWARM"), D::Title(14.5f), P + FVector2f(94, 20), bOpen ? C::Ink : C::Muted);
+			const FString Desc = bOpen ? TEXT("Play the zerg: feed the hives, summon Kerrigan and raze the bunker before the Hyperion gets them out.") : TEXT("Escape Kerrigan on the Hyperion to unlock.");
+			FString D1, D2;
+			D::SplitTwo(Desc, D1, D2);
+			const FSlateFontInfo Df = D::Fit(D1.Len() > D2.Len() ? D1 : D2, [](float Sz) { return D::Body(Sz); }, 10.5f, 7, S.X - 110, D::BodySlack);
+			D::Text(Out, L + 2, G, D1, Df, P + FVector2f(94, 44), C::Muted);
+			D::Text(Out, L + 2, G, D2, Df, P + FVector2f(94, 58), C::Muted);
+		}, [this]()
+		{
+			if (GM.IsValid() && (FParse::Param(FCommandLine::Get(), TEXT("BSSwarm")) || BSMeta::SwarmOpen())) GM->StartGame(EBSMode::Lane, true);
+		});
+	};
+
+	auto Cards = [ModeCard, SwarmCard, HyperionCard]()
 	{
 		return SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 12)[ ModeCard(false) ]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 12)[ ModeCard(true) ]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0, 0, 0, 12)[ SwarmCard() ]
 			+ SVerticalBox::Slot().AutoHeight()[ HyperionCard() ];
 	};
 
@@ -1171,10 +1356,11 @@ TSharedRef<SWidget> SBSHud::BuildModal(bool bGameOver)
 		const FLinearColor EndCol = Gm->bWon ? C::Green : C::Red;     // evacuated by the Hyperion, or overrun
 		D::RLine(Out, L + 1, G, FVector2f(0, 0), S, 18, bGameOver ? C::A(EndCol, 0.5f) : C::Hair);
 		D::Rect(Out, L + 1, G, FVector2f(S.X * 0.5f - 24, 0), FVector2f(48, 2), bGameOver ? EndCol : C::Cyan);
-		D::EText(Out, L + 2, G, bGameOver ? (Gm->bWon ? TEXT("EVACUATED") : TEXT("BUNKER LOST")) : TEXT("PAUSED"), D::Fit(TEXT("BUNKER LOST"), [](float Sz) { return D::Title(Sz); }, 28, 14, S.X - 40), FVector2f(S.X * 0.5f, 18), bGameOver ? EndCol : C::Ink, 0.5f);
+		const TCHAR* EndTitle = Gm->bSwarm ? (Gm->bWon ? TEXT("BUNKER RAZED") : TEXT("THEY GOT AWAY")) : Gm->bWon ? TEXT("EVACUATED") : TEXT("BUNKER LOST");
+		D::EText(Out, L + 2, G, bGameOver ? EndTitle : TEXT("PAUSED"), D::Fit(TEXT("BUNKER LOST"), [](float Sz) { return D::Title(Sz); }, 28, 14, S.X - 40), FVector2f(S.X * 0.5f, 18), bGameOver ? EndCol : C::Ink, 0.5f);
 		const int64 Score = bGameOver ? Gm->FinalScore : FMath::RoundToInt(Gm->Score + Gm->Kills * 10 + Gm->Wave * 250);
 		const TArray<TPair<FString, FString>> Stats = {
-			{ TEXT("WAVE"), D::Thousands(Gm->Wave) }, { TEXT("KILLS"), D::Thousands(Gm->Kills) }, { TEXT("SCORE"), D::Thousands(Score) } };
+			{ TEXT("WAVE"), D::Thousands(Gm->Wave) }, { TEXT("KILLS"), D::Thousands(Gm->bSwarm ? Gm->Sw.Kills : Gm->Kills) }, { TEXT("SCORE"), D::Thousands(Score) } };
 		const float Pad = 24;
 		for (int32 i = 0; i < Stats.Num(); i++)
 		{
@@ -1199,6 +1385,7 @@ TSharedRef<SWidget> SBSHud::BuildModal(bool bGameOver)
 			FString U;
 			for (const FBSCardDef* Cd : Mr.Unlocked) U += (U.IsEmpty() ? TEXT("NEW CARD: ") : TEXT(", ")) + BSMeta::CardName(*Cd).ToUpper();
 			if (!U.IsEmpty()) D::Text(Out, L + 2, G, U, D::Fit(U, [](float Sz) { return D::Label(Sz); }, 9, 6, S.X - 24), FVector2f(S.X * 0.5f, Y0 + 50), C::Amber, 0.5f);
+			if (Mr.bSwarm) D::Text(Out, L + 2, G, TEXT("NEW MODE: THE SWARM"), D::Label(9), FVector2f(S.X * 0.5f, Y0 + (U.IsEmpty() ? 50 : 68)), C::Amber, 0.5f);
 		}
 		return L + 8;
 	});
@@ -1549,10 +1736,11 @@ void SBSHud::Tick(const FGeometry& Geo, const double Now, const float Dt)
 	LocalSize = Geo.GetLocalSize();
 	ABSGame* Gm = Game();
 	if (!Gm) return;
-	const float Diff = Gm->Minerals - ShownMinerals;
+	const float Have = Gm->bSwarm ? Gm->Sw.Minerals : Gm->Minerals;      // swarm mode: the swarm's
+	const float Diff = Have - ShownMinerals;
 	if (Diff > 1) MineralFlash = FMath::Min(1.f, MineralFlash + Dt * 4 * FMath::Min(1.f, Diff / 20));
 	ShownMinerals += Diff * FMath::Min(1.f, Dt * 8.f);
-	if (FMath::Abs(Gm->Minerals - ShownMinerals) < 0.5f) ShownMinerals = Gm->Minerals;
+	if (FMath::Abs(Have - ShownMinerals) < 0.5f) ShownMinerals = Have;
 	MineralFlash = FMath::Max(0.f, MineralFlash - Dt * 2);
 	MineralFail = FMath::Max(0.f, MineralFail - Dt * 2.5f);
 	if (Gm->ToastSerial != SeenToast)
@@ -1691,6 +1879,22 @@ int32 SBSHud::PaintWorld(const FGeometry& G, FSlateWindowElementList& Out, int32
 		}
 	}
 
+	// Swarm mode: where Kerrigan was sent (bright while she is on her way, dim while she holds it).
+	if (const FBSEnemy* He = Gm->bSwarm ? Gm->HeroAlive() : nullptr; He && (He->bOrder || He->bHold))
+	{
+		const FVector2D Spot = He->bOrder ? He->Order : He->Hold;
+		const float Gz = BSTerrain::Height(Spot.X, Spot.Y) + 0.05f;
+		D::FPts Ring;
+		for (int32 k = 0; k < 28; k++)
+		{
+			const float A = k * 2 * PI / 28;
+			FVector2D P;
+			if (!WorldToLocal(BSSpace::ToWorld(Spot.X + FMath::Cos(A) * 0.8f, Spot.Y + FMath::Sin(A) * 0.8f, Gz), P)) { Ring.Reset(); break; }
+			Ring.Add(FVector2f(P));
+		}
+		if (Ring.Num()) D::Lines(Out, L + 3, G, Ring, He->bOrder ? FLinearColor(1.f, 0.48f, 0.85f) : FLinearColor(1.f, 0.48f, 0.85f, 0.45f), 2.f, true);
+	}
+
 	for (const FBSFloater& Fl : Gm->Floaters)
 	{
 		FVector2D P;
@@ -1744,7 +1948,9 @@ int32 SBSHud::PaintWorld(const FGeometry& G, FSlateWindowElementList& Out, int32
 	}
 	if (bRadar) D::Disc(Out, L + 9, G, Rc, 3, C::Green, 10);
 
-	// Threat markers on the screen edge for off-screen zerg, kept clear of the HUD.
+	// Threat markers on the screen edge for off-screen zerg, kept clear of the HUD (not in swarm mode: they are the
+	// player's own).
+	if (Gm->bSwarm) return L + 12;
 	const float TopY = 150, BottomY = S.Y - (bPortrait ? (bArmouryOpen ? 300.f : 190.f) : 130.f);
 	const float RightX = S.X - (bPortrait ? 16.f : 256.f);
 	const FVector2f Mid((16 + RightX) * 0.5f, (TopY + BottomY) * 0.5f);
@@ -1793,6 +1999,8 @@ void SBSHud::Tap(const FGeometry& Geo, const FVector2D& ScreenPos)
 	const float T = -Origin.Z / Dir.Z;
 	if (T < 0) return;
 	const FVector Hit = Origin + Dir * T;
+	// Swarm mode: a tap sends Kerrigan there.
+	if (Gm->bSwarm) { Gm->HeroOrder(Hit.Y / BSSpace::UnitsPerMetre, Hit.X / BSSpace::UnitsPerMetre); return; }
 	if (Gm->FocusAt(Hit.Y / BSSpace::UnitsPerMetre, Hit.X / BSSpace::UnitsPerMetre)) Gm->Toast(TEXT("Focus fire"));
 }
 
@@ -1817,6 +2025,7 @@ bool SBSHud::TapSquadCard(const FVector2D& ScreenPos)
 	if (P.X < 0 || P.Y < 0 || P.X > S.X || P.Y > S.Y) return false;
 	auto In = [&P](const FVector2f& At, float Sz) { return P.X >= At.X - 3 && P.X <= At.X + Sz + 3 && P.Y >= At.Y - 3 && P.Y <= At.Y + Sz + 3; };
 	if (In(FVector2f(10, 11), 48)) { ToggleBunkerView(); return true; }
+	if (Gm->bSwarm) return true;                      // (in swarm mode the squad card is the enemy's)
 	for (int32 i = 0; i < Gm->Bunker.Units.Num(); i++)
 		if (In(FVector2f(SquadRow::X0 + i * 27.f, 41), 22)) { Gm->Eject(i); return true; }
 	for (int32 i = 0; i < Gm->Squad.Num(); i++)
@@ -1920,6 +2129,7 @@ FReply SBSHud::OnKeyDown(const FGeometry& Geo, const FKeyEvent& Key)
 		if (bHyperion && K == EKeys::Escape) { bHyperion = false; return FReply::Handled(); }
 		if (K == EKeys::One && GM.IsValid()) { GM->StartGame(EBSMode::Lane); return FReply::Handled(); }
 		if (K == EKeys::Two && GM.IsValid()) { GM->StartGame(EBSMode::Arena); return FReply::Handled(); }
+		if (K == EKeys::Three && GM.IsValid() && (FParse::Param(FCommandLine::Get(), TEXT("BSSwarm")) || BSMeta::SwarmOpen())) { GM->StartGame(EBSMode::Lane, true); return FReply::Handled(); }
 		return FReply::Unhandled();
 	}
 	const float H = LocalSize.Y * DpiScale;
@@ -1930,6 +2140,14 @@ FReply SBSHud::OnKeyDown(const FGeometry& Geo, const FKeyEvent& Key)
 		for (int32 i = 0; i < 5; i++) if (K == Nums[i]) { Gm->BuyCard(i); return FReply::Handled(); }
 		if (K == EKeys::X) { Gm->Reroll(); return FReply::Handled(); }
 		if (K == EKeys::Enter || K == EKeys::SpaceBar) { Gm->CloseShop(); return FReply::Handled(); }
+	}
+	// Swarm mode: K summons Kerrigan (or sends her back to advancing), Q W E R T Y her spells; the Terrans' S A R are not
+	// the player's.
+	if (Gm->bSwarm)
+	{
+		if (K == EKeys::K) { HeroButton(); return FReply::Handled(); }
+		for (const BSSwarm::FAbility& A : BSSwarm::Abilities()) if (K == FKey(A.Key)) { Gm->HeroCast(A.Id); return FReply::Handled(); }
+		if (K == EKeys::S || K == EKeys::A || K == EKeys::R) return FReply::Handled();
 	}
 	if (K == EKeys::P || K == EKeys::Escape) TogglePause();
 	else if (K == EKeys::V) ToggleBunkerView();

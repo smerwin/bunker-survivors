@@ -19,7 +19,10 @@ namespace BSMeta
 	FString CardName(const FBSCardDef& C);
 	// A card bought in a run; returns the cards this purchase unlocked.
 	TArray<const FBSCardDef*> RecordBuy(const FString& CardId);
-	// The run is over (bEvacuated: the Hyperion took you off): bank its vespene and best wave.
-	struct FRunResult { int32 Gas = 0; TArray<const FBSCardDef*> Unlocked; };
-	FRunResult EndRun(bool bArena, int32 WavesCleared, bool bEvacuated);
+	// Swarm mode: open once a run has escaped Kerrigan on the Hyperion.
+	bool SwarmOpen();
+	// The run is over (bEvacuated: the Hyperion took you off; in swarm mode, the bunker razed): bank its vespene and best
+	// wave (not for a swarm run). bSwarm in the result: this run opened swarm mode.
+	struct FRunResult { int32 Gas = 0; TArray<const FBSCardDef*> Unlocked; bool bSwarm = false; };
+	FRunResult EndRun(bool bArena, bool bSwarmRun, int32 WavesCleared, bool bEvacuated);
 }

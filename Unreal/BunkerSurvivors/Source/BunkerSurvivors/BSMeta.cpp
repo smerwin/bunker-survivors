@@ -69,13 +69,17 @@ namespace BSMeta
 		return Was.FilterByPredicate([](const FBSCardDef* C) { return Unlocked(*C); });
 	}
 
-	FRunResult EndRun(bool bArena, int32 WavesCleared, bool bEvacuated)
+	bool SwarmOpen() { return Get(TEXT("Swarm")) > 0; }
+
+	FRunResult EndRun(bool bArena, bool bSwarmRun, int32 WavesCleared, bool bEvacuated)
 	{
 		const TArray<const FBSCardDef*> Was = Locked();
 		FRunResult R;
 		R.Gas = FMath::RoundToInt((WavesCleared * BSDefs::GasPerWave + (WavesCleared / 10) * BSDefs::GasMilestone + (bEvacuated ? BSDefs::GasEvac : 0.f)) * (bArena ? BSDefs::GasArena : 1.f));
+		R.bSwarm = bEvacuated && !bSwarmRun && !SwarmOpen();
+		if (R.bSwarm) Set(TEXT("Swarm"), 1);
 		Set(TEXT("Gas"), Gas() + R.Gas);
-		Set(TEXT("Best"), FMath::Max(Best(), WavesCleared));
+		if (!bSwarmRun) Set(TEXT("Best"), FMath::Max(Best(), WavesCleared));
 		Save();
 		R.Unlocked = Was.FilterByPredicate([](const FBSCardDef* C) { return Unlocked(*C); });
 		return R;

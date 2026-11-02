@@ -136,6 +136,18 @@ not queue up in front of the bunker: each takes a spot of its own round it, flan
 whatever stands in its way there. A tenth of the lane's zergling swarm (more later on) are winglings, hopping straight
 down the middle over the mesa.
 
+**The Swarm.** Escape Kerrigan on the Hyperion once and a third mode opens on the start screen: the tables turned. You
+are the zerg and the Terrans play themselves (the same commander the balance bots use, buying troops, tanks, turrets,
+research and high tech). Minerals come in from your drones and every Terran you kill, vespene from extractors. They buy
+more hatcheries and Spawn Larva (more larva, so bigger broods), the lair and then the hive, new strains to breed and
+evolutions (melee and missile attacks, carapace, Metabolic Boost, Glial Reconstitution and the rest). Every six seconds
+the larva banked hatches as a brood of whatever strains you breed and sweeps down the lane on its own. The goal is a
+hive and the economy to summon Kerrigan (4000 minerals and 3500 vespene); she drops in with four drop pods of zerg and
+then answers to you: tap the ground to send her (she fights whatever she meets on the way, then holds the spot), the
+KERRIGAN button sends her back to advancing with the swarm, and her six spells are on the bar. If she falls, the hive
+can summon her again a minute later. Raze the bunker before the Hyperion takes the Terrans off at 30 minutes and the
+run is won.
+
 **Thirty minutes.** The clock under HYPERION in the top bar counts fighting time only; it stops while you shop. A run
 is about 40 waves. Early waves ramp up steadily. Past wave 16 the swarm stops simply getting bigger and starts getting
 stranger: from wave 20 it evolves on its own (one more late-game strain every five waves, on top of whatever your tech
@@ -314,6 +326,9 @@ look all the way round and pinch to zoom. Tap it again for the overhead view.
 | Pause | pause button | `P` or `Esc` |
 | Rotate camera (arena) | two-finger twist (Unreal) | `Q` / `E` |
 | Start lane / arena | mode buttons | `1` / `2` |
+| The Swarm: send Kerrigan | tap the ground | click the ground |
+| The Swarm: summon Kerrigan / back to advancing | KERRIGAN button | `K` |
+| The Swarm: Kerrigan's spells | ability buttons | `Q` `W` `E` `R` `T` `Y` |
 
 ## Troubleshooting
 
